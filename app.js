@@ -143,20 +143,24 @@ function toast(msg) {
 }
 
 // ---- render ----
+// Full render: header + today + the heavier chart/history lists.
 function render() {
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   el.quote.textContent = quoteOfTheDay();
+  renderTop();
+  renderChart();
+  renderHistory();
+}
 
+// Cheap render for the today area only — used on every tap so rapid
+// tapping never rebuilds the history list.
+function renderTop() {
   const reached = goal > 0 && today >= goal;
   el.total.textContent = fmt(today);
   el.total.classList.toggle("reached", reached);
 
-  // merged meta line (streak + taps)
-  const parts = [];
   const streak = goalStreak();
-  if (streak > 0) parts.push(`🔥 ${streak}-day streak`);
-  parts.push(taps === 0 ? "No taps yet" : `${taps} tap${taps === 1 ? "" : "s"}`);
-  el.meta.textContent = parts.join("  ·  ");
+  el.meta.textContent = streak > 0 ? `🔥 ${streak}-day streak` : "";
 
   // goal progress ring + caption
   if (goal > 0) {
@@ -176,9 +180,6 @@ function render() {
 
   el.add.firstChild.textContent = `+ ${fmt(step)}`;
   el.undo.disabled = taps === 0;
-
-  renderChart();
-  renderHistory();
 }
 
 function renderChart() {
@@ -254,7 +255,7 @@ function addTap() {
   buzz(15); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
   if (goal > 0 && !wasReached && today >= goal) celebrate();
-  render();
+  renderTop(); renderChart();   // history list doesn't change on a tap
 }
 
 // Feature 1: a small moment the instant you cross your goal.
@@ -269,7 +270,7 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
-  render();
+  renderTop(); renderChart();
 }
 
 // New: End Day opens a sheet with an optional note.

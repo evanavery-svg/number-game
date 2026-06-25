@@ -133,8 +133,9 @@
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
+      transition: background 0.15s ease, transform 0.06s ease;
     }
-    .row button:active { background: var(--surface-2); }
+    .row button:active { background: var(--surface-2); transform: scale(0.98); }
     .row button:disabled { opacity: 0.3; }
     .row .end { color: var(--accent); }
     /* chart */
@@ -155,7 +156,7 @@
     .chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 8px; }
     .history { background: var(--surface); border-radius: 20px; padding: 4px 0; margin-bottom: 16px; max-height: 42vh; overflow-y: auto; }
     .history .section-title { margin: 14px 18px 4px; }
-    .hist-row { padding: 13px 18px; border-top: 1px solid var(--hair); cursor: pointer; }
+    .hist-row { padding: 13px 18px; border-top: 1px solid var(--hair); cursor: pointer; transition: background 0.15s ease; }
     .hist-row:first-of-type { border-top: none; }
     .hist-row:active { background: var(--surface-2); }
     .hist-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; }
@@ -173,14 +174,22 @@
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     /* bottom sheet */
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: flex-end; justify-content: center; z-index: 20; }
-    .overlay.show { display: flex; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .overlay.show { opacity: 1; pointer-events: auto; }
     .sheet {
       width: 100%; max-width: 480px; background: var(--surface);
       border-radius: 24px 24px 0 0;
       padding: 22px 20px calc(26px + env(safe-area-inset-bottom));
       box-shadow: 0 -12px 44px rgba(0,0,0,0.6);
+      transform: translateY(100%);
+      transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
     }
+    .overlay.show .sheet { transform: translateY(0); }
     .sheet h3 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
     .sheet p.sub { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
     .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 16px 0 6px; }
@@ -208,6 +217,13 @@
     .sheet-btn.ghost { background: transparent; color: var(--muted); }
     .sheet-btn.link { background: transparent; color: var(--accent); margin-top: 6px; }
     .sheet-divider { height: 1px; background: var(--hair); margin: 18px 0 2px; border: none; }
+    .gear { transition: opacity 0.15s ease; }
+    .gear:active { opacity: 0.5; }
+    /* Respect the OS "Reduce Motion" setting */
+    @media (prefers-reduced-motion: reduce) {
+      .total .value.bump, .ring-wrap.celebrate { animation: none; }
+      .ring-prog, .goal-fill, .sheet, .overlay { transition: none; }
+    }
   </style>
 </head>
 <body>
@@ -227,7 +243,7 @@
       </svg>
       <div class="ring-center"><span class="value" id="total">0</span></div>
     </div>
-    <div class="meta" id="meta">No taps yet</div>
+    <div class="meta" id="meta"></div>
     <div class="goal-label" id="goalText"></div>
   </div>
 
