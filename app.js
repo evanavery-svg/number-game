@@ -175,8 +175,8 @@ function renderTop() {
   } else {
     el.totalWrap.classList.remove("has-goal");
     el.ringProg.style.strokeDashoffset = RING_C;   // no orange, just the grey frame
-    el.goalText.textContent = "";
     el.goalText.classList.remove("reached");
+    el.goalText.textContent = "Set a daily goal to fill the ring";
   }
 
   el.add.firstChild.textContent = `+ ${fmt(step)}`;
@@ -473,6 +473,7 @@ el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
 el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
+el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 
 render();
