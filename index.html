@@ -13,24 +13,28 @@
   <style>
     :root {
       --bg: #0f2a30;
+      --bg-top: #123a41;
       --card: #143840;
       --accent: #2fb5a8;
       --accent-press: #25636d;
       --text: #eaf6f5;
-      --muted: #8fb3b1;
-      --danger: #c0635a;
+      --muted: #88aaa8;
+      --faint: #5f817f;
+      --danger: #d2756b;
       --gold: #e8c34a;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
       margin: 0;
-      height: 100%;
-      background: var(--bg);
+      min-height: 100%;
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
       overscroll-behavior: none;
     }
+    html { background: var(--bg); }
     body {
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 42%);
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
@@ -39,78 +43,81 @@
     }
     header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       position: relative;
-      padding: 18px 0 6px;
+      padding: 16px 0 2px;
     }
-    header h1 {
-      margin: 0;
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 2px;
+    .header-title { text-align: center; }
+    .header-title .eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2.5px;
       text-transform: uppercase;
+      color: var(--faint);
+    }
+    .header-title .date {
+      font-size: 14px;
+      font-weight: 600;
       color: var(--muted);
+      margin-top: 2px;
     }
     .gear {
       position: absolute;
-      right: 0;
+      right: -4px;
       top: 12px;
       background: none;
       border: none;
       color: var(--muted);
       font-size: 22px;
       cursor: pointer;
-      padding: 4px 8px;
+      padding: 6px 8px;
     }
-    .total {
-      text-align: center;
-      padding: 8px 0 4px;
-    }
+    .total { text-align: center; padding: 6px 0 2px; }
     .total .value {
-      font-size: 72px;
-      font-weight: 700;
-      line-height: 1;
+      display: inline-block;
+      font-size: 76px;
+      font-weight: 800;
+      line-height: 1.02;
+      letter-spacing: -1px;
       font-variant-numeric: tabular-nums;
     }
     .total .value.reached { color: var(--gold); }
+    .total .value.bump { animation: bump .18s ease; }
+    @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.07); } 100% { transform: scale(1); } }
     .total .meta {
-      margin-top: 8px;
-      font-size: 13px;
+      margin-top: 6px;
+      font-size: 14px;
       color: var(--muted);
+      min-height: 18px;
     }
-    .total .stats {
-      margin-top: 2px;
-      font-size: 13px;
-      color: var(--muted);
-      min-height: 16px;
-    }
-    .goal {
-      margin: 10px 0 2px;
-    }
+    .goal { margin: 12px 2px 0; }
     .goal-bar {
-      height: 8px;
+      position: relative;
+      height: 24px;
       border-radius: 999px;
-      background: rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.09);
       overflow: hidden;
     }
     .goal-fill {
-      height: 100%;
-      width: 0%;
+      position: absolute; left: 0; top: 0;
+      height: 100%; width: 0%;
       background: var(--accent);
       border-radius: 999px;
       transition: width 0.25s ease;
     }
     .goal-fill.reached { background: var(--gold); }
-    .goal-label {
-      margin-top: 5px;
-      font-size: 12px;
-      color: var(--muted);
-      text-align: center;
+    .goal-text {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 12px;
+      font-size: 12px; font-weight: 700;
+      color: var(--text);
     }
+    .goal-text.reached { color: #06231f; }
     .add-btn {
       flex: 1;
-      min-height: 170px;
+      min-height: 160px;
       margin: 14px 0;
       border: none;
       border-radius: 28px;
@@ -120,31 +127,17 @@
       font-weight: 800;
       letter-spacing: 1px;
       cursor: pointer;
-      box-shadow: 0 10px 30px rgba(47,181,168,0.25);
+      box-shadow: 0 12px 32px rgba(47,181,168,0.22);
       transition: transform 0.05s ease, background 0.1s ease;
       user-select: none;
     }
-    .add-btn:active {
-      transform: scale(0.98);
-      background: var(--accent-press);
-      color: var(--text);
-    }
-    .add-btn small {
-      display: block;
-      font-size: 15px;
-      font-weight: 600;
-      opacity: 0.7;
-      margin-top: 8px;
-    }
-    .row {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
+    .add-btn:active { transform: scale(0.985); background: var(--accent-press); color: var(--text); }
+    .add-btn small { display: block; font-size: 15px; font-weight: 600; opacity: 0.65; margin-top: 8px; }
+    .row { display: flex; gap: 12px; margin-bottom: 14px; }
     .row button {
       flex: 1;
       padding: 16px;
-      border: 1px solid rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.10);
       border-radius: 16px;
       background: var(--card);
       color: var(--text);
@@ -156,147 +149,81 @@
     .row button:disabled { opacity: 0.35; }
     .row .end { background: var(--accent-press); border-color: transparent; }
     /* chart */
-    .chart-card {
-      background: var(--card);
-      border-radius: 18px;
-      padding: 12px 14px 8px;
-      margin-bottom: 14px;
-    }
+    .chart-card { background: var(--card); border-radius: 18px; padding: 14px 14px 10px; margin-bottom: 14px; }
     .chart-card h2, .history h2 {
-      font-size: 12px;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 2px 4px 10px;
+      font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--faint); margin: 0 4px 8px;
     }
-    .chart {
-      display: flex;
-      align-items: flex-end;
-      gap: 4px;
-      height: 90px;
+    .chart-stats {
+      display: flex; flex-wrap: wrap; gap: 4px 16px;
+      font-size: 13px; color: var(--muted);
+      margin: 0 4px 12px;
     }
-    .bar {
-      flex: 1;
-      min-width: 6px;
-      background: var(--accent);
-      border-radius: 4px 4px 0 0;
-      opacity: 0.85;
-      min-height: 2px;
-    }
-    .bar.today { background: var(--gold); }
-    .chart-axis {
-      display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-      color: var(--muted);
-      margin-top: 6px;
-    }
-    .history {
-      background: var(--card);
-      border-radius: 18px;
-      padding: 6px 0;
-      margin-bottom: 14px;
-      max-height: 38vh;
-      overflow-y: auto;
-    }
-    .hist-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 18px;
-      border-top: 1px solid rgba(255,255,255,0.06);
-      font-size: 15px;
-      cursor: pointer;
-    }
+    .chart-stats b { color: var(--text); font-weight: 700; }
+    .chart { display: flex; align-items: flex-end; gap: 4px; height: 86px; }
+    .bar { flex: 1; min-width: 5px; background: var(--accent); border-radius: 4px 4px 0 0; opacity: 0.8; min-height: 2px; }
+    .bar.today { background: var(--gold); opacity: 1; }
+    .chart-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-top: 6px; }
+    .history { background: var(--card); border-radius: 18px; padding: 6px 0; margin-bottom: 14px; max-height: 40vh; overflow-y: auto; }
+    .history h2 { margin: 12px 18px 6px; }
+    .hist-row { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.06); cursor: pointer; }
     .hist-row:active { background: #1b4750; }
-    .hist-row .date { color: var(--muted); }
-    .hist-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .hist-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; }
+    .hist-top .date { color: var(--muted); }
+    .hist-top .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .hist-note { font-size: 13px; color: var(--faint); margin-top: 4px; line-height: 1.3; }
     .hist-empty { padding: 18px; color: var(--muted); font-size: 14px; text-align: center; }
-    .footer {
-      display: flex;
-      gap: 12px;
-      padding-bottom: 10px;
-    }
+    .footer { display: flex; gap: 12px; padding-bottom: 10px; }
     .footer button {
       flex: 1;
-      padding: 12px;
-      border: none;
-      border-radius: 12px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 13px;
-      cursor: pointer;
-      text-decoration: underline;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      padding: 10px;
+      border: none; border-radius: 12px;
+      background: transparent; color: var(--muted);
+      font-size: 12px; cursor: pointer;
     }
+    .footer button:active { color: var(--text); }
+    .footer .ic { font-size: 18px; line-height: 1; }
     .toast {
-      position: fixed;
-      left: 50%;
-      bottom: calc(20px + env(safe-area-inset-bottom));
+      position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom));
       transform: translateX(-50%) translateY(20px);
-      background: #06231f;
-      color: var(--text);
-      padding: 12px 20px;
-      border-radius: 999px;
-      font-size: 14px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s, transform 0.2s;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-      z-index: 30;
+      background: #06231f; color: var(--text);
+      padding: 12px 20px; border-radius: 999px; font-size: 14px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 30; max-width: 90%; text-align: center;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    /* bottom sheet / modal */
-    .overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      display: none;
-      align-items: flex-end;
-      justify-content: center;
-      z-index: 20;
-    }
+    /* bottom sheet */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: flex-end; justify-content: center; z-index: 20; }
     .overlay.show { display: flex; }
     .sheet {
-      width: 100%;
-      max-width: 520px;
-      background: var(--card);
+      width: 100%; max-width: 520px; background: var(--card);
       border-radius: 20px 20px 0 0;
       padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
       box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
     }
-    .sheet h3 {
-      margin: 0 0 16px;
-      font-size: 18px;
+    .sheet h3 { margin: 0 0 6px; font-size: 19px; }
+    .sheet p.sub { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+    .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+    .sheet input, .sheet textarea {
+      width: 100%; padding: 14px; font-size: 17px;
+      border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);
+      background: var(--bg); color: var(--text);
+      font-family: inherit; font-variant-numeric: tabular-nums;
     }
-    .sheet label {
-      display: block;
-      font-size: 13px;
-      color: var(--muted);
-      margin: 14px 0 6px;
-    }
-    .sheet input {
-      width: 100%;
-      padding: 14px;
-      font-size: 18px;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.15);
-      background: var(--bg);
-      color: var(--text);
-      font-variant-numeric: tabular-nums;
-    }
-    .sheet .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .sheet textarea { resize: none; font-variant-numeric: normal; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+    .toggle-row span { font-size: 15px; }
+    .switch { position: relative; width: 52px; height: 30px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: rgba(255,255,255,0.15); border-radius: 999px; transition: 0.2s; }
+    .slider:before { content: ""; position: absolute; height: 24px; width: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+    .switch input:checked + .slider { background: var(--accent); }
+    .switch input:checked + .slider:before { transform: translateX(22px); }
     .sheet-btn {
-      display: block;
-      width: 100%;
-      padding: 16px;
-      margin-top: 12px;
-      border: none;
-      border-radius: 14px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      background: var(--accent-press);
-      color: var(--text);
+      display: block; width: 100%; padding: 16px; margin-top: 12px;
+      border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer;
+      background: var(--accent-press); color: var(--text);
     }
     .sheet-btn.primary { background: var(--accent); color: #06231f; }
     .sheet-btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
@@ -305,17 +232,21 @@
 </head>
 <body>
   <header>
-    <h1>Today</h1>
+    <div class="header-title">
+      <div class="eyebrow">Today</div>
+      <div class="date" id="dateLabel"></div>
+    </div>
     <button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
   </header>
 
   <div class="total">
     <div><span class="value" id="total">0.00</span></div>
     <div class="meta" id="meta">No taps yet</div>
-    <div class="stats" id="stats"></div>
     <div class="goal" id="goal" style="display:none">
-      <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
-      <div class="goal-label" id="goalLabel"></div>
+      <div class="goal-bar">
+        <div class="goal-fill" id="goalFill"></div>
+        <div class="goal-text" id="goalText"></div>
+      </div>
     </div>
   </div>
 
@@ -331,8 +262,9 @@
 
   <div class="chart-card" id="chartCard" style="display:none">
     <h2 id="chartTitle">Last days</h2>
+    <div class="chart-stats" id="chartStats"></div>
     <div class="chart" id="chart"></div>
-    <div class="chart-axis"><span id="chartFrom"></span><span id="chartTo">today</span></div>
+    <div class="chart-axis"><span id="chartFrom"></span><span>today</span></div>
   </div>
 
   <div class="history" id="history">
@@ -341,8 +273,8 @@
   </div>
 
   <div class="footer">
-    <button id="exportBtn">Export CSV</button>
-    <button id="importBtn">Import CSV</button>
+    <button id="exportBtn"><span class="ic">⬆</span>Export</button>
+    <button id="importBtn"><span class="ic">⬇</span>Import</button>
     <input type="file" id="importFile" accept=".csv,text/csv" style="display:none" />
   </div>
 
