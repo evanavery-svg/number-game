@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#25636d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Grams" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <title>Grams Tracker</title>
+  <style>
+    :root {
+      --bg: #0f2a30;
+      --card: #143840;
+      --accent: #2fb5a8;
+      --accent-press: #25636d;
+      --text: #eaf6f5;
+      --muted: #8fb3b1;
+      --danger: #c0635a;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+      overscroll-behavior: none;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+      max-width: 520px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      padding: 18px 0 6px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .total {
+      text-align: center;
+      padding: 10px 0 4px;
+    }
+    .total .value {
+      font-size: 72px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .total .unit {
+      font-size: 22px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    .total .meta {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .add-btn {
+      flex: 1;
+      min-height: 200px;
+      margin: 18px 0;
+      border: none;
+      border-radius: 28px;
+      background: var(--accent);
+      color: #06231f;
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(47,181,168,0.25);
+      transition: transform 0.05s ease, background 0.1s ease;
+      user-select: none;
+    }
+    .add-btn:active {
+      transform: scale(0.98);
+      background: var(--accent-press);
+      color: var(--text);
+    }
+    .add-btn small {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      opacity: 0.7;
+      margin-top: 8px;
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .row button {
+      flex: 1;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .row button:active { background: #1b4750; }
+    .row button:disabled { opacity: 0.35; }
+    .row .end { background: var(--accent-press); border-color: transparent; }
+    .history {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 6px 0;
+      margin-bottom: 14px;
+      max-height: 38vh;
+      overflow-y: auto;
+    }
+    .history h2 {
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 12px 18px 6px;
+    }
+    .hist-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 15px;
+    }
+    .hist-row .date { color: var(--muted); }
+    .hist-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .hist-empty { padding: 18px; color: var(--muted); font-size: 14px; text-align: center; }
+    .footer {
+      display: flex;
+      gap: 12px;
+      padding-bottom: 10px;
+    }
+    .footer button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: calc(20px + env(safe-area-inset-bottom));
+      transform: translateX(-50%) translateY(20px);
+      background: #06231f;
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: 999px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 10;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <header><h1>Today</h1></header>
+
+  <div class="total">
+    <div><span class="value" id="total">0.00</span><span class="unit">g</span></div>
+    <div class="meta" id="meta">No taps yet</div>
+  </div>
+
+  <button class="add-btn" id="addBtn">
+    + 0.50 g
+    <small>tap to add</small>
+  </button>
+
+  <div class="row">
+    <button id="undoBtn" disabled>↶ Undo</button>
+    <button class="end" id="endBtn">✓ End Day</button>
+  </div>
+
+  <div class="history" id="history">
+    <h2>History</h2>
+    <div class="hist-empty" id="histEmpty">No previous days yet.</div>
+  </div>
+
+  <div class="footer">
+    <button id="exportBtn">Export backup (CSV)</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
