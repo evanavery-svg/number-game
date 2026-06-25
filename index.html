@@ -3,100 +3,90 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#25636d" />
+  <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="apple-mobile-web-app-title" content="&#160;" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <title>&#160;</title>
   <style>
     :root {
-      --bg: #0f2a30;
-      --bg-top: #123a41;
-      --card: #143840;
-      --accent: #2fb5a8;
-      --accent-press: #25636d;
-      --text: #eaf6f5;
-      --muted: #88aaa8;
-      --faint: #5f817f;
-      --danger: #d2756b;
-      --gold: #e8c34a;
+      --bg: #000000;
+      --surface: #1c1c1e;
+      --surface-2: #2c2c2e;
+      --hair: rgba(255,255,255,0.08);
+      --text: #ffffff;
+      --muted: #8e8e93;
+      --faint: #5a5a5e;
+      --accent: #ff9500;
+      --accent-dim: #b36800;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { background: var(--bg); }
     html, body {
       margin: 0;
       min-height: 100%;
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
       overscroll-behavior: none;
     }
-    html { background: var(--bg); }
     body {
-      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 42%);
+      background: var(--bg);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
-      max-width: 520px;
+      padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+      max-width: 480px;
       margin: 0 auto;
     }
     header {
       display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      position: relative;
-      padding: 16px 0 2px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 0 4px;
     }
-    .header-title { text-align: center; }
     .header-title .eyebrow {
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 2.5px;
-      text-transform: uppercase;
-      color: var(--faint);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--muted);
     }
     .header-title .date {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--muted);
-      margin-top: 2px;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin-top: 1px;
     }
     .gear {
-      position: absolute;
-      right: -4px;
-      top: 12px;
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 22px;
-      cursor: pointer;
-      padding: 6px 8px;
+      background: none; border: none;
+      color: var(--muted); font-size: 22px;
+      cursor: pointer; padding: 8px; margin-right: -8px;
     }
-    .total { text-align: center; padding: 6px 0 2px; }
+    .total { text-align: center; padding: 14px 0 2px; }
     .total .value {
       display: inline-block;
-      font-size: 76px;
-      font-weight: 800;
-      line-height: 1.02;
-      letter-spacing: -1px;
+      font-size: 92px;
+      font-weight: 300;
+      line-height: 1;
+      letter-spacing: -3px;
       font-variant-numeric: tabular-nums;
     }
-    .total .value.reached { color: var(--gold); }
+    .total .value.reached { color: var(--accent); }
     .total .value.bump { animation: bump .18s ease; }
-    @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.07); } 100% { transform: scale(1); } }
+    @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 100% { transform: scale(1); } }
     .total .meta {
-      margin-top: 6px;
+      margin-top: 10px;
       font-size: 14px;
       color: var(--muted);
       min-height: 18px;
     }
-    .goal { margin: 12px 2px 0; }
+    .goal { margin: 16px 0 0; }
     .goal-bar {
       position: relative;
-      height: 24px;
+      height: 6px;
       border-radius: 999px;
-      background: rgba(255,255,255,0.09);
+      background: var(--surface-2);
       overflow: hidden;
     }
     .goal-fill {
@@ -104,119 +94,128 @@
       height: 100%; width: 0%;
       background: var(--accent);
       border-radius: 999px;
-      transition: width 0.25s ease;
+      transition: width 0.3s ease;
     }
-    .goal-fill.reached { background: var(--gold); }
-    .goal-text {
-      position: absolute; inset: 0;
-      display: flex; align-items: center; justify-content: flex-end;
-      padding-right: 12px;
-      font-size: 12px; font-weight: 700;
-      color: var(--text);
+    .goal-label {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+      letter-spacing: 0.2px;
     }
-    .goal-text.reached { color: #06231f; }
+    .goal-label.reached { color: var(--accent); }
+    .quote {
+      text-align: center;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.45;
+      padding: 22px 8px 18px;
+      min-height: 20px;
+    }
     .add-btn {
       flex: 1;
-      min-height: 160px;
-      margin: 14px 0;
+      min-height: 150px;
+      margin: 2px 0 16px;
       border: none;
-      border-radius: 28px;
+      border-radius: 26px;
       background: var(--accent);
-      color: #06231f;
-      font-size: 34px;
-      font-weight: 800;
-      letter-spacing: 1px;
+      color: #000000;
+      font-size: 32px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
       cursor: pointer;
-      box-shadow: 0 12px 32px rgba(47,181,168,0.22);
-      transition: transform 0.05s ease, background 0.1s ease;
+      transition: transform 0.05s ease, opacity 0.1s ease;
       user-select: none;
     }
-    .add-btn:active { transform: scale(0.985); background: var(--accent-press); color: var(--text); }
-    .add-btn small { display: block; font-size: 15px; font-weight: 600; opacity: 0.65; margin-top: 8px; }
-    .row { display: flex; gap: 12px; margin-bottom: 14px; }
+    .add-btn:active { transform: scale(0.985); opacity: 0.9; }
+    .add-btn small { display: block; font-size: 14px; font-weight: 500; opacity: 0.55; margin-top: 8px; }
+    .row { display: flex; gap: 12px; margin-bottom: 18px; }
     .row button {
       flex: 1;
       padding: 16px;
-      border: 1px solid rgba(255,255,255,0.10);
+      border: none;
       border-radius: 16px;
-      background: var(--card);
+      background: var(--surface);
       color: var(--text);
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
     }
-    .row button:active { background: #1b4750; }
-    .row button:disabled { opacity: 0.35; }
-    .row .end { background: var(--accent-press); border-color: transparent; }
+    .row button:active { background: var(--surface-2); }
+    .row button:disabled { opacity: 0.3; }
+    .row .end { color: var(--accent); }
     /* chart */
-    .chart-card { background: var(--card); border-radius: 18px; padding: 14px 14px 10px; margin-bottom: 14px; }
-    .chart-card h2, .history h2 {
-      font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
-      color: var(--faint); margin: 0 4px 8px;
+    .chart-card { background: var(--surface); border-radius: 20px; padding: 16px 16px 12px; margin-bottom: 14px; }
+    .section-title {
+      font-size: 13px; font-weight: 600; letter-spacing: 0.2px;
+      color: var(--muted); margin: 0 2px 10px;
     }
     .chart-stats {
-      display: flex; flex-wrap: wrap; gap: 4px 16px;
+      display: flex; flex-wrap: wrap; gap: 4px 18px;
       font-size: 13px; color: var(--muted);
-      margin: 0 4px 12px;
+      margin: 0 2px 14px;
     }
-    .chart-stats b { color: var(--text); font-weight: 700; }
-    .chart { display: flex; align-items: flex-end; gap: 4px; height: 86px; }
-    .bar { flex: 1; min-width: 5px; background: var(--accent); border-radius: 4px 4px 0 0; opacity: 0.8; min-height: 2px; }
-    .bar.today { background: var(--gold); opacity: 1; }
-    .chart-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-top: 6px; }
-    .history { background: var(--card); border-radius: 18px; padding: 6px 0; margin-bottom: 14px; max-height: 40vh; overflow-y: auto; }
-    .history h2 { margin: 12px 18px 6px; }
-    .hist-row { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.06); cursor: pointer; }
-    .hist-row:active { background: #1b4750; }
-    .hist-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; }
-    .hist-top .date { color: var(--muted); }
-    .hist-top .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .hist-note { font-size: 13px; color: var(--faint); margin-top: 4px; line-height: 1.3; }
-    .hist-empty { padding: 18px; color: var(--muted); font-size: 14px; text-align: center; }
+    .chart-stats b { color: var(--text); font-weight: 600; }
+    .chart { display: flex; align-items: flex-end; gap: 5px; height: 80px; }
+    .bar { flex: 1; min-width: 5px; background: var(--surface-2); border-radius: 3px; min-height: 3px; }
+    .bar.today { background: var(--accent); }
+    .chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 8px; }
+    .history { background: var(--surface); border-radius: 20px; padding: 4px 0; margin-bottom: 16px; max-height: 42vh; overflow-y: auto; }
+    .history .section-title { margin: 14px 18px 4px; }
+    .hist-row { padding: 13px 18px; border-top: 1px solid var(--hair); cursor: pointer; }
+    .hist-row:first-of-type { border-top: none; }
+    .hist-row:active { background: var(--surface-2); }
+    .hist-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; }
+    .hist-top .date { color: var(--text); }
+    .hist-top .amt { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+    .hist-note { font-size: 13px; color: var(--faint); margin-top: 4px; line-height: 1.35; }
+    .hist-empty { padding: 20px; color: var(--faint); font-size: 14px; text-align: center; }
     .toast {
-      position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom));
+      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
       transform: translateX(-50%) translateY(20px);
-      background: #06231f; color: var(--text);
-      padding: 12px 20px; border-radius: 999px; font-size: 14px;
+      background: var(--surface-2); color: var(--text);
+      padding: 13px 22px; border-radius: 999px; font-size: 14px; font-weight: 500;
       opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 30; max-width: 90%; text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 30; max-width: 88%; text-align: center;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     /* bottom sheet */
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: flex-end; justify-content: center; z-index: 20; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: flex-end; justify-content: center; z-index: 20; }
     .overlay.show { display: flex; }
     .sheet {
-      width: 100%; max-width: 520px; background: var(--card);
-      border-radius: 20px 20px 0 0;
-      padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
-      box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+      width: 100%; max-width: 480px; background: var(--surface);
+      border-radius: 24px 24px 0 0;
+      padding: 22px 20px calc(26px + env(safe-area-inset-bottom));
+      box-shadow: 0 -12px 44px rgba(0,0,0,0.6);
     }
-    .sheet h3 { margin: 0 0 6px; font-size: 19px; }
+    .sheet h3 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
     .sheet p.sub { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
-    .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+    .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 16px 0 6px; }
     .sheet input, .sheet textarea {
       width: 100%; padding: 14px; font-size: 17px;
-      border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px; border: 1px solid var(--surface-2);
       background: var(--bg); color: var(--text);
       font-family: inherit; font-variant-numeric: tabular-nums;
     }
     .sheet textarea { resize: none; font-variant-numeric: normal; }
     .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
-    .toggle-row span { font-size: 15px; }
-    .switch { position: relative; width: 52px; height: 30px; flex: none; }
+    .toggle-row span { font-size: 16px; }
+    .switch { position: relative; width: 52px; height: 31px; flex: none; }
     .switch input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; inset: 0; background: rgba(255,255,255,0.15); border-radius: 999px; transition: 0.2s; }
-    .slider:before { content: ""; position: absolute; height: 24px; width: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+    .slider { position: absolute; inset: 0; background: var(--surface-2); border-radius: 999px; transition: 0.2s; }
+    .slider:before { content: ""; position: absolute; height: 27px; width: 27px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: 0.2s; }
     .switch input:checked + .slider { background: var(--accent); }
-    .switch input:checked + .slider:before { transform: translateX(22px); }
+    .switch input:checked + .slider:before { transform: translateX(21px); }
     .sheet-btn {
       display: block; width: 100%; padding: 16px; margin-top: 12px;
       border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer;
-      background: var(--accent-press); color: var(--text);
+      background: var(--surface-2); color: var(--text);
     }
-    .sheet-btn.primary { background: var(--accent); color: #06231f; }
-    .sheet-btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .sheet-btn.primary { background: var(--accent); color: #000; }
     .sheet-btn.ghost { background: transparent; color: var(--muted); }
+    .sheet-btn.link { background: transparent; color: var(--accent); margin-top: 6px; }
+    .sheet-divider { height: 1px; background: var(--hair); margin: 18px 0 2px; border: none; }
   </style>
 </head>
 <body>
@@ -232,12 +231,12 @@
     <div><span class="value" id="total">0.00</span></div>
     <div class="meta" id="meta">No taps yet</div>
     <div class="goal" id="goal" style="display:none">
-      <div class="goal-bar">
-        <div class="goal-fill" id="goalFill"></div>
-        <div class="goal-text" id="goalText"></div>
-      </div>
+      <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+      <div class="goal-label" id="goalText"></div>
     </div>
   </div>
+
+  <div class="quote" id="quote"></div>
 
   <button class="add-btn" id="addBtn">
     + 0.50
@@ -245,19 +244,19 @@
   </button>
 
   <div class="row">
-    <button id="undoBtn" disabled>↶ Undo</button>
-    <button class="end" id="endBtn">✓ End Day</button>
+    <button id="undoBtn" disabled>Undo</button>
+    <button class="end" id="endBtn">End Day</button>
   </div>
 
   <div class="chart-card" id="chartCard" style="display:none">
-    <h2 id="chartTitle">Last days</h2>
+    <div class="section-title" id="chartTitle">Last days</div>
     <div class="chart-stats" id="chartStats"></div>
     <div class="chart" id="chart"></div>
-    <div class="chart-axis"><span id="chartFrom"></span><span>today</span></div>
+    <div class="chart-axis"><span id="chartFrom"></span><span>Today</span></div>
   </div>
 
   <div class="history" id="history">
-    <h2>History</h2>
+    <div class="section-title">History</div>
     <div class="hist-empty" id="histEmpty">No previous days yet.</div>
   </div>
 

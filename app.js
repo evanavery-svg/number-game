@@ -30,6 +30,7 @@ const el = {
   chartFrom: document.getElementById("chartFrom"),
   history: document.getElementById("history"),
   histEmpty: document.getElementById("histEmpty"),
+  quote: document.getElementById("quote"),
   toast: document.getElementById("toast"),
   overlay: document.getElementById("overlay"),
   sheet: document.getElementById("sheet"),
@@ -51,11 +52,47 @@ let lastEnded = load(KEY_LASTENDED, null);
 let haptic = load(KEY_HAPTIC, true);
 let sound = load(KEY_SOUND, false);
 
+// ---- daily encouragement ----
+const QUOTES = [
+  "Small steps, every day.",
+  "Show up. That's the whole secret.",
+  "Progress, not perfection.",
+  "Consistency beats intensity.",
+  "One more is enough.",
+  "You're building something.",
+  "A little today is a lot over time.",
+  "Begin again, as many times as it takes.",
+  "Quietly keep going.",
+  "Done is better than perfect.",
+  "The streak is built one day at a time.",
+  "Today counts.",
+  "Slow is smooth. Smooth is fast.",
+  "Discipline is a kind of self-respect.",
+  "Trust the process you can't yet see.",
+  "Make it easy to start.",
+  "Tiny gains compound.",
+  "Be patient with the work.",
+  "Showing up is already winning.",
+  "Keep the promise you made yourself.",
+  "Momentum loves a single step.",
+  "You don't have to be fast, just faithful.",
+  "Better today than yesterday.",
+  "Earn it once more.",
+];
+function quoteOfTheDay() {
+  const d = new Date();
+  const seed = d.getFullYear() * 366 + monthDayIndex(d);
+  return QUOTES[((seed % QUOTES.length) + QUOTES.length) % QUOTES.length];
+}
+function monthDayIndex(d) {
+  const start = new Date(d.getFullYear(), 0, 0);
+  return Math.floor((d - start) / 86400000); // day of year, local
+}
+
 // ---- helpers ----
 function round2(n) { return Math.round(n * 100) / 100; }
 function fmt(n) { return Number(n).toFixed(2); }
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
-function shortLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 
 // Feature 1: consecutive days (ending now) that met the goal.
 function goalStreak() {
@@ -105,7 +142,8 @@ function toast(msg) {
 
 // ---- render ----
 function render() {
-  el.date.textContent = shortLabel(new Date());
+  el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  el.quote.textContent = quoteOfTheDay();
 
   const reached = goal > 0 && today >= goal;
   el.total.textContent = fmt(today);
@@ -345,6 +383,12 @@ function openSettings() {
     if (lastEnded) {
       s.appendChild(makeBtn(`↶ Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
     }
+
+    const divider = document.createElement("hr");
+    divider.className = "sheet-divider";
+    s.appendChild(divider);
+    s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
+
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
 }
@@ -386,6 +430,25 @@ function numInput(value, min) {
   i.type = "number"; i.step = "0.01"; if (min != null) i.min = min;
   i.value = value;
   return i;
+}
+
+// ---- backup export (notes quoted so commas are safe) ----
+function csvField(v) {
+  v = String(v == null ? "" : v);
+  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+function exportCsv() {
+  const rows = [["date", "ended_at", "total", "taps", "note"]];
+  history.forEach((d) => rows.push([d.date, d.endedAt, fmt(d.total), d.taps, d.note || ""]));
+  if (taps > 0 || today > 0) rows.push(["(today, in progress)", "", fmt(today), taps, ""]);
+  const csv = rows.map((r) => r.map(csvField).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `backup-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("Backup downloaded");
 }
 
 // ---- wire up ----
