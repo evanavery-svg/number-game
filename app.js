@@ -11,13 +11,15 @@ const KEY_HAPTIC = "count.haptic";     // bool
 const KEY_SOUND = "count.sound";       // bool
 
 const CHART_DAYS = 14;
+const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
 
 const el = {
   date: document.getElementById("dateLabel"),
   total: document.getElementById("total"),
+  totalWrap: document.getElementById("totalWrap"),
+  ringWrap: document.getElementById("ringWrap"),
+  ringProg: document.getElementById("ringProg"),
   meta: document.getElementById("meta"),
-  goal: document.getElementById("goal"),
-  goalFill: document.getElementById("goalFill"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
   undo: document.getElementById("undoBtn"),
@@ -91,7 +93,7 @@ function monthDayIndex(d) {
 
 // ---- helpers ----
 function round2(n) { return Math.round(n * 100) / 100; }
-function fmt(n) { return Number(n).toFixed(2); }
+function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros: 12.5, 13, 0.25
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
 
 // Feature 1: consecutive days (ending now) that met the goal.
@@ -156,16 +158,20 @@ function render() {
   parts.push(taps === 0 ? "No taps yet" : `${taps} tap${taps === 1 ? "" : "s"}`);
   el.meta.textContent = parts.join("  ·  ");
 
-  // goal bar with inline label
+  // goal progress ring + caption
   if (goal > 0) {
-    el.goal.style.display = "block";
-    const pct = Math.min(100, (today / goal) * 100);
-    el.goalFill.style.width = pct + "%";
-    el.goalFill.classList.toggle("reached", reached);
+    el.totalWrap.classList.add("has-goal");
+    const frac = Math.min(1, today / goal);
+    el.ringProg.style.strokeDasharray = RING_C;
+    el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
     el.goalText.classList.toggle("reached", reached);
-    el.goalText.textContent = reached ? `Goal ${fmt(goal)} reached ✓` : `${Math.round(pct)}% of ${fmt(goal)}`;
+    el.goalText.textContent = reached
+      ? `Goal ${fmt(goal)} reached ✓`
+      : `${Math.round(frac * 100)}% of ${fmt(goal)}`;
   } else {
-    el.goal.style.display = "none";
+    el.totalWrap.classList.remove("has-goal");
+    el.goalText.textContent = "";
+    el.goalText.classList.remove("reached");
   }
 
   el.add.firstChild.textContent = `+ ${fmt(step)}`;
@@ -241,12 +247,21 @@ function renderHistory() {
 
 // ---- core actions ----
 function addTap() {
+  const wasReached = goal > 0 && today >= goal;
   today = round2(today + step);
   taps += 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
   buzz(15); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
+  if (goal > 0 && !wasReached && today >= goal) celebrate();
   render();
+}
+
+// Feature 1: a small moment the instant you cross your goal.
+function celebrate() {
+  buzz([0, 50, 60, 50]);
+  el.ringWrap.classList.remove("celebrate"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("celebrate");
+  toast("Goal reached 🔥");
 }
 function undo() {
   if (taps === 0) return;

@@ -63,48 +63,40 @@
       color: var(--muted); font-size: 22px;
       cursor: pointer; padding: 8px; margin-right: -8px;
     }
-    .total { text-align: center; padding: 14px 0 2px; }
+    .total { text-align: center; padding: 8px 0 2px; }
+    .ring-wrap {
+      position: relative;
+      width: 270px; max-width: 74vw;
+      margin: 4px auto 0;
+      aspect-ratio: 1 / 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-track { fill: none; stroke: var(--surface-2); stroke-width: 6; }
+    .ring-prog { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset .45s ease; }
+    .ring-center { display: flex; align-items: center; justify-content: center; }
     .total .value {
-      display: inline-block;
-      font-size: 92px;
+      font-size: 68px;
       font-weight: 300;
       line-height: 1;
-      letter-spacing: -3px;
+      letter-spacing: -2px;
       font-variant-numeric: tabular-nums;
     }
     .total .value.reached { color: var(--accent); }
     .total .value.bump { animation: bump .18s ease; }
     @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 100% { transform: scale(1); } }
-    .total .meta {
-      margin-top: 10px;
-      font-size: 14px;
-      color: var(--muted);
-      min-height: 18px;
+    .ring-wrap.celebrate { animation: celebrate .65s ease; }
+    @keyframes celebrate {
+      0% { transform: scale(1); } 25% { transform: scale(1.05); }
+      50% { transform: scale(0.99); } 75% { transform: scale(1.03); } 100% { transform: scale(1); }
     }
-    .goal { margin: 16px 0 0; }
-    .goal-bar {
-      position: relative;
-      height: 6px;
-      border-radius: 999px;
-      background: var(--surface-2);
-      overflow: hidden;
-    }
-    .goal-fill {
-      position: absolute; left: 0; top: 0;
-      height: 100%; width: 0%;
-      background: var(--accent);
-      border-radius: 999px;
-      transition: width 0.3s ease;
-    }
-    .goal-label {
-      margin-top: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-      text-align: center;
-      letter-spacing: 0.2px;
-    }
+    .total .meta { margin-top: 14px; font-size: 14px; color: var(--muted); min-height: 18px; }
+    .goal-label { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; letter-spacing: 0.2px; min-height: 14px; }
     .goal-label.reached { color: var(--accent); }
+    /* no goal set: collapse the ring, show a big plain number */
+    .total:not(.has-goal) .ring-wrap { width: auto; max-width: none; aspect-ratio: auto; margin-top: 12px; }
+    .total:not(.has-goal) .ring { display: none; }
+    .total:not(.has-goal) .value { font-size: 92px; letter-spacing: -3px; }
     .quote {
       text-align: center;
       color: var(--muted);
@@ -227,13 +219,16 @@
     <button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
   </header>
 
-  <div class="total">
-    <div><span class="value" id="total">0.00</span></div>
-    <div class="meta" id="meta">No taps yet</div>
-    <div class="goal" id="goal" style="display:none">
-      <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
-      <div class="goal-label" id="goalText"></div>
+  <div class="total" id="totalWrap">
+    <div class="ring-wrap" id="ringWrap">
+      <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="ring-track" cx="60" cy="60" r="54"></circle>
+        <circle class="ring-prog" id="ringProg" cx="60" cy="60" r="54"></circle>
+      </svg>
+      <div class="ring-center"><span class="value" id="total">0</span></div>
     </div>
+    <div class="meta" id="meta">No taps yet</div>
+    <div class="goal-label" id="goalText"></div>
   </div>
 
   <div class="quote" id="quote"></div>
