@@ -1,10 +1,10 @@
-// ---- Grams Tracker ----
+// ---- Tap Counter ----
 // Data lives entirely on this device (localStorage). No accounts, no servers.
 
-const STEP = 0.50;            // grams added per tap
-const KEY_TODAY = "grams.today";   // number: current running total
-const KEY_TAPS = "grams.taps";     // number: tap count today (for Undo + meta)
-const KEY_HISTORY = "grams.history"; // array of finished days
+const STEP = 0.50;            // amount added per tap
+const KEY_TODAY = "count.today";   // number: current running total
+const KEY_TAPS = "count.taps";     // number: tap count today (for Undo + meta)
+const KEY_HISTORY = "count.history"; // array of finished days
 
 const el = {
   total: document.getElementById("total"),
@@ -44,7 +44,7 @@ function render() {
   el.total.textContent = fmt(today);
   el.meta.textContent = taps === 0
     ? "No taps yet"
-    : `${taps} tap${taps === 1 ? "" : "s"} · +${fmt(STEP)} g each`;
+    : `${taps} tap${taps === 1 ? "" : "s"} · +${fmt(STEP)} each`;
   el.undo.disabled = taps === 0;
 
   // history list
@@ -62,7 +62,7 @@ function render() {
       d.textContent = day.label;
       const a = document.createElement("span");
       a.className = "amt";
-      a.textContent = fmt(day.total) + " g";
+      a.textContent = fmt(day.total);
       row.appendChild(d);
       row.appendChild(a);
       el.history.appendChild(row);
@@ -107,7 +107,7 @@ function endDay() {
     toast("Nothing to log yet");
     return;
   }
-  const ok = confirm(`Log ${fmt(today)} g and start a new day?`);
+  const ok = confirm(`Log ${fmt(today)} and start a new day?`);
   if (!ok) return;
 
   const now = new Date();
@@ -130,7 +130,7 @@ function endDay() {
 }
 
 function exportCsv() {
-  const rows = [["date", "ended_at", "total_grams", "taps"]];
+  const rows = [["date", "ended_at", "total", "taps"]];
   history.forEach((d) => rows.push([d.date, d.endedAt, fmt(d.total), d.taps]));
   // include the in-progress day too, marked
   if (taps > 0 || today > 0) {
@@ -141,7 +141,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `grams-backup-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `backup-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();

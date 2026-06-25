@@ -1,6 +1,6 @@
 // Service worker: caches the app so it opens instantly and works offline.
 // Bump CACHE when you change any file, so phones pick up the new version.
-const CACHE = "grams-v1";
+const CACHE = "app-v2";
 const ASSETS = [
   ".",
   "index.html",
