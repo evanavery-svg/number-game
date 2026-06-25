@@ -162,11 +162,11 @@ function renderTop() {
   const streak = goalStreak();
   el.meta.textContent = streak > 0 ? `🔥 ${streak}-day streak` : "";
 
-  // goal progress ring + caption
+  // goal progress ring + caption (the ring is always visible; orange fills only with a goal)
+  el.ringProg.style.strokeDasharray = RING_C;
   if (goal > 0) {
     el.totalWrap.classList.add("has-goal");
     const frac = Math.min(1, today / goal);
-    el.ringProg.style.strokeDasharray = RING_C;
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
     el.goalText.classList.toggle("reached", reached);
     el.goalText.textContent = reached
@@ -174,6 +174,7 @@ function renderTop() {
       : `${Math.round(frac * 100)}% of ${fmt(goal)}`;
   } else {
     el.totalWrap.classList.remove("has-goal");
+    el.ringProg.style.strokeDashoffset = RING_C;   // no orange, just the grey frame
     el.goalText.textContent = "";
     el.goalText.classList.remove("reached");
   }
