@@ -30,9 +30,6 @@ const el = {
   chartFrom: document.getElementById("chartFrom"),
   history: document.getElementById("history"),
   histEmpty: document.getElementById("histEmpty"),
-  export: document.getElementById("exportBtn"),
-  import: document.getElementById("importBtn"),
-  importFile: document.getElementById("importFile"),
   toast: document.getElementById("toast"),
   overlay: document.getElementById("overlay"),
   sheet: document.getElementById("sheet"),
@@ -391,82 +388,11 @@ function numInput(value, min) {
   return i;
 }
 
-// ---- CSV (with quoting so notes can contain commas) ----
-function csvField(v) {
-  v = String(v == null ? "" : v);
-  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
-}
-function parseCsvLine(line) {
-  const out = []; let cur = ""; let q = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (q) {
-      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
-      else if (c === '"') { q = false; }
-      else cur += c;
-    } else {
-      if (c === '"') q = true;
-      else if (c === ",") { out.push(cur); cur = ""; }
-      else cur += c;
-    }
-  }
-  out.push(cur);
-  return out;
-}
-function exportCsv() {
-  const rows = [["date", "ended_at", "total", "taps", "note"]];
-  history.forEach((d) => rows.push([d.date, d.endedAt, fmt(d.total), d.taps, d.note || ""]));
-  if (taps > 0 || today > 0) rows.push(["(today, in progress)", "", fmt(today), taps, ""]);
-  const csv = rows.map((r) => r.map(csvField).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `backup-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-  toast("Backup downloaded");
-}
-function importCsv(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const lines = String(reader.result).split(/\r?\n/).filter((l) => l.trim() !== "");
-      if (lines.length < 2) { toast("CSV looks empty"); return; }
-      const parsed = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCsvLine(lines[i]);
-        const date = cols[0];
-        if (!date || date.startsWith("(today")) continue;
-        const endedAt = cols[1] || (date + "T00:00:00.000Z");
-        const total = round2(parseFloat(cols[2]));
-        if (isNaN(total)) continue;
-        parsed.push({
-          date, label: dayLabel(new Date(endedAt)),
-          total, taps: parseInt(cols[3], 10) || 0,
-          endedAt, note: cols[4] || "",
-        });
-      }
-      if (parsed.length === 0) { toast("No valid rows found"); return; }
-      confirmSheet("Import backup?", `Replace current history (${history.length} days) with ${parsed.length} from the file.`, "Replace", () => {
-        history = parsed; save(KEY_HISTORY, history); render();
-        toast(`Imported ${parsed.length} days`);
-      });
-    } catch (e) { toast("Could not read that file"); }
-  };
-  reader.readAsText(file);
-}
-
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
 el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
-el.export.addEventListener("click", exportCsv);
-el.import.addEventListener("click", () => el.importFile.click());
-el.importFile.addEventListener("change", (e) => {
-  if (e.target.files && e.target.files[0]) importCsv(e.target.files[0]);
-  e.target.value = "";
-});
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 
 render();

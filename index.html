@@ -173,17 +173,6 @@
     .hist-top .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
     .hist-note { font-size: 13px; color: var(--faint); margin-top: 4px; line-height: 1.3; }
     .hist-empty { padding: 18px; color: var(--muted); font-size: 14px; text-align: center; }
-    .footer { display: flex; gap: 12px; padding-bottom: 10px; }
-    .footer button {
-      flex: 1;
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      padding: 10px;
-      border: none; border-radius: 12px;
-      background: transparent; color: var(--muted);
-      font-size: 12px; cursor: pointer;
-    }
-    .footer button:active { color: var(--text); }
-    .footer .ic { font-size: 18px; line-height: 1; }
     .toast {
       position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom));
       transform: translateX(-50%) translateY(20px);
@@ -270,12 +259,6 @@
   <div class="history" id="history">
     <h2>History</h2>
     <div class="hist-empty" id="histEmpty">No previous days yet.</div>
-  </div>
-
-  <div class="footer">
-    <button id="exportBtn"><span class="ic">⬆</span>Export</button>
-    <button id="importBtn"><span class="ic">⬇</span>Import</button>
-    <input type="file" id="importFile" accept=".csv,text/csv" style="display:none" />
   </div>
 
   <div class="toast" id="toast"></div>
