@@ -19,6 +19,7 @@
       --text: #eaf6f5;
       --muted: #8fb3b1;
       --danger: #c0635a;
+      --gold: #e8c34a;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
@@ -37,7 +38,10 @@
       margin: 0 auto;
     }
     header {
-      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
       padding: 18px 0 6px;
     }
     header h1 {
@@ -48,9 +52,20 @@
       text-transform: uppercase;
       color: var(--muted);
     }
+    .gear {
+      position: absolute;
+      right: 0;
+      top: 12px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
     .total {
       text-align: center;
-      padding: 10px 0 4px;
+      padding: 8px 0 4px;
     }
     .total .value {
       font-size: 72px;
@@ -58,15 +73,45 @@
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
+    .total .value.reached { color: var(--gold); }
     .total .meta {
       margin-top: 8px;
       font-size: 13px;
       color: var(--muted);
     }
+    .total .stats {
+      margin-top: 2px;
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 16px;
+    }
+    .goal {
+      margin: 10px 0 2px;
+    }
+    .goal-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.10);
+      overflow: hidden;
+    }
+    .goal-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      border-radius: 999px;
+      transition: width 0.25s ease;
+    }
+    .goal-fill.reached { background: var(--gold); }
+    .goal-label {
+      margin-top: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
     .add-btn {
       flex: 1;
-      min-height: 200px;
-      margin: 18px 0;
+      min-height: 170px;
+      margin: 14px 0;
       border: none;
       border-radius: 28px;
       background: var(--accent);
@@ -110,6 +155,42 @@
     .row button:active { background: #1b4750; }
     .row button:disabled { opacity: 0.35; }
     .row .end { background: var(--accent-press); border-color: transparent; }
+    /* chart */
+    .chart-card {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 12px 14px 8px;
+      margin-bottom: 14px;
+    }
+    .chart-card h2, .history h2 {
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 2px 4px 10px;
+    }
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 90px;
+    }
+    .bar {
+      flex: 1;
+      min-width: 6px;
+      background: var(--accent);
+      border-radius: 4px 4px 0 0;
+      opacity: 0.85;
+      min-height: 2px;
+    }
+    .bar.today { background: var(--gold); }
+    .chart-axis {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
     .history {
       background: var(--card);
       border-radius: 18px;
@@ -118,20 +199,16 @@
       max-height: 38vh;
       overflow-y: auto;
     }
-    .history h2 {
-      font-size: 12px;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 12px 18px 6px;
-    }
     .hist-row {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       padding: 12px 18px;
       border-top: 1px solid rgba(255,255,255,0.06);
       font-size: 15px;
+      cursor: pointer;
     }
+    .hist-row:active { background: #1b4750; }
     .hist-row .date { color: var(--muted); }
     .hist-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
     .hist-empty { padding: 18px; color: var(--muted); font-size: 14px; text-align: center; }
@@ -165,17 +242,81 @@
       pointer-events: none;
       transition: opacity 0.2s, transform 0.2s;
       box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-      z-index: 10;
+      z-index: 30;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    /* bottom sheet / modal */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 20;
+    }
+    .overlay.show { display: flex; }
+    .sheet {
+      width: 100%;
+      max-width: 520px;
+      background: var(--card);
+      border-radius: 20px 20px 0 0;
+      padding: 20px 18px calc(24px + env(safe-area-inset-bottom));
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+    }
+    .sheet h3 {
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+    .sheet label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin: 14px 0 6px;
+    }
+    .sheet input {
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--bg);
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .sheet .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .sheet-btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--accent-press);
+      color: var(--text);
+    }
+    .sheet-btn.primary { background: var(--accent); color: #06231f; }
+    .sheet-btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .sheet-btn.ghost { background: transparent; color: var(--muted); }
   </style>
 </head>
 <body>
-  <header><h1>Today</h1></header>
+  <header>
+    <h1>Today</h1>
+    <button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
+  </header>
 
   <div class="total">
     <div><span class="value" id="total">0.00</span></div>
     <div class="meta" id="meta">No taps yet</div>
+    <div class="stats" id="stats"></div>
+    <div class="goal" id="goal" style="display:none">
+      <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+      <div class="goal-label" id="goalLabel"></div>
+    </div>
   </div>
 
   <button class="add-btn" id="addBtn">
@@ -188,16 +329,28 @@
     <button class="end" id="endBtn">✓ End Day</button>
   </div>
 
+  <div class="chart-card" id="chartCard" style="display:none">
+    <h2 id="chartTitle">Last days</h2>
+    <div class="chart" id="chart"></div>
+    <div class="chart-axis"><span id="chartFrom"></span><span id="chartTo">today</span></div>
+  </div>
+
   <div class="history" id="history">
     <h2>History</h2>
     <div class="hist-empty" id="histEmpty">No previous days yet.</div>
   </div>
 
   <div class="footer">
-    <button id="exportBtn">Export backup (CSV)</button>
+    <button id="exportBtn">Export CSV</button>
+    <button id="importBtn">Import CSV</button>
+    <input type="file" id="importFile" accept=".csv,text/csv" style="display:none" />
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <div class="overlay" id="overlay">
+    <div class="sheet" id="sheet"></div>
+  </div>
 
   <script src="app.js"></script>
 </body>
