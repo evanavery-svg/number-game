@@ -216,6 +216,13 @@
     .sheet-divider { height: 1px; background: var(--hair); margin: 18px 0 2px; border: none; }
     .gear { transition: opacity 0.15s ease; }
     .gear:active { opacity: 0.5; }
+    .version {
+      text-align: center;
+      font-size: 11px;
+      color: var(--faint);
+      padding: 8px 0 4px;
+      letter-spacing: 0.3px;
+    }
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.celebrate { animation: none; }
@@ -273,6 +280,8 @@
   <div class="overlay" id="overlay">
     <div class="sheet" id="sheet"></div>
   </div>
+
+  <div class="version">v1.0</div>
 
   <script src="app.js"></script>
 </body>
