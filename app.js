@@ -481,4 +481,12 @@ render();
 // ---- PWA ----
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  // When a new version takes over, reload once so the latest UI shows up
+  // (keeps the installed Home Screen app from getting stuck on an old build).
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
 }

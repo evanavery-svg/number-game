@@ -1,6 +1,6 @@
 // Service worker: caches the app so it opens instantly and works offline.
 // Bump CACHE when you change any file, so phones pick up the new version.
-const CACHE = "app-v11";
+const CACHE = "app-v12";
 const ASSETS = [
   ".",
   "index.html",
@@ -29,12 +29,33 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
+
+  // Page loads (and app.js) go network-first so a new version shows up
+  // immediately when online, instead of being stuck on a cached copy.
+  // This is what kept the installed Home Screen app from updating.
+  const req = event.request;
+  const isPage = req.mode === "navigate" || /\.(html|js)$/.test(new URL(req.url).pathname);
+
+  if (isPage) {
+    event.respondWith(
+      fetch(req)
         .then((resp) => {
           const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(event.request, copy)).catch(() => {});
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          return resp;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Everything else (icons, manifest): cache-first for speed, refresh in background.
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      const network = fetch(req)
+        .then((resp) => {
+          const copy = resp.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
           return resp;
         })
         .catch(() => cached);
