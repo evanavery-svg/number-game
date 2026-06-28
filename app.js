@@ -29,7 +29,9 @@ const el = {
   chartTitle: document.getElementById("chartTitle"),
   chartStats: document.getElementById("chartStats"),
   chart: document.getElementById("chart"),
-  chartFrom: document.getElementById("chartFrom"),
+  chartLegend: document.getElementById("chartLegend"),
+  chartLabels: document.getElementById("chartLabels"),
+  addSub: document.querySelector("#addBtn small"),
   history: document.getElementById("history"),
   histEmpty: document.getElementById("histEmpty"),
   quote: document.getElementById("quote"),
@@ -95,6 +97,26 @@ function monthDayIndex(d) {
 function round2(n) { return Math.round(n * 100) / 100; }
 function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros: 12.5, 13, 0.25
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+function reduceMotion() { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+
+// Feature 4: roll the big number up/down to its new value instead of snapping.
+let countRAF = null;
+function setValue(target, animate) {
+  if (countRAF) { cancelAnimationFrame(countRAF); countRAF = null; }
+  const start = parseFloat(el.total.textContent);
+  if (!animate || reduceMotion() || !isFinite(start) || start === target) {
+    el.total.textContent = fmt(target); return;
+  }
+  const t0 = performance.now(), dur = 280;
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const v = start + (target - start) * (1 - Math.pow(1 - p, 3));   // ease-out cubic
+    el.total.textContent = fmt(v);
+    if (p < 1) { countRAF = requestAnimationFrame(tick); }
+    else { el.total.textContent = fmt(target); countRAF = null; }
+  };
+  countRAF = requestAnimationFrame(tick);
+}
 
 // Goal is a ceiling: streak = consecutive recent days that stayed at or under it.
 function underStreak() {
@@ -162,18 +184,24 @@ function render() {
 
 // Cheap render for the today area only — used on every tap so rapid
 // tapping never rebuilds the history list.
-function renderTop() {
+function renderTop(animate) {
   const zone = zoneOf();
-  el.total.textContent = fmt(today);
+  setValue(today, animate);
 
   // colour the today area by how close we are to the goal
   el.totalWrap.classList.remove("zone-safe", "zone-warn", "zone-over");
   if (zone !== "none") el.totalWrap.classList.add("zone-" + zone);
 
+  // streak line — tinted green while alive (Feature 2); a warm hello on a blank first run (Feature 7)
   const streak = underStreak();
-  el.meta.textContent = streak > 0
-    ? `✓ ${streak} ${streak === 1 ? "day" : "days"} under goal`
-    : "";
+  const firstRun = history.length === 0 && taps === 0 && today === 0;
+  if (streak > 0) {
+    el.meta.textContent = `✓ ${streak} ${streak === 1 ? "day" : "days"} under goal`;
+    el.meta.classList.add("streak");
+  } else {
+    el.meta.classList.remove("streak");
+    el.meta.textContent = firstRun ? "Welcome 👋 tap the button to begin" : "";
+  }
 
   // goal ring + caption (ring is always visible; it fills only with a goal set)
   el.ringProg.style.strokeDasharray = RING_C;
@@ -181,6 +209,7 @@ function renderTop() {
     el.totalWrap.classList.add("has-goal");
     const frac = Math.min(1, today / goal);
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
+    el.goalText.classList.remove("hint");
     if (zone === "over") {
       el.goalText.textContent = `Over goal by ${fmt(today - goal)}`;
     } else if (today === goal) {
@@ -191,16 +220,26 @@ function renderTop() {
   } else {
     el.totalWrap.classList.remove("has-goal");
     el.ringProg.style.strokeDashoffset = RING_C;   // just the grey frame
-    el.goalText.textContent = "Set a daily goal to fill the ring";
+    el.goalText.classList.add("hint");
+    el.goalText.textContent = "Tap to set a daily goal →";
   }
 
+  // button label + live headroom under it (Feature 3)
   el.add.firstChild.textContent = `+ ${fmt(step)}`;
+  if (goal > 0) {
+    if (today > goal) el.addSub.textContent = `${fmt(today - goal)} over`;
+    else if (today === goal) el.addSub.textContent = "at your goal";
+    else el.addSub.textContent = `${fmt(goal - today)} left today`;
+  } else {
+    el.addSub.textContent = "tap to add";
+  }
+
   el.undo.disabled = taps === 0;
 }
 
 function renderChart() {
-  const series = history.slice(-CHART_DAYS).map((d) => ({ value: d.total, today: false, label: d.label }));
-  series.push({ value: today, today: true, label: "today" });
+  const series = history.slice(-CHART_DAYS).map((d) => ({ value: d.total, today: false, label: d.label, date: d.endedAt || d.date }));
+  series.push({ value: today, today: true, label: "today", date: new Date().toISOString() });
 
   if (history.length === 0 && today === 0) { el.chartCard.style.display = "none"; return; }
   el.chartCard.style.display = "block";
@@ -236,18 +275,27 @@ function renderChart() {
     bar.title = `${s.label}: ${fmt(s.value)}`;
     el.chart.appendChild(bar);
   });
-  // dashed goal line across the chart (Feature 7)
+  // dashed goal line across the chart
   if (goal > 0) {
     const line = document.createElement("div");
     line.className = "cap-line";
     line.style.bottom = (goal / max) * 100 + "%";
-    const tag = document.createElement("span");
-    tag.className = "cap-tag";
-    tag.textContent = `goal ${fmt(goal)}`;
-    line.appendChild(tag);
     el.chart.appendChild(line);
   }
-  el.chartFrom.textContent = series.length > 1 ? series[0].label : "";
+
+  // weekday initials under each bar, today highlighted (Feature 5)
+  const WK = ["S", "M", "T", "W", "T", "F", "S"];
+  el.chartLabels.textContent = "";
+  series.forEach((s) => {
+    const lab = document.createElement("span");
+    const dt = new Date(s.date);
+    lab.textContent = isNaN(dt.getTime()) ? "" : WK[dt.getDay()];
+    if (s.today) lab.className = "today";
+    el.chartLabels.appendChild(lab);
+  });
+
+  // goal legend in the card header — replaces the inline tag so nothing overlaps the bars (Feature 6)
+  el.chartLegend.innerHTML = goal > 0 ? `<i></i>goal ${fmt(goal)}` : "";
 }
 
 function renderHistory() {
@@ -290,7 +338,7 @@ function addTap() {
   buzz(15); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
   if (goal > 0 && !wasOver && today > goal) warnOver();
-  renderTop(); renderChart();   // history list doesn't change on a tap
+  renderTop(true); renderChart();   // history list doesn't change on a tap
 }
 
 // A quiet nudge the moment you cross the goal — no celebration, just awareness.
@@ -305,7 +353,7 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
-  renderTop(); renderChart();
+  renderTop(true); renderChart();
 }
 
 // New: End Day opens a sheet with an optional note.

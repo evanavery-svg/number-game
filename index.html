@@ -147,8 +147,10 @@
       40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); }
     }
 
-    .total .meta { margin-top: 16px; font-size: 14px; font-weight: 500; color: var(--muted); min-height: 18px; }
+    .total .meta { margin-top: 16px; font-size: 14px; font-weight: 500; color: var(--muted); min-height: 18px; transition: color 0.35s ease; }
+    .total .meta.streak { color: var(--safe); }
     .goal-label { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; letter-spacing: 0.2px; min-height: 14px; transition: color 0.35s ease; }
+    .goal-label.hint { color: var(--accent); }
 
     .quote {
       text-align: center;
@@ -208,6 +210,10 @@
       font-size: 12px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
       color: var(--muted); margin: 0 2px 10px;
     }
+    .chart-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
+    .chart-head .section-title { margin: 0; }
+    .chart-legend:not(:empty) { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--over); }
+    .chart-legend i { display: inline-block; width: 14px; height: 0; border-top: 1px dashed var(--over); }
     .chart-stats {
       display: flex; flex-wrap: wrap; gap: 4px 18px;
       font-size: 13px; color: var(--muted);
@@ -220,8 +226,9 @@
     .bar.over { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
     /* dashed line marking the daily goal across the chart */
     .cap-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--over); opacity: 0.5; pointer-events: none; }
-    .cap-tag { position: absolute; right: 0; transform: translateY(-50%); font-size: 10px; font-weight: 700; color: var(--over); opacity: 0.9; background: var(--surface); padding: 0 4px; pointer-events: none; }
-    .chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 8px; }
+    .chart-labels { display: flex; gap: 5px; margin-top: 7px; }
+    .chart-labels span { flex: 1; min-width: 5px; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
+    .chart-labels span.today { color: var(--accent); }
 
     .history { padding: 4px 0; margin-bottom: 16px; max-height: 42vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .history .section-title { margin: 14px 18px 4px; }
@@ -364,10 +371,13 @@
   </div>
 
   <div class="chart-card" id="chartCard" style="display:none">
-    <div class="section-title" id="chartTitle">Last days</div>
+    <div class="chart-head">
+      <div class="section-title" id="chartTitle">Last days</div>
+      <div class="chart-legend" id="chartLegend"></div>
+    </div>
     <div class="chart-stats" id="chartStats"></div>
     <div class="chart" id="chart"></div>
-    <div class="chart-axis"><span id="chartFrom"></span><span>Today</span></div>
+    <div class="chart-labels" id="chartLabels"></div>
   </div>
 
   <div class="history" id="history">
@@ -381,7 +391,7 @@
     <div class="sheet" id="sheet"></div>
   </div>
 
-  <div class="version">v1.6 · © Avery LLC</div>
+  <div class="version">v1.7 · © Avery LLC</div>
 
   <script src="app.js"></script>
 </body>
