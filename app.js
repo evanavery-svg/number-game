@@ -96,15 +96,23 @@ function round2(n) { return Math.round(n * 100) / 100; }
 function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros: 12.5, 13, 0.25
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
 
-// Feature 1: consecutive days (ending now) that met the goal.
-function goalStreak() {
+// Goal is a ceiling: streak = consecutive recent days that stayed at or under it.
+function underStreak() {
   if (goal <= 0) return 0;
   let s = 0;
   for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].total >= goal) s++; else break;
+    if (history[i].total <= goal) s++; else break;
   }
-  if (today >= goal) s++;            // today counts if already reached
+  if (taps > 0 && today <= goal) s++;   // today counts once started and still under
   return s;
+}
+
+// Which colour zone today sits in relative to the goal.
+function zoneOf() {
+  if (goal <= 0) return "none";
+  if (today > goal) return "over";
+  if (today / goal >= 0.8) return "warn";
+  return "safe";
 }
 
 // Feature 3: total logged so far this week (Sunday start) + today in progress.
@@ -155,27 +163,34 @@ function render() {
 // Cheap render for the today area only — used on every tap so rapid
 // tapping never rebuilds the history list.
 function renderTop() {
-  const reached = goal > 0 && today >= goal;
+  const zone = zoneOf();
   el.total.textContent = fmt(today);
-  el.total.classList.toggle("reached", reached);
 
-  const streak = goalStreak();
-  el.meta.textContent = streak > 0 ? `🔥 ${streak}-day streak` : "";
+  // colour the today area by how close we are to the goal
+  el.totalWrap.classList.remove("zone-safe", "zone-warn", "zone-over");
+  if (zone !== "none") el.totalWrap.classList.add("zone-" + zone);
 
-  // goal progress ring + caption (the ring is always visible; orange fills only with a goal)
+  const streak = underStreak();
+  el.meta.textContent = streak > 0
+    ? `✓ ${streak} ${streak === 1 ? "day" : "days"} under goal`
+    : "";
+
+  // goal ring + caption (ring is always visible; it fills only with a goal set)
   el.ringProg.style.strokeDasharray = RING_C;
   if (goal > 0) {
     el.totalWrap.classList.add("has-goal");
     const frac = Math.min(1, today / goal);
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
-    el.goalText.classList.toggle("reached", reached);
-    el.goalText.textContent = reached
-      ? `Goal ${fmt(goal)} reached ✓`
-      : `${Math.round(frac * 100)}% of ${fmt(goal)}`;
+    if (zone === "over") {
+      el.goalText.textContent = `Over goal by ${fmt(today - goal)}`;
+    } else if (today === goal) {
+      el.goalText.textContent = `At your goal of ${fmt(goal)}`;
+    } else {
+      el.goalText.textContent = `${Math.round((today / goal) * 100)}% of ${fmt(goal)} goal`;
+    }
   } else {
     el.totalWrap.classList.remove("has-goal");
-    el.ringProg.style.strokeDashoffset = RING_C;   // no orange, just the grey frame
-    el.goalText.classList.remove("reached");
+    el.ringProg.style.strokeDashoffset = RING_C;   // just the grey frame
     el.goalText.textContent = "Set a daily goal to fill the ring";
   }
 
@@ -191,28 +206,47 @@ function renderChart() {
   el.chartCard.style.display = "block";
   el.chartTitle.textContent = `Last ${Math.min(CHART_DAYS, history.length) + 1} days`;
 
-  // stats strip (avg of last 7 · best · this week)
+  // stats strip (avg of last 7 · best · success rate / this week)
   if (history.length > 0) {
     const recent = history.slice(-7);
     const avg = recent.reduce((s, d) => s + d.total, 0) / recent.length;
     const best = Math.max(...history.map((d) => d.total));
+    let tail;
+    if (goal > 0) {
+      const under = history.filter((d) => d.total <= goal).length;
+      tail = `<span>under goal <b>${under}/${history.length}</b></span>`;
+    } else {
+      tail = `<span>this week <b>${fmt(weekTotal())}</b></span>`;
+    }
     el.chartStats.innerHTML =
       `avg <b>${fmt(avg)}</b>` +
-      `<span>best <b>${fmt(best)}</b></span>` +
-      `<span>this week <b>${fmt(weekTotal())}</b></span>`;
+      `<span>best <b>${fmt(best)}</b></span>` + tail;
   } else {
     el.chartStats.innerHTML = `this week <b>${fmt(weekTotal())}</b>`;
   }
 
-  const max = Math.max(1, ...series.map((s) => s.value));
+  // scale includes the goal so the cap line always sits on the chart
+  const max = Math.max(1, goal || 0, ...series.map((s) => s.value));
   el.chart.textContent = "";
   series.forEach((s) => {
+    const over = goal > 0 && s.value > goal;
     const bar = document.createElement("div");
-    bar.className = "bar" + (s.today ? " today" : "");
+    bar.className = "bar" + (s.today ? " today" : "") + (over ? " over" : "");
     bar.style.height = Math.max(2, (s.value / max) * 100) + "%";
     bar.title = `${s.label}: ${fmt(s.value)}`;
     el.chart.appendChild(bar);
   });
+  // dashed goal line across the chart (Feature 7)
+  if (goal > 0) {
+    const line = document.createElement("div");
+    line.className = "cap-line";
+    line.style.bottom = (goal / max) * 100 + "%";
+    const tag = document.createElement("span");
+    tag.className = "cap-tag";
+    tag.textContent = `goal ${fmt(goal)}`;
+    line.appendChild(tag);
+    el.chart.appendChild(line);
+  }
   el.chartFrom.textContent = series.length > 1 ? series[0].label : "";
 }
 
@@ -249,21 +283,21 @@ function renderHistory() {
 
 // ---- core actions ----
 function addTap() {
-  const wasReached = goal > 0 && today >= goal;
+  const wasOver = goal > 0 && today > goal;
   today = round2(today + step);
   taps += 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
   buzz(15); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
-  if (goal > 0 && !wasReached && today >= goal) celebrate();
+  if (goal > 0 && !wasOver && today > goal) warnOver();
   renderTop(); renderChart();   // history list doesn't change on a tap
 }
 
-// Feature 1: a small moment the instant you cross your goal.
-function celebrate() {
-  buzz([0, 50, 60, 50]);
-  el.ringWrap.classList.remove("celebrate"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("celebrate");
-  toast("Goal reached 🔥");
+// A quiet nudge the moment you cross the goal — no celebration, just awareness.
+function warnOver() {
+  buzz(45);
+  el.ringWrap.classList.remove("nudge"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("nudge");
+  toast("Over your goal for today");
 }
 function undo() {
   if (taps === 0) return;
@@ -306,7 +340,8 @@ function commitDay(note) {
   save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
   buzz([10, 40, 10]);
-  toast("Day logged ✓ — undo from ⚙");
+  const underGoal = goal > 0 && entry.total <= goal;
+  toast(underGoal ? "Day logged ✓ — under your goal" : "Day logged ✓ — undo from ⚙");
   render();
 }
 
@@ -477,6 +512,16 @@ el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adj
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 
 render();
+
+// ---- theme ---- follow the phone's light/dark setting for the status-bar tint
+const themeMeta = document.querySelector('meta[name="theme-color"]');
+function syncTheme() {
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (themeMeta) themeMeta.setAttribute("content", dark ? "#000000" : "#f2f2f7");
+}
+syncTheme();
+const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+(darkMq.addEventListener ? darkMq.addEventListener.bind(darkMq, "change") : darkMq.addListener.bind(darkMq))(syncTheme);
 
 // ---- PWA ----
 if ("serviceWorker" in navigator) {

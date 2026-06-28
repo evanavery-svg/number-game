@@ -21,6 +21,26 @@
       --faint: #5a5a5e;
       --accent: #ff9500;
       --accent-dim: #b36800;
+      --safe: #30d158;   /* comfortably under the goal */
+      --warn: #ff9f0a;   /* getting close to the goal */
+      --over: #ff453a;   /* over the goal */
+    }
+    /* Follow the phone's appearance: light mode gets a light skin. */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f2f2f7;
+        --surface: #ffffff;
+        --surface-2: #e5e5ea;
+        --hair: rgba(0,0,0,0.08);
+        --text: #1c1c1e;
+        --muted: #8e8e93;
+        --faint: #aeaeb2;
+        --accent: #ff9500;
+        --accent-dim: #c97400;
+        --safe: #34c759;
+        --warn: #ff9500;
+        --over: #ff3b30;
+      }
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { background: var(--bg); }
@@ -83,17 +103,21 @@
       letter-spacing: -2px;
       font-variant-numeric: tabular-nums;
     }
-    .total .value.reached { color: var(--accent); }
     .total .value.bump { animation: bump .18s ease; }
     @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 100% { transform: scale(1); } }
-    .ring-wrap.celebrate { animation: celebrate .65s ease; }
-    @keyframes celebrate {
-      0% { transform: scale(1); } 25% { transform: scale(1.05); }
-      50% { transform: scale(0.99); } 75% { transform: scale(1.03); } 100% { transform: scale(1); }
+    /* Goal is a ceiling: ring + number shift colour as you near and pass it. */
+    .total.zone-safe .ring-prog { stroke: var(--safe); }
+    .total.zone-warn .ring-prog { stroke: var(--warn); }
+    .total.zone-over .ring-prog { stroke: var(--over); }
+    .total.zone-warn .value, .total.zone-warn .goal-label { color: var(--warn); }
+    .total.zone-over .value, .total.zone-over .goal-label { color: var(--over); }
+    .ring-wrap.nudge { animation: nudge .42s ease; }
+    @keyframes nudge {
+      0%, 100% { transform: translateX(0); } 20% { transform: translateX(-5px); }
+      40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); }
     }
     .total .meta { margin-top: 14px; font-size: 14px; color: var(--muted); min-height: 18px; }
     .goal-label { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; letter-spacing: 0.2px; min-height: 14px; }
-    .goal-label.reached { color: var(--accent); }
     .quote {
       text-align: center;
       color: var(--muted);
@@ -147,9 +171,13 @@
       margin: 0 2px 14px;
     }
     .chart-stats b { color: var(--text); font-weight: 600; }
-    .chart { display: flex; align-items: flex-end; gap: 5px; height: 80px; }
+    .chart { position: relative; display: flex; align-items: flex-end; gap: 5px; height: 80px; }
     .bar { flex: 1; min-width: 5px; background: var(--surface-2); border-radius: 3px; min-height: 3px; }
     .bar.today { background: var(--accent); }
+    .bar.over { background: var(--over); }
+    /* dashed line marking the daily goal across the chart */
+    .cap-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--over); opacity: 0.55; pointer-events: none; }
+    .cap-tag { position: absolute; right: 0; transform: translateY(-50%); font-size: 10px; font-weight: 600; color: var(--over); opacity: 0.85; background: var(--surface); padding: 0 4px; pointer-events: none; }
     .chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 8px; }
     .history { background: var(--surface); border-radius: 20px; padding: 4px 0; margin-bottom: 16px; max-height: 42vh; overflow-y: auto; }
     .history .section-title { margin: 14px 18px 4px; }
@@ -225,7 +253,7 @@
     }
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
-      .total .value.bump, .ring-wrap.celebrate { animation: none; }
+      .total .value.bump, .ring-wrap.nudge { animation: none; }
       .ring-prog, .goal-fill, .sheet, .overlay { transition: none; }
     }
   </style>
@@ -281,7 +309,7 @@
     <div class="sheet" id="sheet"></div>
   </div>
 
-  <div class="version">v1.0.1 · © Avery LLC</div>
+  <div class="version">v1.5 · © Avery LLC</div>
 
   <script src="app.js"></script>
 </body>
