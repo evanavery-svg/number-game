@@ -25,6 +25,10 @@ const el = {
   undo: document.getElementById("undoBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
+  statsBtn: document.getElementById("statsBtn"),
+  insightsOverlay: document.getElementById("insightsOverlay"),
+  insightsClose: document.getElementById("insightsClose"),
+  insightsGrid: document.getElementById("insightsGrid"),
   chartCard: document.getElementById("chartCard"),
   chartTitle: document.getElementById("chartTitle"),
   chartStats: document.getElementById("chartStats"),
@@ -149,6 +153,28 @@ function weekTotal() {
   return sum;
 }
 
+// ---- insights ----
+// Longest run of consecutive logged days that stayed at or under the goal.
+function bestStreak() {
+  if (goal <= 0) return 0;
+  let best = 0, run = 0;
+  history.forEach((d) => { if (d.total <= goal) { run++; if (run > best) best = run; } else run = 0; });
+  return Math.max(best, underStreak());   // current in-progress run can be the best
+}
+// Sum logged in a given calendar month. offset 0 = this month, 1 = last month.
+function monthSum(offset) {
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+  const ty = target.getFullYear(), tm = target.getMonth();
+  let sum = 0;
+  history.forEach((d) => {
+    const dt = new Date(d.endedAt || d.date);
+    if (dt.getFullYear() === ty && dt.getMonth() === tm) sum += d.total;
+  });
+  if (offset === 0) sum += today;   // include the day in progress
+  return sum;
+}
+
 // ---- feedback ----
 function buzz(ms) { if (haptic && navigator.vibrate) navigator.vibrate(ms); }
 let audioCtx;
@@ -174,14 +200,72 @@ function toast(msg) {
 }
 
 // ---- render ----
-// Full render: header + today + the heavier chart/history lists.
+// Full render: header + today + the insights panel (chart/history/stats).
 function render() {
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   el.quote.textContent = quoteOfTheDay();
   renderTop();
+  renderInsights();
   renderChart();
   renderHistory();
 }
+
+// Insights panel: a grid of headline stats above the chart and history.
+function renderInsights() {
+  const g = el.insightsGrid;
+  g.textContent = "";
+  const logged = history.length;
+  const allAvg = logged ? history.reduce((s, d) => s + d.total, 0) / logged : 0;
+
+  if (goal > 0) {
+    const cur = underStreak();
+    g.appendChild(statTile(String(cur), "Current streak", { good: cur > 0 }));
+    g.appendChild(statTile(String(bestStreak()), "Best streak"));
+    const under = history.filter((d) => d.total <= goal).length;
+    g.appendChild(statTile(logged ? Math.round((under / logged) * 100) + "%" : "—", "Days under goal", { good: logged > 0 }));
+    g.appendChild(statTile(fmt(round2(allAvg)), "Daily average"));
+  } else {
+    g.appendChild(statTile(fmt(weekTotal()), "This week"));
+    g.appendChild(statTile(fmt(round2(allAvg)), "Daily average"));
+    g.appendChild(statTile(logged ? fmt(Math.max(...history.map((d) => d.total))) : "—", "Highest day"));
+    g.appendChild(statTile(String(logged), "Days logged"));
+  }
+
+  // this month, with a down-is-good delta against last month
+  const tm = monthSum(0), lm = monthSum(1);
+  let delta = null;
+  if (lm > 0) {
+    const pct = Math.round(((tm - lm) / lm) * 100);
+    if (pct < 0) delta = { cls: "down", text: `▼ ${Math.abs(pct)}% vs last month` };
+    else if (pct > 0) delta = { cls: "up", text: `▲ ${pct}% vs last month` };
+    else delta = { cls: "flat", text: "same as last month" };
+  }
+  g.appendChild(statTile(fmt(round2(tm)), "This month", { delta }));
+  if (goal > 0) g.appendChild(statTile(String(logged), "Days logged"));
+}
+
+function statTile(value, label, opts) {
+  opts = opts || {};
+  const t = document.createElement("div");
+  t.className = "tile";
+  const v = document.createElement("div");
+  v.className = "tile-val" + (opts.good ? " good" : "") + (opts.bad ? " bad" : "");
+  v.textContent = value;
+  const l = document.createElement("div");
+  l.className = "tile-lbl";
+  l.textContent = label;
+  t.appendChild(v); t.appendChild(l);
+  if (opts.delta) {
+    const d = document.createElement("div");
+    d.className = "tile-delta " + opts.delta.cls;
+    d.textContent = opts.delta.text;
+    t.appendChild(d);
+  }
+  return t;
+}
+
+function openInsights() { renderInsights(); el.insightsOverlay.classList.add("show"); }
+function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
 // Cheap render for the today area only — used on every tap so rapid
 // tapping never rebuilds the history list.
@@ -599,6 +683,9 @@ el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
+el.statsBtn.addEventListener("click", openInsights);
+el.insightsClose.addEventListener("click", closeInsights);
+el.insightsOverlay.addEventListener("click", (e) => { if (e.target === el.insightsOverlay) closeInsights(); });
 
 render();
 
