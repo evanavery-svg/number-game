@@ -31,6 +31,7 @@ const el = {
   chart: document.getElementById("chart"),
   chartLegend: document.getElementById("chartLegend"),
   chartLabels: document.getElementById("chartLabels"),
+  addLabel: document.querySelector("#addBtn .add-label"),
   addSub: document.querySelector("#addBtn small"),
   history: document.getElementById("history"),
   histEmpty: document.getElementById("histEmpty"),
@@ -225,7 +226,7 @@ function renderTop(animate) {
   }
 
   // button label + live headroom under it (Feature 3)
-  el.add.firstChild.textContent = `+ ${fmt(step)}`;
+  el.addLabel.textContent = `+ ${fmt(step)}`;
   if (goal > 0) {
     if (today > goal) el.addSub.textContent = `${fmt(today - goal)} over`;
     else if (today === goal) el.addSub.textContent = "at your goal";
@@ -330,15 +331,40 @@ function renderHistory() {
 }
 
 // ---- core actions ----
-function addTap() {
-  const wasOver = goal > 0 && today > goal;
+function addTap(e) {
+  const prev = today;
   today = round2(today + step);
   taps += 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
+  spawnRipple(e);
   buzz(15); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
-  if (goal > 0 && !wasOver && today > goal) warnOver();
+  if (goal > 0) {
+    if (prev < goal && today === goal) atGoalHeadsUp();        // landed exactly on the limit
+    else if (prev <= goal && today > goal) warnOver();          // crossed over it
+  }
   renderTop(true); renderChart();   // history list doesn't change on a tap
+}
+
+// expanding ripple from the tap point on the big button
+function spawnRipple(e) {
+  if (reduceMotion()) return;
+  const rect = el.add.getBoundingClientRect();
+  const r = document.createElement("span");
+  r.className = "ripple";
+  const size = Math.max(rect.width, rect.height) * 1.1;
+  r.style.width = r.style.height = size + "px";
+  r.style.left = (e && e.clientX != null ? e.clientX - rect.left : rect.width / 2) + "px";
+  r.style.top = (e && e.clientY != null ? e.clientY - rect.top : rect.height / 2) + "px";
+  el.add.appendChild(r);
+  r.addEventListener("animationend", () => r.remove());
+}
+
+// Landed exactly on the goal: a soft heads-up that the next tap goes over.
+function atGoalHeadsUp() {
+  buzz([0, 25, 45, 25]);
+  el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
+  toast("That's your goal — next tap goes over");
 }
 
 // A quiet nudge the moment you cross the goal — no celebration, just awareness.
@@ -376,10 +402,12 @@ function openEndDay() {
 }
 function commitDay(note) {
   const now = new Date();
+  const total = today;
+  const underGoal = goal > 0 && total <= goal;
   const entry = {
     date: now.toISOString().slice(0, 10),
     label: dayLabel(now),
-    total: today, taps: taps, endedAt: now.toISOString(),
+    total: total, taps: taps, endedAt: now.toISOString(),
     note: note || "",
   };
   history.push(entry);
@@ -387,10 +415,23 @@ function commitDay(note) {
   today = 0; taps = 0;
   save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
   save(KEY_TODAY, today); save(KEY_TAPS, taps);
-  buzz([10, 40, 10]);
-  const underGoal = goal > 0 && entry.total <= goal;
-  toast(underGoal ? "Day logged ✓ — under your goal" : "Day logged ✓ — undo from ⚙");
-  render();
+
+  // a fuller "day complete" moment
+  buzz([0, 35, 40, 35, 40, 70]);
+  toast(`Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : ""}`);
+  el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
+
+  // refresh the header/quote, then let the number roll down to 0 and the ring drain
+  el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  el.quote.textContent = quoteOfTheDay();
+  el.total.textContent = fmt(total);   // seed the count-down start value
+  renderTop(true);
+  renderChart();
+  renderHistory();
+
+  // animate the freshly logged day sliding into the list
+  const firstRow = el.history.querySelector(".hist-row");
+  if (firstRow) firstRow.classList.add("enter");
 }
 
 // Feature 9: undo the most recent End Day (merges it back into today).

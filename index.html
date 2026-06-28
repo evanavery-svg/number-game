@@ -146,6 +146,8 @@
       0%, 100% { transform: translateX(0); } 20% { transform: translateX(-5px); }
       40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); }
     }
+    .ring-wrap.pulse { animation: pulse .6s ease; }
+    @keyframes pulse { 0% { transform: scale(1); } 35% { transform: scale(1.045); } 100% { transform: scale(1); } }
 
     .total .meta { margin-top: 16px; font-size: 14px; font-weight: 500; color: var(--muted); min-height: 18px; transition: color 0.35s ease; }
     .total .meta.streak { color: var(--safe); }
@@ -164,6 +166,8 @@
 
     /* ---- big button ---- */
     .add-btn {
+      position: relative;
+      overflow: hidden;
       flex: 1;
       min-height: 150px;
       margin: 2px 0 16px;
@@ -183,7 +187,17 @@
       transform: scale(0.975) translateY(2px);
       box-shadow: 0 6px 16px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.25);
     }
+    .add-label, .add-btn small { position: relative; z-index: 1; }
     .add-btn small { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; opacity: 0.5; margin-top: 10px; }
+    /* touch ripple from the tap point */
+    .ripple {
+      position: absolute; z-index: 0; border-radius: 50%;
+      background: rgba(255,255,255,0.45);
+      transform: translate(-50%, -50%) scale(0);
+      pointer-events: none;
+      animation: ripple 0.5s ease-out forwards;
+    }
+    @keyframes ripple { to { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
 
     .row { display: flex; gap: 12px; margin-bottom: 18px; }
     .row button {
@@ -235,6 +249,8 @@
     .hist-row { padding: 13px 18px; border-top: 1px solid var(--hair); cursor: pointer; transition: background 0.15s ease; }
     .hist-row:first-of-type { border-top: none; }
     .hist-row:active { background: var(--surface-2); }
+    .hist-row.enter { animation: rowin .45s cubic-bezier(0.22, 1, 0.36, 1); }
+    @keyframes rowin { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
     .hist-top { display: flex; justify-content: space-between; align-items: center; font-size: 16px; }
     .hist-top .date { color: var(--text); font-weight: 500; }
     .hist-top .amt { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); background: var(--surface-2); padding: 3px 11px; border-radius: 999px; font-size: 14px; }
@@ -314,7 +330,7 @@
     }
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
-      .total .value.bump, .ring-wrap.nudge { animation: none; }
+      .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple { animation: none; }
       .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar { transition: none; }
     }
   </style>
@@ -361,7 +377,7 @@
   <div class="quote" id="quote"></div>
 
   <button class="add-btn" id="addBtn">
-    + 0.50
+    <span class="add-label">+ 0.50</span>
     <small>tap to add</small>
   </button>
 
@@ -391,7 +407,7 @@
     <div class="sheet" id="sheet"></div>
   </div>
 
-  <div class="version">v1.7 · © Avery LLC</div>
+  <div class="version">v1.8 · © Avery LLC</div>
 
   <script src="app.js"></script>
 </body>
