@@ -9,6 +9,9 @@ const KEY_GOAL = "count.goal";
 const KEY_LASTENDED = "count.lastEnded";
 const KEY_HAPTIC = "count.haptic";     // bool
 const KEY_SOUND = "count.sound";       // bool
+const KEY_LOCK_PIN = "count.lockPin";  // sha-256 hash of (pin + salt)
+const KEY_LOCK_SALT = "count.lockSalt";
+const KEY_LOCK_BIO = "count.lockBio";  // base64 WebAuthn credential id
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -43,6 +46,11 @@ const el = {
   toast: document.getElementById("toast"),
   overlay: document.getElementById("overlay"),
   sheet: document.getElementById("sheet"),
+  lock: document.getElementById("lockScreen"),
+  lockTitle: document.getElementById("lockTitle"),
+  lockDots: document.getElementById("lockDots"),
+  lockError: document.getElementById("lockError"),
+  lockPad: document.getElementById("lockPad"),
 };
 
 // ---- state ----
@@ -612,6 +620,7 @@ function openSettings() {
     const divider = document.createElement("hr");
     divider.className = "sheet-divider";
     s.appendChild(divider);
+    s.appendChild(makeBtn(lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); openLockSettings(); }));
     s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
 
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
@@ -676,6 +685,165 @@ function exportCsv() {
   toast("Backup downloaded");
 }
 
+// ---- app lock (passcode + optional Face ID via WebAuthn) ----
+// A privacy gate on this device. Data isn't encrypted; this keeps casual
+// eyes out, the way iOS app locks do.
+let pinEntry = "";
+let BIO_AVAIL = false;
+(async () => {
+  try { BIO_AVAIL = !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch (e) { BIO_AVAIL = false; }
+})();
+
+function lockSet() { return !!load(KEY_LOCK_PIN, null); }
+function bioSet() { return !!load(KEY_LOCK_BIO, null); }
+function clearLock() { [KEY_LOCK_PIN, KEY_LOCK_SALT, KEY_LOCK_BIO].forEach((k) => localStorage.removeItem(k)); }
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function randHex(n) {
+  const a = new Uint8Array(n); crypto.getRandomValues(a);
+  return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function setPin(pin) {
+  const salt = randHex(16);
+  save(KEY_LOCK_SALT, salt);
+  save(KEY_LOCK_PIN, await sha256(pin + salt));
+}
+async function pinMatches(pin) {
+  return (await sha256(pin + load(KEY_LOCK_SALT, ""))) === load(KEY_LOCK_PIN, null);
+}
+
+function b64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function unb64(s) { return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)); }
+async function bioRegister() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: "Tracker", id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: "owner", displayName: "owner" },
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+    timeout: 60000,
+  } });
+  save(KEY_LOCK_BIO, b64(cred.rawId));
+}
+async function bioUnlock() {
+  const id = load(KEY_LOCK_BIO, null);
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [{ type: "public-key", id: unb64(id) }],
+    userVerification: "required",
+    timeout: 60000,
+  } });
+}
+
+function showLock() {
+  pinEntry = "";
+  el.lockError.textContent = "";
+  el.lock.style.display = "flex";
+  document.body.style.overflow = "hidden";
+  buildPad();
+  updateDots();
+}
+function hideLock() {
+  el.lock.style.display = "none";
+  document.body.style.overflow = "";
+}
+function updateDots() {
+  el.lockDots.querySelectorAll("i").forEach((d, i) => d.classList.toggle("on", i < pinEntry.length));
+}
+async function pinKey(d) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += d; updateDots(); buzz(8);
+  if (pinEntry.length === 4) {
+    if (await pinMatches(pinEntry)) { buzz(20); hideLock(); }
+    else {
+      el.lockError.textContent = "Wrong passcode";
+      el.lock.classList.remove("shake"); void el.lock.offsetWidth; el.lock.classList.add("shake");
+      buzz([0, 40, 60, 40]);
+      pinEntry = ""; setTimeout(updateDots, 250);
+    }
+  }
+}
+function pinDel() { pinEntry = pinEntry.slice(0, -1); updateDots(); }
+async function tryBio() {
+  try { await bioUnlock(); buzz(20); hideLock(); }
+  catch (e) { el.lockError.textContent = "Face ID failed — enter passcode"; }
+}
+function buildPad() {
+  el.lockPad.textContent = "";
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9"].forEach((k) => el.lockPad.appendChild(padKey(k, () => pinKey(k))));
+  el.lockPad.appendChild(bioSet() ? padKey("Face ID", tryBio, true) : document.createElement("div"));
+  el.lockPad.appendChild(padKey("0", () => pinKey("0")));
+  el.lockPad.appendChild(padKey("⌫", pinDel, true));
+}
+function padKey(label, fn, isFn) {
+  const b = document.createElement("button");
+  b.className = "lock-key" + (isFn ? " fn" : "");
+  b.textContent = label;
+  b.addEventListener("click", fn);
+  return b;
+}
+
+// Lock settings live behind a button in the main settings sheet.
+function openLockSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "App Lock");
+    addEl(s, "p", "Lock the app on this device. Your data stays on your phone — this is a privacy lock, not encryption.", "sub");
+
+    const pinToggle = makeToggle(s, "Require passcode", lockSet());
+    pinToggle.addEventListener("change", () => {
+      if (pinToggle.checked) { closeSheet(); promptSetPin(); }
+      else {
+        confirmSheet("Turn off App Lock?", "Removes your passcode" + (bioSet() ? " and Face ID." : "."), "Turn off", () => {
+          clearLock(); toast("App Lock off");
+        }, true);
+      }
+    });
+
+    if (BIO_AVAIL) {
+      const bioToggle = makeToggle(s, "Unlock with Face ID", bioSet());
+      bioToggle.addEventListener("change", async () => {
+        if (bioToggle.checked) {
+          if (!lockSet()) { toast("Set a passcode first"); bioToggle.checked = false; return; }
+          try { await bioRegister(); toast("Face ID enabled"); }
+          catch (e) { bioToggle.checked = false; toast("Couldn't enable Face ID"); }
+        } else {
+          localStorage.removeItem(KEY_LOCK_BIO); toast("Face ID off");
+        }
+      });
+    }
+
+    s.appendChild(makeBtn("Done", "primary", closeSheet));
+  });
+}
+function promptSetPin() {
+  openSheet((s) => {
+    addEl(s, "h3", "Set passcode");
+    addEl(s, "p", "Choose a 4-digit passcode.", "sub");
+    addEl(s, "label", "New passcode");
+    const a = pinField(); s.appendChild(a);
+    addEl(s, "label", "Confirm passcode");
+    const b = pinField(); s.appendChild(b);
+    s.appendChild(makeBtn("Save passcode", "primary", async () => {
+      if (!/^\d{4}$/.test(a.value)) { toast("Enter 4 digits"); return; }
+      if (a.value !== b.value) { toast("Passcodes don't match"); return; }
+      await setPin(a.value);
+      closeSheet(); toast("App Lock on");
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => a.focus(), 60);
+  });
+}
+function pinField() {
+  const i = document.createElement("input");
+  i.type = "password"; i.inputMode = "numeric"; i.maxLength = 4;
+  i.autocomplete = "off"; i.setAttribute("pattern", "[0-9]*");
+  return i;
+}
+
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
@@ -688,6 +856,13 @@ el.insightsClose.addEventListener("click", closeInsights);
 el.insightsOverlay.addEventListener("click", (e) => { if (e.target === el.insightsOverlay) closeInsights(); });
 
 render();
+
+// Lock on launch, and re-lock whenever the app is backgrounded so the
+// app-switcher preview and next open are protected.
+if (lockSet()) showLock();
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && lockSet()) showLock();
+});
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
