@@ -362,6 +362,42 @@
     .tile-delta.up { color: var(--over); }
     .tile-delta.flat { color: var(--muted); }
 
+    /* ---- daily reminder banner ---- */
+    .reminder {
+      display: flex; align-items: center; gap: 10px;
+      margin: 6px 0 2px; padding: 11px 14px;
+      background: var(--surface); border: 1px solid var(--accent);
+      border-radius: 14px; font-size: 14px; font-weight: 600; color: var(--text);
+      box-shadow: var(--card-shadow);
+    }
+    .reminder span { flex: 1; }
+    .reminder-x { background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 4px 2px; }
+
+    /* ---- calendar heatmap + weekday bars (insights) ---- */
+    .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-head { font-size: 10px; font-weight: 700; color: var(--faint); text-align: center; padding-bottom: 2px; }
+    .cal-day {
+      aspect-ratio: 1 / 1; border-radius: 7px; background: var(--surface-2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+    }
+    .cal-day.blank { background: transparent; }
+    .cal-day.empty { background: transparent; color: var(--faint); }
+    .cal-day.logged { background: var(--accent-dim); color: #fff; }
+    .cal-day.under { background: var(--safe); color: #04210d; }
+    .cal-day.over { background: var(--over); color: #2b0707; }
+    .cal-day.today { box-shadow: inset 0 0 0 2px var(--accent); }
+    .cal-legend { display: flex; gap: 14px; margin-top: 12px; font-size: 11px; color: var(--muted); }
+    .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+    .wk { display: flex; align-items: flex-end; gap: 6px; height: 60px; }
+    .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; }
+    .wk-bar.peak { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
+    .wk-labels { display: flex; gap: 6px; margin-top: 7px; }
+    .wk-labels span { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
+    .wk-callout { font-size: 13px; color: var(--muted); margin-top: 12px; }
+    .wk-callout b { color: var(--text); font-weight: 700; }
+
     /* ---- app lock ---- */
     .lock {
       position: fixed; inset: 0; z-index: 100; background: var(--bg);
@@ -415,6 +451,11 @@
     </div>
   </header>
 
+  <div class="reminder" id="reminderBanner" style="display:none">
+    <span id="reminderText">Don't forget to track today.</span>
+    <button class="reminder-x" id="reminderDismiss" aria-label="Dismiss">✕</button>
+  </div>
+
   <div class="total" id="totalWrap">
     <div class="ring-wrap" id="ringWrap">
       <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
@@ -457,7 +498,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v2.0 · © Avery LLC</div>
+  <div class="version">v2.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -487,6 +528,9 @@
       </div>
       <div class="panel-body">
         <div class="insights-grid" id="insightsGrid"></div>
+
+        <div class="chart-card" id="calCard" style="display:none"></div>
+        <div class="chart-card" id="weekdayCard" style="display:none"></div>
 
         <div class="chart-card" id="chartCard" style="display:none">
           <div class="chart-head">

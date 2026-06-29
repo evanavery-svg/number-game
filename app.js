@@ -12,6 +12,10 @@ const KEY_SOUND = "count.sound";       // bool
 const KEY_LOCK_PIN = "count.lockPin";  // sha-256 hash of (pin + salt)
 const KEY_LOCK_SALT = "count.lockSalt";
 const KEY_LOCK_BIO = "count.lockBio";  // base64 WebAuthn credential id
+const KEY_REMIND = "count.remind";          // bool
+const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
+const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
+const KEY_REMIND_LAST = "count.remindLast";       // YYYY-MM-DD last OS notification
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -51,6 +55,11 @@ const el = {
   lockDots: document.getElementById("lockDots"),
   lockError: document.getElementById("lockError"),
   lockPad: document.getElementById("lockPad"),
+  reminder: document.getElementById("reminderBanner"),
+  reminderText: document.getElementById("reminderText"),
+  reminderDismiss: document.getElementById("reminderDismiss"),
+  calCard: document.getElementById("calCard"),
+  weekdayCard: document.getElementById("weekdayCard"),
 };
 
 // ---- state ----
@@ -68,6 +77,8 @@ let goal = load(KEY_GOAL, 0);
 let lastEnded = load(KEY_LASTENDED, null);
 let haptic = load(KEY_HAPTIC, true);
 let sound = load(KEY_SOUND, false);
+let reminderOn = load(KEY_REMIND, false);
+let reminderTime = load(KEY_REMIND_TIME, "20:00");
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -250,6 +261,111 @@ function renderInsights() {
   }
   g.appendChild(statTile(fmt(round2(tm)), "This month", { delta }));
   if (goal > 0) g.appendChild(statTile(String(logged), "Days logged"));
+
+  renderCalendar();
+  renderWeekday();
+}
+
+const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
+const WK_NAME = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
+
+// Calendar heatmap of the current month — each day tinted under (green) / over (red).
+function renderCalendar() {
+  const card = el.calCard;
+  if (history.length === 0 && today === 0) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const lead = new Date(y, m, 1).getDay();
+  const todayStr = isoLocal(now);
+
+  // map date -> total for this month (history + today in progress)
+  const totals = {};
+  history.forEach((d) => { totals[d.date] = d.total; });
+  if (today > 0) totals[todayStr] = today;
+
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  card.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.className = "cal";
+  WK_INIT.forEach((w) => { const h = document.createElement("div"); h.className = "cal-head"; h.textContent = w; grid.appendChild(h); });
+  for (let i = 0; i < lead; i++) { const b = document.createElement("div"); b.className = "cal-day blank"; grid.appendChild(b); }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const cell = document.createElement("div");
+    cell.className = "cal-day";
+    cell.textContent = String(day);
+    if (ds in totals) {
+      if (goal > 0) cell.classList.add(totals[ds] <= goal ? "under" : "over");
+      else cell.classList.add("logged");
+      cell.title = `${ds}: ${fmt(totals[ds])}`;
+    } else {
+      cell.classList.add("empty");
+    }
+    if (ds === todayStr) cell.classList.add("today");
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+
+  if (goal > 0) {
+    const lg = document.createElement("div");
+    lg.className = "cal-legend";
+    lg.innerHTML = `<span><i style="background:var(--safe)"></i>under goal</span><span><i style="background:var(--over)"></i>over goal</span>`;
+    card.appendChild(lg);
+  }
+}
+
+// Average by weekday — the highest (worst, for a limit) is flagged.
+function renderWeekday() {
+  const card = el.weekdayCard;
+  if (history.length < 4) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+
+  const sums = Array(7).fill(0), counts = Array(7).fill(0);
+  history.forEach((d) => { const wd = new Date(d.endedAt || d.date).getDay(); sums[wd] += d.total; counts[wd] += 1; });
+  const avgs = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
+  const max = Math.max(1, ...avgs);
+  let peak = -1, peakVal = -1;
+  avgs.forEach((a, i) => { if (counts[i] && a > peakVal) { peakVal = a; peak = i; } });
+
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = "By weekday";
+  card.appendChild(title);
+
+  const wk = document.createElement("div");
+  wk.className = "wk";
+  avgs.forEach((a, i) => {
+    const bar = document.createElement("div");
+    bar.className = "wk-bar" + (i === peak ? " peak" : "");
+    bar.style.height = Math.max(3, (a / max) * 100) + "%";
+    bar.title = counts[i] ? `${WK_NAME[i]}: avg ${fmt(round2(a))}` : WK_NAME[i];
+    wk.appendChild(bar);
+  });
+  card.appendChild(wk);
+
+  const labels = document.createElement("div");
+  labels.className = "wk-labels";
+  WK_INIT.forEach((w) => { const s = document.createElement("span"); s.textContent = w; labels.appendChild(s); });
+  card.appendChild(labels);
+
+  if (peak >= 0) {
+    const callout = document.createElement("div");
+    callout.className = "wk-callout";
+    callout.innerHTML = `Highest on <b>${WK_NAME[peak]}</b> — avg ${fmt(round2(peakVal))}`;
+    card.appendChild(callout);
+  }
+}
+
+function isoLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function statTile(value, label, opts) {
@@ -600,6 +716,13 @@ function openSettings() {
     const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
     const soundToggle = makeToggle(s, "Sound on tap", sound);
 
+    const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
+    addEl(s, "label", "Reminder time");
+    const timeInput = document.createElement("input");
+    timeInput.type = "time"; timeInput.value = reminderTime || "20:00";
+    s.appendChild(timeInput);
+    addEl(s, "p", "A nudge if you haven't tracked by this time. On iPhone, reminders show while the app is open — add it to your Home Screen for the best chance of a notification.", "sub");
+
     s.appendChild(makeBtn("Save", "primary", () => {
       const ns = parseFloat(stepInput.value);
       if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }
@@ -608,9 +731,16 @@ function openSettings() {
       goal = isNaN(ng) || ng <= 0 ? 0 : round2(ng);
       haptic = hapticToggle.checked;
       sound = soundToggle.checked;
+      const wasOff = !reminderOn;
+      reminderOn = remindToggle.checked;
+      reminderTime = timeInput.value || "20:00";
       save(KEY_STEP, step); save(KEY_GOAL, goal);
       save(KEY_HAPTIC, haptic); save(KEY_SOUND, sound);
-      closeSheet(); render();
+      save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
+      if (reminderOn && wasOff && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+      closeSheet(); render(); checkReminder();
     }));
 
     if (lastEnded) {
@@ -844,6 +974,41 @@ function pinField() {
   return i;
 }
 
+// ---- daily reminder ----
+// A dependable in-app nudge, plus a best-effort OS notification. On iOS a
+// PWA can only deliver notifications while it's open, so the in-app banner
+// is the reliable part.
+function hasActivityToday() {
+  const t = isoLocal(new Date());
+  return taps > 0 || today > 0 || history.some((d) => d.date === t);
+}
+function checkReminder() {
+  if (!reminderOn) { el.reminder.style.display = "none"; return; }
+  const now = new Date();
+  const [h, m] = (reminderTime || "20:00").split(":").map(Number);
+  const due = now.getHours() * 60 + now.getMinutes() >= h * 60 + m;
+  const todayStr = isoLocal(now);
+  if (due && !hasActivityToday() && load(KEY_REMIND_DISMISS, null) !== todayStr) {
+    el.reminder.style.display = "flex";
+    notifyOnce(todayStr);
+  } else {
+    el.reminder.style.display = "none";
+  }
+}
+function notifyOnce(todayStr) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (load(KEY_REMIND_LAST, null) === todayStr) return;
+  save(KEY_REMIND_LAST, todayStr);
+  const body = "Don't forget to track today.";
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification("Tracker", { body, icon: "icon-192.png", badge: "icon-192.png", tag: "daily" })).catch(() => {});
+    } else {
+      new Notification("Tracker", { body });
+    }
+  } catch (e) {}
+}
+
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
@@ -854,6 +1019,7 @@ el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) close
 el.statsBtn.addEventListener("click", openInsights);
 el.insightsClose.addEventListener("click", closeInsights);
 el.insightsOverlay.addEventListener("click", (e) => { if (e.target === el.insightsOverlay) closeInsights(); });
+el.reminderDismiss.addEventListener("click", () => { save(KEY_REMIND_DISMISS, isoLocal(new Date())); el.reminder.style.display = "none"; });
 
 render();
 
@@ -862,7 +1028,12 @@ render();
 if (lockSet()) showLock();
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && lockSet()) showLock();
+  if (!document.hidden) checkReminder();
 });
+
+// Daily reminder: check now, and once a minute while the app is open.
+checkReminder();
+setInterval(checkReminder, 60000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
