@@ -18,6 +18,7 @@ const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
 const KEY_REMIND_LAST = "count.remindLast";       // YYYY-MM-DD last OS notification
 const KEY_UNLOCK_AT = "count.unlockAt";   // timestamp of last unlock (for the grace window)
 const KEY_SINCE = "count.since";          // [{ id, name, start }]
+const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's taps; cleared on End Day
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -62,6 +63,7 @@ const el = {
   reminderDismiss: document.getElementById("reminderDismiss"),
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
+  tapLogCard: document.getElementById("tapLogCard"),
   sinceBtn: document.getElementById("sinceBtn"),
   sinceOverlay: document.getElementById("sinceOverlay"),
   sinceClose: document.getElementById("sinceClose"),
@@ -87,6 +89,7 @@ let sound = load(KEY_SOUND, false);
 let reminderOn = load(KEY_REMIND, false);
 let reminderTime = load(KEY_REMIND_TIME, "20:00");
 let since = load(KEY_SINCE, []);
+let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -270,8 +273,50 @@ function renderInsights() {
   g.appendChild(statTile(fmt(round2(tm)), "This month", { delta }));
   if (goal > 0) g.appendChild(statTile(String(logged), "Days logged"));
 
+  renderTapLog();
   renderCalendar();
   renderWeekday();
+}
+
+// Today's taps, by the clock — count + each time (taps in the same minute
+// are grouped with a ×count). Resets when the day is ended.
+function renderTapLog() {
+  const card = el.tapLogCard;
+  card.style.display = "block";
+  card.textContent = "";
+
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = `Today's taps · ${tapLog.length}`;
+  card.appendChild(title);
+
+  if (tapLog.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "tap-empty";
+    empty.textContent = "No taps yet today.";
+    card.appendChild(empty);
+    return;
+  }
+
+  // collapse consecutive taps in the same minute into one pill with a count
+  const groups = [];
+  tapLog.forEach((ts) => {
+    const label = new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.count++;
+    else groups.push({ label, count: 1 });
+  });
+
+  const wrap = document.createElement("div");
+  wrap.className = "tap-times";
+  groups.forEach((gr) => {
+    const pill = document.createElement("span");
+    pill.className = "tap-time";
+    pill.textContent = gr.label;
+    if (gr.count > 1) { const b = document.createElement("b"); b.textContent = "×" + gr.count; pill.appendChild(b); }
+    wrap.appendChild(pill);
+  });
+  card.appendChild(wrap);
 }
 
 const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
@@ -551,7 +596,8 @@ function addTap(e) {
   const prev = today;
   today = round2(today + step);
   taps += 1;
-  save(KEY_TODAY, today); save(KEY_TAPS, taps);
+  tapLog.push(Date.now());
+  save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
   spawnRipple(e);
   buzz(15); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
@@ -594,7 +640,8 @@ function undo() {
   today = round2(today - step);
   if (today < 0) today = 0;
   taps -= 1;
-  save(KEY_TODAY, today); save(KEY_TAPS, taps);
+  tapLog.pop();
+  save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
   renderTop(true); renderChart();
 }
 
@@ -624,13 +671,13 @@ function commitDay(note) {
     date: now.toISOString().slice(0, 10),
     label: dayLabel(now),
     total: total, taps: taps, endedAt: now.toISOString(),
-    note: note || "",
+    note: note || "", tapTimes: tapLog.slice(),
   };
   history.push(entry);
   lastEnded = entry;
-  today = 0; taps = 0;
+  today = 0; taps = 0; tapLog = [];
   save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
-  save(KEY_TODAY, today); save(KEY_TAPS, taps);
+  save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
 
   // a fuller "day complete" moment
   buzz([0, 35, 40, 35, 40, 70]);
@@ -658,9 +705,10 @@ function undoEndDay() {
   }
   today = round2(today + lastEnded.total);
   taps = taps + (lastEnded.taps || 0);
+  tapLog = (lastEnded.tapTimes || []).concat(tapLog);
   lastEnded = null;
   save(KEY_HISTORY, history); save(KEY_TODAY, today);
-  save(KEY_TAPS, taps); save(KEY_LASTENDED, lastEnded);
+  save(KEY_TAPS, taps); save(KEY_LASTENDED, lastEnded); save(KEY_TAPLOG, tapLog);
   toast("End Day undone");
   render();
 }
