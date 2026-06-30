@@ -398,6 +398,12 @@
     .since-detail { font-size: 13px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
     .since-start { font-size: 12px; color: var(--faint); margin-top: 8px; }
     .since-empty { color: var(--faint); font-size: 14px; text-align: center; padding: 24px 10px; line-height: 1.5; }
+    .since-prog { margin-top: 14px; }
+    .since-prog-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+    .since-bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .since-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+    .since-stats { font-size: 12px; color: var(--muted); margin-top: 10px; font-variant-numeric: tabular-nums; }
+    .since-stats b { color: var(--text); font-weight: 700; }
 
     /* ---- daily reminder banner ---- */
     .reminder {
@@ -538,7 +544,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v2.6 · © Avery LLC</div>
+  <div class="version">v2.7 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

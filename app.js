@@ -1089,17 +1089,46 @@ function notifyOnce(todayStr) {
 let sinceTimer = null;
 
 function sid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-function sinceParts(start) {
-  let ms = Date.now() - new Date(start).getTime();
+function partsMs(ms) {
   if (ms < 0) ms = 0;
   const t = Math.floor(ms / 1000);
   return { d: Math.floor(t / 86400), h: Math.floor((t % 86400) / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
 }
+function sinceParts(start) { return partsMs(Date.now() - new Date(start).getTime()); }
 function bigSince(p) {
   if (p.d > 0) return { n: p.d, u: p.d === 1 ? "day" : "days" };
   if (p.h > 0) return { n: p.h, u: p.h === 1 ? "hour" : "hours" };
   if (p.m > 0) return { n: p.m, u: p.m === 1 ? "minute" : "minutes" };
   return { n: p.s, u: p.s === 1 ? "second" : "seconds" };
+}
+// A short label for a duration in ms, e.g. "12d 4h", "5h 12m", "2m".
+function durLabel(ms) {
+  const p = partsMs(ms);
+  if (p.d > 0) return `${p.d}d ${p.h}h`;
+  if (p.h > 0) return `${p.h}h ${p.m}m`;
+  if (p.m > 0) return `${p.m}m ${p.s}s`;
+  return `${p.s}s`;
+}
+// Milestones a "time since" run can reach. Past a year we roll over to whole years.
+const HR = 3600e3, DAY = 86400e3, YR = 365 * DAY;
+const MILES = [
+  { ms: HR, label: "1 hour" }, { ms: 12 * HR, label: "12 hours" },
+  { ms: DAY, label: "1 day" }, { ms: 3 * DAY, label: "3 days" },
+  { ms: 7 * DAY, label: "1 week" }, { ms: 14 * DAY, label: "2 weeks" },
+  { ms: 30 * DAY, label: "1 month" }, { ms: 90 * DAY, label: "3 months" },
+  { ms: 180 * DAY, label: "6 months" }, { ms: YR, label: "1 year" },
+];
+// The next milestone above the elapsed time, and the previous one reached.
+function nextMile(ms) {
+  for (const m of MILES) if (m.ms > ms) return m;
+  const years = Math.floor(ms / YR) + 1;
+  return { ms: years * YR, label: years + " years" };
+}
+function prevMileMs(ms) {
+  let p = 0;
+  for (const m of MILES) { if (m.ms <= ms) p = m.ms; else return p; }
+  if (ms >= YR) p = Math.floor(ms / YR) * YR;
+  return p;
 }
 function toLocalInput(d) {
   const p = (n) => String(n).padStart(2, "0");
@@ -1117,7 +1146,8 @@ function renderSince() {
     return;
   }
   since.forEach((it) => {
-    const p = sinceParts(it.start);
+    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
+    const p = partsMs(elapsed);
     const b = bigSince(p);
     const card = document.createElement("div");
     card.className = "since-card";
@@ -1126,9 +1156,34 @@ function renderSince() {
     big.innerHTML = `${b.n}<span class="since-unit">${b.u}</span>`;
     const det = document.createElement("div"); det.className = "since-detail";
     det.textContent = `${p.d}d ${p.h}h ${p.m}m ${p.s}s`;
+    card.append(name, big, det);
+
+    // progress toward the next milestone
+    const next = nextMile(elapsed), prev = prevMileMs(elapsed);
+    const frac = Math.min(1, Math.max(0, (elapsed - prev) / (next.ms - prev)));
+    const prog = document.createElement("div"); prog.className = "since-prog";
+    const head = document.createElement("div"); head.className = "since-prog-head";
+    head.innerHTML = `<span>Next: ${next.label}</span><span>${durLabel(next.ms - elapsed)} left</span>`;
+    const bar = document.createElement("div"); bar.className = "since-bar";
+    const fill = document.createElement("i"); fill.style.width = (frac * 100) + "%";
+    bar.appendChild(fill);
+    prog.append(head, bar);
+    card.appendChild(prog);
+
+    // best run + reset count (only once they're meaningful)
+    const best = it.best || 0, resets = it.resets || 0;
+    if (best > 0 || resets > 0) {
+      const stats = document.createElement("div"); stats.className = "since-stats";
+      const parts = [];
+      if (best > 0) parts.push(`Best <b>${durLabel(best)}</b>`);
+      if (resets > 0) parts.push(`Reset <b>${resets}×</b>`);
+      stats.innerHTML = parts.join(" · ");
+      card.appendChild(stats);
+    }
+
     const st = document.createElement("div"); st.className = "since-start";
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-    card.append(name, big, det, st);
+    card.appendChild(st);
     card.addEventListener("click", () => openSinceForm(it.id));
     list.appendChild(card);
   });
@@ -1164,12 +1219,19 @@ function openSinceForm(id) {
       const st = start.value ? new Date(start.value) : new Date();
       if (isNaN(st.getTime())) { toast("Pick a valid date"); return; }
       if (existing) { existing.name = nm; existing.start = st.toISOString(); }
-      else { since.push({ id: sid(), name: nm, start: st.toISOString() }); }
+      else { since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0 }); }
       save(KEY_SINCE, since); closeSheet(); renderSince();
     }));
     if (existing) {
       s.appendChild(makeBtn("Reset to now", "", () => {
-        existing.start = new Date().toISOString(); save(KEY_SINCE, since); closeSheet(); renderSince(); toast("Reset");
+        confirmSheet("Reset timer?", "Starts counting from now. Your longest run is kept as your record.", "Reset", () => {
+          const run = Date.now() - new Date(existing.start).getTime();
+          if (run > (existing.best || 0)) existing.best = run;
+          existing.resets = (existing.resets || 0) + 1;
+          existing.start = new Date().toISOString();
+          save(KEY_SINCE, since); renderSince();
+          toast(run >= (existing.best || 0) ? "Reset · new record kept ✓" : "Timer reset");
+        });
       }));
       s.appendChild(makeBtn("Delete tracker", "danger", () => {
         confirmSheet("Delete tracker?", `"${existing.name}" will be removed.`, "Delete", () => {
