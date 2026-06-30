@@ -284,27 +284,11 @@ function tapEntry(e) {
   // tolerate the old format where a tap was stored as just a timestamp
   return typeof e === "number" ? { t: e, amt: null, total: null } : e;
 }
-function renderTapLog() {
-  const card = el.tapLogCard;
-  card.style.display = "block";
-  card.textContent = "";
-
-  const title = document.createElement("div");
-  title.className = "section-title";
-  title.textContent = `Today's taps · ${tapLog.length}`;
-  card.appendChild(title);
-
-  if (tapLog.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "tap-empty";
-    empty.textContent = "No taps yet today.";
-    card.appendChild(empty);
-    return;
-  }
-
+// A row-per-tap timeline (time · +amount · running total) for a list of taps.
+function tapRows(taps) {
   const list = document.createElement("div");
   list.className = "tap-list";
-  tapLog.forEach((raw) => {
+  taps.forEach((raw) => {
     const e = tapEntry(raw);
     const row = document.createElement("div");
     row.className = "tap-row";
@@ -324,7 +308,26 @@ function renderTapLog() {
     row.append(time, amt, tot);
     list.appendChild(row);
   });
-  card.appendChild(list);
+  return list;
+}
+function renderTapLog() {
+  const card = el.tapLogCard;
+  card.style.display = "block";
+  card.textContent = "";
+
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = `Today's taps · ${tapLog.length}`;
+  card.appendChild(title);
+
+  if (tapLog.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "tap-empty";
+    empty.textContent = "No taps yet today.";
+    card.appendChild(empty);
+    return;
+  }
+  card.appendChild(tapRows(tapLog));
 }
 
 const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
@@ -841,12 +844,20 @@ function openSettings() {
   });
 }
 
-// Feature 5: tap a history day to edit total / note, or delete.
+// Feature 5: tap a history day to edit its date / total / note, or delete.
+// Also shows the times that day's taps happened, if recorded.
 function openHistorySheet(idx) {
   const day = history[idx];
   if (!day) return;
   openSheet((s) => {
     addEl(s, "h3", day.label);
+
+    addEl(s, "label", "Date");
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.value = day.date || isoLocal(new Date(day.endedAt || Date.now()));
+    dateInput.max = isoLocal(new Date());
+    s.appendChild(dateInput);
 
     addEl(s, "label", "Total for this day");
     const input = numInput(fmt(day.total), "0");
@@ -857,17 +868,43 @@ function openHistorySheet(idx) {
     ta.rows = 3; ta.value = day.note || ""; ta.placeholder = "No note";
     s.appendChild(ta);
 
+    // tap times for this day, if they were recorded when it was logged
+    if (day.tapTimes && day.tapTimes.length) {
+      addEl(s, "label", `Tap times · ${day.tapTimes.length}`);
+      const scroll = document.createElement("div");
+      scroll.className = "tap-scroll";
+      scroll.appendChild(tapRows(day.tapTimes));
+      s.appendChild(scroll);
+    }
+
     s.appendChild(makeBtn("Save", "primary", () => {
       const v = parseFloat(input.value);
       if (isNaN(v) || v < 0) { toast("Enter a number ≥ 0"); return; }
-      history[idx].total = round2(v);
-      history[idx].note = ta.value.replace(/\s*\n\s*/g, " ").trim();
+      day.total = round2(v);
+      day.note = ta.value.replace(/\s*\n\s*/g, " ").trim();
+      // move the day to a new date, keeping its original time of day
+      const ds = dateInput.value;
+      if (ds) {
+        const [y, mo, d] = ds.split("-").map(Number);
+        if (y && mo && d) {
+          const old = new Date(day.endedAt || day.date);
+          const t = isNaN(old.getTime()) ? { h: 12, m: 0, s: 0 } : { h: old.getHours(), m: old.getMinutes(), s: old.getSeconds() };
+          const when = new Date(y, mo - 1, d, t.h, t.m, t.s);
+          day.date = isoLocal(when);
+          day.label = dayLabel(when);
+          day.endedAt = when.toISOString();
+        }
+      }
+      // keep chronological order so charts/streaks/calendar stay correct
+      history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
       save(KEY_HISTORY, history);
       closeSheet(); render();
     }));
     s.appendChild(makeBtn("Delete this day", "danger", () => {
       confirmSheet(`Delete ${day.label}?`, `${fmt(day.total)} will be removed.`, "Delete", () => {
-        history.splice(idx, 1); save(KEY_HISTORY, history); render();
+        const di = history.indexOf(day);
+        if (di >= 0) history.splice(di, 1);
+        save(KEY_HISTORY, history); render();
       }, true);
     }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));

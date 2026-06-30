@@ -389,6 +389,7 @@
       padding: 3px 11px; border-radius: 999px; font-size: 13px; min-width: 44px; text-align: center;
     }
     .tap-empty { font-size: 13px; color: var(--faint); }
+    .tap-scroll { max-height: 34vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 2px; }
 
     /* ---- time since cards ---- */
     .since-card { background: var(--surface); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--card-shadow); cursor: pointer; transition: transform 0.08s ease; overflow: hidden; }
@@ -545,7 +546,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v2.8 · © Avery LLC</div>
+  <div class="version">v2.9 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
