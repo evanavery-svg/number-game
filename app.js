@@ -16,6 +16,8 @@ const KEY_REMIND = "count.remind";          // bool
 const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
 const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
 const KEY_REMIND_LAST = "count.remindLast";       // YYYY-MM-DD last OS notification
+const KEY_UNLOCK_AT = "count.unlockAt";   // timestamp of last unlock (for the grace window)
+const KEY_SINCE = "count.since";          // [{ id, name, start }]
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -60,6 +62,11 @@ const el = {
   reminderDismiss: document.getElementById("reminderDismiss"),
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
+  sinceBtn: document.getElementById("sinceBtn"),
+  sinceOverlay: document.getElementById("sinceOverlay"),
+  sinceClose: document.getElementById("sinceClose"),
+  sinceList: document.getElementById("sinceList"),
+  sinceAdd: document.getElementById("sinceAdd"),
 };
 
 // ---- state ----
@@ -79,6 +86,7 @@ let haptic = load(KEY_HAPTIC, true);
 let sound = load(KEY_SOUND, false);
 let reminderOn = load(KEY_REMIND, false);
 let reminderTime = load(KEY_REMIND_TIME, "20:00");
+let since = load(KEY_SINCE, []);
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -837,10 +845,20 @@ function randHex(n) {
   const a = new Uint8Array(n); crypto.getRandomValues(a);
   return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+const LOCK_GRACE_MS = 5 * 60 * 1000;   // don't re-ask within 5 min of unlocking
+
 async function setPin(pin) {
   const salt = randHex(16);
   save(KEY_LOCK_SALT, salt);
   save(KEY_LOCK_PIN, await sha256(pin + salt));
+  save(KEY_UNLOCK_AT, Date.now());   // just set it — start the grace window now
+}
+// Show the lock only if the grace window since the last unlock has lapsed;
+// otherwise refresh the window so quick in-and-out trips don't re-prompt.
+function maybeLock() {
+  if (!lockSet()) return;
+  if (Date.now() - (load(KEY_UNLOCK_AT, 0) || 0) > LOCK_GRACE_MS) showLock();
+  else save(KEY_UNLOCK_AT, Date.now());
 }
 async function pinMatches(pin) {
   return (await sha256(pin + load(KEY_LOCK_SALT, ""))) === load(KEY_LOCK_PIN, null);
@@ -880,6 +898,7 @@ function showLock() {
 function hideLock() {
   el.lock.style.display = "none";
   document.body.style.overflow = "";
+  save(KEY_UNLOCK_AT, Date.now());   // start the 5-minute grace window
 }
 function updateDots() {
   el.lockDots.querySelectorAll("i").forEach((d, i) => d.classList.toggle("on", i < pinEntry.length));
@@ -1009,6 +1028,104 @@ function notifyOnce(todayStr) {
   } catch (e) {}
 }
 
+// ---- time since (a small, separate tool) ----
+// Counts up from a chosen moment, like a "days since" milestone tracker.
+let sinceTimer = null;
+
+function sid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function sinceParts(start) {
+  let ms = Date.now() - new Date(start).getTime();
+  if (ms < 0) ms = 0;
+  const t = Math.floor(ms / 1000);
+  return { d: Math.floor(t / 86400), h: Math.floor((t % 86400) / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
+}
+function bigSince(p) {
+  if (p.d > 0) return { n: p.d, u: p.d === 1 ? "day" : "days" };
+  if (p.h > 0) return { n: p.h, u: p.h === 1 ? "hour" : "hours" };
+  if (p.m > 0) return { n: p.m, u: p.m === 1 ? "minute" : "minutes" };
+  return { n: p.s, u: p.s === 1 ? "second" : "seconds" };
+}
+function toLocalInput(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function renderSince() {
+  const list = el.sinceList;
+  list.textContent = "";
+  if (since.length === 0) {
+    const e = document.createElement("div");
+    e.className = "since-empty";
+    e.textContent = "Nothing tracked yet. Add something you want to count the time since — a fresh start, a milestone, a habit you're keeping up.";
+    list.appendChild(e);
+    return;
+  }
+  since.forEach((it) => {
+    const p = sinceParts(it.start);
+    const b = bigSince(p);
+    const card = document.createElement("div");
+    card.className = "since-card";
+    const name = document.createElement("div"); name.className = "since-name"; name.textContent = it.name;
+    const big = document.createElement("div"); big.className = "since-big";
+    big.innerHTML = `${b.n}<span class="since-unit">${b.u}</span>`;
+    const det = document.createElement("div"); det.className = "since-detail";
+    det.textContent = `${p.d}d ${p.h}h ${p.m}m ${p.s}s`;
+    const st = document.createElement("div"); st.className = "since-start";
+    st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+    card.append(name, big, det, st);
+    card.addEventListener("click", () => openSinceForm(it.id));
+    list.appendChild(card);
+  });
+}
+function openSince() {
+  renderSince();
+  el.sinceOverlay.classList.add("show");
+  clearInterval(sinceTimer);
+  sinceTimer = setInterval(() => { if (el.sinceOverlay.classList.contains("show")) renderSince(); }, 1000);
+}
+function closeSince() {
+  el.sinceOverlay.classList.remove("show");
+  clearInterval(sinceTimer); sinceTimer = null;
+}
+function openSinceForm(id) {
+  const existing = id != null ? since.find((x) => x.id === id) : null;
+  openSheet((s) => {
+    addEl(s, "h3", existing ? "Edit tracker" : "New tracker");
+    addEl(s, "label", "Name");
+    const name = document.createElement("input");
+    name.type = "text"; name.maxLength = 40; name.placeholder = "e.g. Daily walk";
+    name.value = existing ? existing.name : "";
+    s.appendChild(name);
+    addEl(s, "label", "Counting since");
+    const start = document.createElement("input");
+    start.type = "datetime-local";
+    start.value = toLocalInput(existing ? new Date(existing.start) : new Date());
+    s.appendChild(start);
+
+    s.appendChild(makeBtn("Save", "primary", () => {
+      const nm = name.value.trim();
+      if (!nm) { toast("Add a name"); return; }
+      const st = start.value ? new Date(start.value) : new Date();
+      if (isNaN(st.getTime())) { toast("Pick a valid date"); return; }
+      if (existing) { existing.name = nm; existing.start = st.toISOString(); }
+      else { since.push({ id: sid(), name: nm, start: st.toISOString() }); }
+      save(KEY_SINCE, since); closeSheet(); renderSince();
+    }));
+    if (existing) {
+      s.appendChild(makeBtn("Reset to now", "", () => {
+        existing.start = new Date().toISOString(); save(KEY_SINCE, since); closeSheet(); renderSince(); toast("Reset");
+      }));
+      s.appendChild(makeBtn("Delete tracker", "danger", () => {
+        confirmSheet("Delete tracker?", `"${existing.name}" will be removed.`, "Delete", () => {
+          since = since.filter((x) => x.id !== existing.id); save(KEY_SINCE, since); renderSince();
+        }, true);
+      }));
+    }
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => name.focus(), 60);
+  });
+}
+
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
@@ -1020,20 +1137,28 @@ el.statsBtn.addEventListener("click", openInsights);
 el.insightsClose.addEventListener("click", closeInsights);
 el.insightsOverlay.addEventListener("click", (e) => { if (e.target === el.insightsOverlay) closeInsights(); });
 el.reminderDismiss.addEventListener("click", () => { save(KEY_REMIND_DISMISS, isoLocal(new Date())); el.reminder.style.display = "none"; });
+el.sinceBtn.addEventListener("click", openSince);
+el.sinceClose.addEventListener("click", closeSince);
+el.sinceOverlay.addEventListener("click", (e) => { if (e.target === el.sinceOverlay) closeSince(); });
+el.sinceAdd.addEventListener("click", () => openSinceForm(null));
 
 render();
 
-// Lock on launch, and re-lock whenever the app is backgrounded so the
-// app-switcher preview and next open are protected.
-if (lockSet()) showLock();
+// Lock on launch and on return — but only if the 5-minute grace window
+// since the last unlock has lapsed, so quick trips out don't re-prompt.
+maybeLock();
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && lockSet()) showLock();
-  if (!document.hidden) checkReminder();
+  if (document.hidden) return;
+  maybeLock();
+  checkReminder();
 });
 
-// Daily reminder: check now, and once a minute while the app is open.
+// Daily reminder + keep the unlock window fresh during active use.
 checkReminder();
-setInterval(checkReminder, 60000);
+setInterval(() => {
+  checkReminder();
+  if (lockSet() && el.lock.style.display !== "flex" && !document.hidden) save(KEY_UNLOCK_AT, Date.now());
+}, 60000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
