@@ -426,6 +426,20 @@
     .reminder span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reminder-x { background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 4px 2px; }
 
+    /* ---- compact "time since" strip on the main page ---- */
+    .since-strip { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 6px 0 2px; padding-bottom: 2px; scrollbar-width: none; }
+    .since-strip::-webkit-scrollbar { display: none; }
+    .ss-chip {
+      flex: none; display: flex; align-items: center; gap: 8px;
+      background: var(--surface); border: 1px solid var(--hair);
+      border-radius: 999px; padding: 8px 14px; cursor: pointer;
+      box-shadow: var(--card-shadow); transition: transform 0.08s ease;
+    }
+    .ss-chip:active { transform: scale(0.96); }
+    .ss-chip svg { color: var(--muted); flex: none; }
+    .ss-name { font-size: 12px; font-weight: 600; color: var(--muted); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ss-val { font-size: 13px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+
     /* ---- calendar heatmap + weekday bars (insights) ---- */
     .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .cal-head { font-size: 10px; font-weight: 700; color: var(--faint); text-align: center; padding-bottom: 2px; }
@@ -512,6 +526,9 @@
     <button class="reminder-x" id="reminderDismiss" aria-label="Dismiss">✕</button>
   </div>
 
+  <!-- compact live "time since" strip — tap any chip to open the full panel -->
+  <div class="since-strip" id="sinceStrip" style="display:none"></div>
+
   <div class="total" id="totalWrap">
     <div class="ring-wrap" id="ringWrap">
       <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
@@ -554,7 +571,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v3.0 · © Avery LLC</div>
+  <div class="version">v3.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

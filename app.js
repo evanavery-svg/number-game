@@ -65,6 +65,7 @@ const el = {
   weekdayCard: document.getElementById("weekdayCard"),
   tapLogCard: document.getElementById("tapLogCard"),
   sinceBtn: document.getElementById("sinceBtn"),
+  sinceStrip: document.getElementById("sinceStrip"),
   sinceOverlay: document.getElementById("sinceOverlay"),
   sinceClose: document.getElementById("sinceClose"),
   sinceList: document.getElementById("sinceList"),
@@ -238,6 +239,7 @@ function render() {
   renderInsights();
   renderChart();
   renderHistory();
+  renderSinceStrip();
 }
 
 // Insights panel: a grid of headline stats above the chart and history.
@@ -1291,6 +1293,35 @@ function renderSince() {
     card.addEventListener("click", () => openSinceForm(it.id));
     list.appendChild(card);
   });
+  renderSinceStrip();   // keep the main-page strip in sync with any changes
+}
+// Compact main-page strip: one chip per tracker (name + elapsed), live.
+const SS_CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>';
+function renderSinceStrip() {
+  const strip = el.sinceStrip;
+  if (!since.length) { strip.style.display = "none"; strip.textContent = ""; return; }
+  strip.style.display = "flex";
+  strip.textContent = "";
+  since.forEach((it) => {
+    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
+    const chip = document.createElement("div"); chip.className = "ss-chip";
+    chip.innerHTML = SS_CLOCK;
+    const name = document.createElement("span"); name.className = "ss-name"; name.textContent = it.name;
+    const val = document.createElement("span"); val.className = "ss-val"; val.textContent = durLabel(elapsed);
+    chip.append(name, val);
+    chip.addEventListener("click", openSince);
+    strip.appendChild(chip);
+  });
+}
+// Cheap per-second update: refresh just the values so horizontal scroll isn't reset.
+function tickSinceStrip() {
+  const chips = el.sinceStrip.querySelectorAll(".ss-chip");
+  if (chips.length !== since.length) { renderSinceStrip(); return; }
+  since.forEach((it, i) => {
+    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
+    const val = chips[i].querySelector(".ss-val");
+    if (val) val.textContent = durLabel(elapsed);
+  });
 }
 function openSince() {
   renderSince();
@@ -1417,6 +1448,9 @@ setInterval(() => {
   checkReminder();
   if (lockSet() && el.lock.style.display !== "flex" && !document.hidden) save(KEY_UNLOCK_AT, Date.now());
 }, 60000);
+
+// keep the main-page "time since" strip ticking
+setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
