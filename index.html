@@ -310,12 +310,13 @@
     .sheet textarea { resize: none; font-variant-numeric: normal; }
     /* iOS renders time/date pickers with an intrinsic width that overflows
        the sheet; reset their native appearance so they honour width:100%. */
-    .sheet input[type="time"], .sheet input[type="datetime-local"] {
+    .sheet input[type="time"], .sheet input[type="datetime-local"], .sheet input[type="date"] {
       -webkit-appearance: none; appearance: none;
       display: block; text-align: left;
     }
     .sheet input[type="time"]::-webkit-date-and-time-value,
-    .sheet input[type="datetime-local"]::-webkit-date-and-time-value {
+    .sheet input[type="datetime-local"]::-webkit-date-and-time-value,
+    .sheet input[type="date"]::-webkit-date-and-time-value {
       text-align: left; margin: 0;
     }
     .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
@@ -544,7 +545,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v2.7 · © Avery LLC</div>
+  <div class="version">v2.8 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

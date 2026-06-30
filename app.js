@@ -659,29 +659,46 @@ function openEndDay() {
   openSheet((s) => {
     addEl(s, "h3", "End Day");
     addEl(s, "p", `Log ${fmt(today)} and start a fresh day.`, "sub");
-    const label = addEl(s, "label", "Note for this day (optional)");
+
+    addEl(s, "label", "Date for this day");
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.value = isoLocal(new Date());
+    dateInput.max = isoLocal(new Date());
+    s.appendChild(dateInput);
+
+    addEl(s, "label", "Note for this day (optional)");
     const ta = document.createElement("textarea");
     ta.rows = 3; ta.placeholder = "e.g. how it went, anything notable…";
     s.appendChild(ta);
     s.appendChild(makeBtn("Log day ✓", "primary", () => {
-      commitDay(ta.value.replace(/\s*\n\s*/g, " ").trim());
+      commitDay(ta.value.replace(/\s*\n\s*/g, " ").trim(), dateInput.value);
       closeSheet();
     }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
     setTimeout(() => ta.focus(), 50);
   });
 }
-function commitDay(note) {
+function commitDay(note, dateStr) {
   const now = new Date();
+  // log under the chosen date (keeping the current time of day), or today
+  let when = now;
+  if (dateStr) {
+    const [y, mo, d] = dateStr.split("-").map(Number);
+    if (y && mo && d) when = new Date(y, mo - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+  }
   const total = today;
   const underGoal = goal > 0 && total <= goal;
   const entry = {
-    date: now.toISOString().slice(0, 10),
-    label: dayLabel(now),
-    total: total, taps: taps, endedAt: now.toISOString(),
+    date: isoLocal(when),
+    label: dayLabel(when),
+    total: total, taps: taps, endedAt: when.toISOString(),
     note: note || "", tapTimes: tapLog.slice(),
   };
   history.push(entry);
+  // keep chronological order so the chart, streaks and calendar stay correct
+  // even when a day is logged under an earlier date
+  history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
   lastEnded = entry;
   today = 0; taps = 0; tapLog = [];
   save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
@@ -700,9 +717,12 @@ function commitDay(note) {
   renderChart();
   renderHistory();
 
-  // animate the freshly logged day sliding into the list
-  const firstRow = el.history.querySelector(".hist-row");
-  if (firstRow) firstRow.classList.add("enter");
+  // animate the freshly logged day sliding into the list (only when it's the
+  // most recent entry — a back-dated day lands further down, not at the top)
+  if (history[history.length - 1] === entry) {
+    const firstRow = el.history.querySelector(".hist-row");
+    if (firstRow) firstRow.classList.add("enter");
+  }
 }
 
 // Feature 9: undo the most recent End Day (merges it back into today).
