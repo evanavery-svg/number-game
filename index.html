@@ -300,7 +300,7 @@
     .sheet p.sub { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
     .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 16px 0 6px; }
     .sheet input, .sheet textarea {
-      width: 100%; padding: 14px; font-size: 17px;
+      width: 100%; max-width: 100%; min-width: 0; padding: 14px; font-size: 17px;
       border-radius: 12px; border: 1px solid var(--surface-2);
       background: var(--bg); color: var(--text);
       font-family: inherit; font-variant-numeric: tabular-nums;
@@ -308,6 +308,16 @@
     }
     .sheet input:focus, .sheet textarea:focus { outline: none; border-color: var(--accent); }
     .sheet textarea { resize: none; font-variant-numeric: normal; }
+    /* iOS renders time/date pickers with an intrinsic width that overflows
+       the sheet; reset their native appearance so they honour width:100%. */
+    .sheet input[type="time"], .sheet input[type="datetime-local"] {
+      -webkit-appearance: none; appearance: none;
+      display: block; text-align: left;
+    }
+    .sheet input[type="time"]::-webkit-date-and-time-value,
+    .sheet input[type="datetime-local"]::-webkit-date-and-time-value {
+      text-align: left; margin: 0;
+    }
     .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
     .toggle-row span { font-size: 16px; }
     .switch { position: relative; width: 52px; height: 31px; flex: none; }
@@ -512,7 +522,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v2.3 · © Avery LLC</div>
+  <div class="version">v2.4 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
