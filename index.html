@@ -373,14 +373,20 @@
     .tile-delta.up { color: var(--over); }
     .tile-delta.flat { color: var(--muted); }
 
-    /* ---- today's tap times (insights) ---- */
-    .tap-times { display: flex; flex-wrap: wrap; gap: 8px; }
-    .tap-time {
-      font-size: 13px; font-weight: 600; color: var(--text);
-      background: var(--surface-2); padding: 6px 12px; border-radius: 999px;
-      font-variant-numeric: tabular-nums;
+    /* ---- today's tap timeline (insights) ---- */
+    .tap-list { display: flex; flex-direction: column; }
+    .tap-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 9px 2px; border-top: 1px solid var(--hair);
+      font-size: 14px; font-variant-numeric: tabular-nums;
     }
-    .tap-time b { color: var(--accent); font-weight: 700; margin-left: 3px; }
+    .tap-row:first-child { border-top: none; }
+    .tap-row .tap-t { color: var(--muted); flex: 1; }
+    .tap-row .tap-amt { color: var(--accent); font-weight: 700; }
+    .tap-row .tap-total {
+      font-weight: 700; color: var(--muted); background: var(--surface-2);
+      padding: 3px 11px; border-radius: 999px; font-size: 13px; min-width: 44px; text-align: center;
+    }
     .tap-empty { font-size: 13px; color: var(--faint); }
 
     /* ---- time since cards ---- */
@@ -532,7 +538,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v2.5 · © Avery LLC</div>
+  <div class="version">v2.6 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

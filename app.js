@@ -278,8 +278,12 @@ function renderInsights() {
   renderWeekday();
 }
 
-// Today's taps, by the clock — count + each time (taps in the same minute
-// are grouped with a ×count). Resets when the day is ended.
+// Today's taps, by the clock — count plus a row per tap: the time, how much
+// that tap added, and the running total after it. Resets when the day ends.
+function tapEntry(e) {
+  // tolerate the old format where a tap was stored as just a timestamp
+  return typeof e === "number" ? { t: e, amt: null, total: null } : e;
+}
 function renderTapLog() {
   const card = el.tapLogCard;
   card.style.display = "block";
@@ -298,25 +302,29 @@ function renderTapLog() {
     return;
   }
 
-  // collapse consecutive taps in the same minute into one pill with a count
-  const groups = [];
-  tapLog.forEach((ts) => {
-    const label = new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    const last = groups[groups.length - 1];
-    if (last && last.label === label) last.count++;
-    else groups.push({ label, count: 1 });
-  });
+  const list = document.createElement("div");
+  list.className = "tap-list";
+  tapLog.forEach((raw) => {
+    const e = tapEntry(raw);
+    const row = document.createElement("div");
+    row.className = "tap-row";
 
-  const wrap = document.createElement("div");
-  wrap.className = "tap-times";
-  groups.forEach((gr) => {
-    const pill = document.createElement("span");
-    pill.className = "tap-time";
-    pill.textContent = gr.label;
-    if (gr.count > 1) { const b = document.createElement("b"); b.textContent = "×" + gr.count; pill.appendChild(b); }
-    wrap.appendChild(pill);
+    const time = document.createElement("span");
+    time.className = "tap-t";
+    time.textContent = new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+    const amt = document.createElement("span");
+    amt.className = "tap-amt";
+    amt.textContent = e.amt != null ? "+" + fmt(e.amt) : "";
+
+    const tot = document.createElement("span");
+    tot.className = "tap-total";
+    tot.textContent = e.total != null ? fmt(e.total) : "—";
+
+    row.append(time, amt, tot);
+    list.appendChild(row);
   });
-  card.appendChild(wrap);
+  card.appendChild(list);
 }
 
 const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
@@ -596,7 +604,7 @@ function addTap(e) {
   const prev = today;
   today = round2(today + step);
   taps += 1;
-  tapLog.push(Date.now());
+  tapLog.push({ t: Date.now(), amt: step, total: today });
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
   spawnRipple(e);
   buzz(15); click();
