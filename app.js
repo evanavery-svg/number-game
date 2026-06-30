@@ -1169,11 +1169,11 @@ function durLabel(ms) {
 // Milestones a "time since" run can reach. Past a year we roll over to whole years.
 const HR = 3600e3, DAY = 86400e3, YR = 365 * DAY;
 const MILES = [
-  { ms: HR, label: "1 hour" }, { ms: 12 * HR, label: "12 hours" },
-  { ms: DAY, label: "1 day" }, { ms: 3 * DAY, label: "3 days" },
-  { ms: 7 * DAY, label: "1 week" }, { ms: 14 * DAY, label: "2 weeks" },
-  { ms: 30 * DAY, label: "1 month" }, { ms: 90 * DAY, label: "3 months" },
-  { ms: 180 * DAY, label: "6 months" }, { ms: YR, label: "1 year" },
+  { ms: HR, label: "1 hour", short: "1h" }, { ms: 12 * HR, label: "12 hours", short: "12h" },
+  { ms: DAY, label: "1 day", short: "1d" }, { ms: 3 * DAY, label: "3 days", short: "3d" },
+  { ms: 7 * DAY, label: "1 week", short: "1w" }, { ms: 14 * DAY, label: "2 weeks", short: "2w" },
+  { ms: 30 * DAY, label: "1 month", short: "1mo" }, { ms: 90 * DAY, label: "3 months", short: "3mo" },
+  { ms: 180 * DAY, label: "6 months", short: "6mo" }, { ms: YR, label: "1 year", short: "1y" },
 ];
 // The next milestone above the elapsed time, and the previous one reached.
 function nextMile(ms) {
@@ -1186,6 +1186,22 @@ function prevMileMs(ms) {
   for (const m of MILES) { if (m.ms <= ms) p = m.ms; else return p; }
   if (ms >= YR) p = Math.floor(ms / YR) * YR;
   return p;
+}
+// The milestones to show as chips — the fixed set, plus whole years once past one.
+function mileList(elapsed) {
+  const out = MILES.map((m) => ({ ms: m.ms, short: m.short }));
+  if (elapsed >= YR) {
+    const years = Math.floor(elapsed / YR) + 1;
+    for (let y = 2; y <= years; y++) out.push({ ms: y * YR, short: y + "y" });
+  }
+  return out;
+}
+// Money/units accrued so far at a per-day rate. Symbols prefix, words suffix.
+function savedText(rate, unit, ms) {
+  const total = round2(rate * (ms / DAY));
+  const u = (unit || "$").trim();
+  const sym = u.length <= 1 || ["$", "£", "€", "¥", "₹"].includes(u);
+  return sym ? `${u}${fmt(total)}` : `${fmt(total)} ${u}`;
 }
 function toLocalInput(d) {
   const p = (n) => String(n).padStart(2, "0");
@@ -1215,6 +1231,24 @@ function renderSince() {
     det.textContent = `${p.d}d ${p.h}h ${p.m}m ${p.s}s`;
     card.append(name, big, det);
 
+    // the "why" — a motivation note
+    if (it.note) {
+      const note = document.createElement("div"); note.className = "since-note";
+      note.textContent = it.note;
+      card.appendChild(note);
+    }
+
+    // running savings / units avoided at a per-day rate
+    if (it.rate > 0) {
+      const saved = document.createElement("div"); saved.className = "since-saved";
+      const val = document.createElement("span"); val.className = "since-saved-val";
+      val.textContent = savedText(it.rate, it.unit, elapsed);
+      const sub = document.createElement("span"); sub.className = "since-saved-sub";
+      sub.textContent = savedText(it.rate, it.unit, DAY) + " per day";
+      saved.append(val, sub);
+      card.appendChild(saved);
+    }
+
     // progress toward the next milestone
     const next = nextMile(elapsed), prev = prevMileMs(elapsed);
     const frac = Math.min(1, Math.max(0, (elapsed - prev) / (next.ms - prev)));
@@ -1226,6 +1260,19 @@ function renderSince() {
     bar.appendChild(fill);
     prog.append(head, bar);
     card.appendChild(prog);
+
+    // milestone journey — chips light up as each is reached, next is outlined
+    const miles = mileList(elapsed);
+    const mWrap = document.createElement("div"); mWrap.className = "since-miles";
+    let markedNext = false;
+    miles.forEach((mi) => {
+      const chip = document.createElement("span"); chip.className = "since-mile";
+      chip.textContent = mi.short;
+      if (elapsed >= mi.ms) chip.classList.add("reached");
+      else if (!markedNext) { chip.classList.add("next"); markedNext = true; }
+      mWrap.appendChild(chip);
+    });
+    card.appendChild(mWrap);
 
     // best run + reset count (only once they're meaningful)
     const best = it.best || 0, resets = it.resets || 0;
@@ -1270,15 +1317,51 @@ function openSinceForm(id) {
     start.value = toLocalInput(existing ? new Date(existing.start) : new Date());
     s.appendChild(start);
 
+    addEl(s, "label", "Your why (optional)");
+    const noteTa = document.createElement("textarea");
+    noteTa.rows = 2; noteTa.maxLength = 140; noteTa.placeholder = "Why this matters to you…";
+    noteTa.value = existing ? (existing.note || "") : "";
+    s.appendChild(noteTa);
+
+    addEl(s, "label", "Saved per day (optional)");
+    const rateInput = numInput(existing && existing.rate > 0 ? fmt(existing.rate) : "", "0");
+    rateInput.placeholder = "e.g. 8";
+    s.appendChild(rateInput);
+    addEl(s, "label", "Unit");
+    const unitInput = document.createElement("input");
+    unitInput.type = "text"; unitInput.maxLength = 16; unitInput.placeholder = "$ · cigarettes · drinks";
+    unitInput.value = existing ? (existing.unit || "$") : "$";
+    s.appendChild(unitInput);
+
     s.appendChild(makeBtn("Save", "primary", () => {
       const nm = name.value.trim();
       if (!nm) { toast("Add a name"); return; }
       const st = start.value ? new Date(start.value) : new Date();
       if (isNaN(st.getTime())) { toast("Pick a valid date"); return; }
-      if (existing) { existing.name = nm; existing.start = st.toISOString(); }
-      else { since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0 }); }
+      const note = noteTa.value.replace(/\s*\n\s*/g, " ").trim();
+      const rate = Math.max(0, parseFloat(rateInput.value) || 0);
+      const unit = unitInput.value.trim() || "$";
+      if (existing) {
+        existing.name = nm; existing.start = st.toISOString();
+        existing.note = note; existing.rate = rate; existing.unit = unit;
+      } else {
+        since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0, note, rate, unit });
+      }
       save(KEY_SINCE, since); closeSheet(); renderSince();
     }));
+    if (existing && since.length > 1) {
+      const i = since.indexOf(existing);
+      const moveRow = document.createElement("div");
+      moveRow.style.display = "flex"; moveRow.style.gap = "10px"; moveRow.style.marginTop = "12px";
+      const move = (dir) => {
+        const j = i + dir;
+        [since[i], since[j]] = [since[j], since[i]];
+        save(KEY_SINCE, since); closeSheet(); renderSince();
+      };
+      if (i > 0) { const up = makeBtn("↑ Move up", "", () => move(-1)); up.style.flex = "1"; up.style.marginTop = "0"; moveRow.appendChild(up); }
+      if (i < since.length - 1) { const dn = makeBtn("↓ Move down", "", () => move(1)); dn.style.flex = "1"; dn.style.marginTop = "0"; moveRow.appendChild(dn); }
+      s.appendChild(moveRow);
+    }
     if (existing) {
       s.appendChild(makeBtn("Reset to now", "", () => {
         confirmSheet("Reset timer?", "Starts counting from now. Your longest run is kept as your record.", "Reset", () => {
