@@ -227,6 +227,13 @@
     .row button:active { background: var(--surface-2); transform: scale(0.98); }
     .row button:disabled { opacity: 0.35; box-shadow: none; }
     .row .end { color: var(--accent); }
+    .quick-row { margin-bottom: 12px; }
+    .quick-row .quick {
+      padding: 13px; font-size: 14px; font-weight: 700;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.2px;
+    }
+    .quick-row #quickPlusBtn { color: var(--accent); }
+    .quick-row #quickMinusBtn { color: var(--muted); }
 
     /* ---- cards ---- */
     .chart-card, .history { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); }
@@ -388,6 +395,7 @@
     .tap-row:first-child { border-top: none; }
     .tap-row .tap-t { color: var(--muted); flex: 1; }
     .tap-row .tap-amt { color: var(--accent); font-weight: 700; }
+    .tap-row .tap-amt.neg { color: var(--muted); }
     .tap-row .tap-total {
       font-weight: 700; color: var(--muted); background: var(--surface-2);
       padding: 3px 11px; border-radius: 999px; font-size: 13px; min-width: 44px; text-align: center;
@@ -581,12 +589,17 @@
     <small>tap to add</small>
   </button>
 
+  <div class="row quick-row">
+    <button class="quick" id="quickMinusBtn">− 0.25</button>
+    <button class="quick" id="quickPlusBtn">+ 0.25</button>
+  </div>
+
   <div class="row">
     <button id="undoBtn" disabled>Undo</button>
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v3.2 · © Avery LLC</div>
+  <div class="version">v3.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

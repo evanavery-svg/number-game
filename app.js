@@ -32,6 +32,8 @@ const el = {
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
+  quickMinus: document.getElementById("quickMinusBtn"),
+  quickPlus: document.getElementById("quickPlusBtn"),
   undo: document.getElementById("undoBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
@@ -300,8 +302,8 @@ function tapRows(taps) {
     time.textContent = new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
     const amt = document.createElement("span");
-    amt.className = "tap-amt";
-    amt.textContent = e.amt != null ? "+" + fmt(e.amt) : "";
+    amt.className = "tap-amt" + (e.amt < 0 ? " neg" : "");
+    amt.textContent = e.amt != null ? (e.amt < 0 ? "− " + fmt(-e.amt) : "+" + fmt(e.amt)) : "";
 
     const tot = document.createElement("span");
     tot.className = "tap-total";
@@ -605,21 +607,30 @@ function renderHistory() {
 }
 
 // ---- core actions ----
-function addTap(e) {
+// Shared by the main +step button and the quick ±0.25 buttons: adjusts
+// today's total, logs the tap (so Undo and the Insights timeline stay
+// accurate for whichever button was actually used), and re-renders.
+function applyDelta(amt) {
+  if (amt < 0 && today <= 0) return;   // nothing to subtract
   const prev = today;
-  today = round2(today + step);
+  today = round2(today + amt);
+  if (today < 0) today = 0;
   taps += 1;
-  tapLog.push({ t: Date.now(), amt: step, total: today });
+  tapLog.push({ t: Date.now(), amt: amt, total: today });
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
-  spawnRipple(e);
-  buzz(15); click();
+  buzz(amt > 0 ? 15 : 10); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
-  if (goal > 0) {
+  if (goal > 0 && amt > 0) {
     if (prev < goal && today === goal) atGoalHeadsUp();        // landed exactly on the limit
     else if (prev <= goal && today > goal) warnOver();          // crossed over it
   }
   renderTop(true); renderChart();   // history list doesn't change on a tap
 }
+function addTap(e) {
+  spawnRipple(e);
+  applyDelta(step);
+}
+function quickAdjust(amt) { applyDelta(amt); }
 
 // expanding ripple from the tap point on the big button
 function spawnRipple(e) {
@@ -650,10 +661,11 @@ function warnOver() {
 }
 function undo() {
   if (taps === 0) return;
-  today = round2(today - step);
+  const last = tapLog.pop();
+  const amt = last != null ? tapEntry(last).amt : null;
+  today = round2(today - (amt != null ? amt : step));   // reverse whatever the last tap actually added
   if (today < 0) today = 0;
   taps -= 1;
-  tapLog.pop();
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
   renderTop(true); renderChart();
 }
@@ -1434,6 +1446,8 @@ function openSinceForm(id) {
 
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
+el.quickMinus.addEventListener("click", () => quickAdjust(-0.25));
+el.quickPlus.addEventListener("click", () => quickAdjust(0.25));
 el.undo.addEventListener("click", undo);
 el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
