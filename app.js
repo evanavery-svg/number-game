@@ -22,6 +22,7 @@ const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's t
 const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hydration, auto-resets daily
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
+const KEY_WATER_PRESETS = "count.waterPresets"; // [oz, …] quick glass-size buttons
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -103,6 +104,7 @@ let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights 
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
+let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
 
 // ---- daily encouragement ----
@@ -1523,23 +1525,65 @@ function resetWater() {
 }
 function openWaterSettings() {
   openSheet((s) => {
-    addEl(s, "h3", "Water settings");
-    addEl(s, "label", "Glass size — oz added per tap");
-    const glassInput = numInput(fmt(waterGlass), "0.25");
-    s.appendChild(glassInput);
-    addEl(s, "label", "Daily goal (oz, blank or 0 for none)");
+    addEl(s, "h3", "Daily goal");
+    addEl(s, "label", "Daily water goal (oz, blank or 0 for none)");
     const goalInput = numInput(waterGoal > 0 ? fmt(waterGoal) : "", "0");
     s.appendChild(goalInput);
     s.appendChild(makeBtn("Save", "primary", () => {
-      const g = parseFloat(glassInput.value);
-      if (isNaN(g) || g <= 0) { toast("Glass size must be greater than 0"); return; }
-      waterGlass = round2(g);
       const go = parseFloat(goalInput.value);
       waterGoal = isNaN(go) || go <= 0 ? 0 : round2(go);
-      save(KEY_WATER_GLASS, waterGlass); save(KEY_WATER_GOAL, waterGoal);
+      save(KEY_WATER_GOAL, waterGoal);
       closeSheet(); renderWater();
     }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
+}
+// Add / remove your own glass-size buttons.
+function openWaterPresets() {
+  openSheet((s) => {
+    addEl(s, "h3", "Glass sizes");
+    addEl(s, "p", "Tap a size's × to remove it. Add your own below.", "sub");
+
+    const chips = document.createElement("div");
+    chips.className = "water-presets manage";
+    const renderChips = () => {
+      chips.textContent = "";
+      if (!waterPresets.length) {
+        const e = addEl(chips, "div", "No sizes yet — add one below.", "sub");
+        e.style.color = "var(--faint)";
+      }
+      waterPresets.forEach((n) => {
+        const chip = document.createElement("span"); chip.className = "water-mchip";
+        chip.appendChild(document.createTextNode(fmt(n) + " oz"));
+        const x = document.createElement("button");
+        x.className = "water-mchip-x"; x.textContent = "×"; x.setAttribute("aria-label", "Remove " + fmt(n) + " oz");
+        x.addEventListener("click", () => {
+          waterPresets = waterPresets.filter((v) => v !== n);
+          save(KEY_WATER_PRESETS, waterPresets); renderChips(); renderWater();
+        });
+        chip.appendChild(x); chips.appendChild(chip);
+      });
+    };
+    renderChips();
+    s.appendChild(chips);
+
+    addEl(s, "label", "Add a glass size (oz)");
+    const input = numInput("", "0.25");
+    input.placeholder = "e.g. 10";
+    s.appendChild(input);
+    s.appendChild(makeBtn("Add size", "primary", () => {
+      const v = round2(parseFloat(input.value));
+      if (isNaN(v) || v <= 0) { toast("Enter oz greater than 0"); return; }
+      if (!waterPresets.includes(v)) {
+        waterPresets.push(v);
+        waterPresets.sort((a, b) => a - b);
+        save(KEY_WATER_PRESETS, waterPresets);
+      }
+      waterGlass = v; save(KEY_WATER_GLASS, waterGlass);   // select the size just added
+      input.value = ""; renderChips(); renderWater();
+      toast(`Added ${fmt(v)} oz`);
+    }));
+    s.appendChild(makeBtn("Done", "ghost", closeSheet));
   });
 }
 function renderWater() {
@@ -1585,18 +1629,23 @@ function renderWater() {
 
   addEl(body, "div", "Glass size (oz)", "water-section-title");
   const presets = document.createElement("div"); presets.className = "water-presets";
-  [4, 8, 12, 16, 20, 24].forEach((n) => {
+  waterPresets.forEach((n) => {
     const b = document.createElement("button");
     b.className = "water-preset" + (n === waterGlass ? " on" : "");
     b.textContent = fmt(n);
     b.addEventListener("click", () => { waterGlass = n; save(KEY_WATER_GLASS, waterGlass); buzz(6); renderWater(); });
     presets.appendChild(b);
   });
+  const addChip = document.createElement("button");
+  addChip.className = "water-preset add"; addChip.textContent = "+";
+  addChip.setAttribute("aria-label", "Add or edit glass sizes");
+  addChip.addEventListener("click", openWaterPresets);
+  presets.appendChild(addChip);
   body.appendChild(presets);
 
   const edit = document.createElement("button");
   edit.className = "sheet-btn link"; edit.style.marginTop = "12px";
-  edit.textContent = "Custom size & daily goal";
+  edit.textContent = "Set daily goal";
   edit.addEventListener("click", openWaterSettings);
   body.appendChild(edit);
 
