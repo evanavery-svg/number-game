@@ -630,7 +630,16 @@ function addTap(e) {
   spawnRipple(e);
   applyDelta(step);
 }
-function quickAdjust(amt) { applyDelta(amt); }
+// The ±0.25 buttons change how much each tap adds (the big button's amount) —
+// e.g. bump it to 0.50 or 0.75 — rather than changing today's total.
+function adjustStep(delta) {
+  const ns = round2(Math.max(0.25, step + delta));
+  if (ns === step) { buzz(6); return; }   // already at the 0.25 minimum
+  step = ns;
+  save(KEY_STEP, step);
+  buzz(8);
+  renderTop();   // refresh the big button's "+ x" label
+}
 
 // expanding ripple from the tap point on the big button
 function spawnRipple(e) {
@@ -1446,8 +1455,8 @@ function openSinceForm(id) {
 
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
-el.quickMinus.addEventListener("click", () => quickAdjust(-0.25));
-el.quickPlus.addEventListener("click", () => quickAdjust(0.25));
+el.quickMinus.addEventListener("click", () => adjustStep(-0.25));
+el.quickPlus.addEventListener("click", () => adjustStep(0.25));
 el.undo.addEventListener("click", undo);
 el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
