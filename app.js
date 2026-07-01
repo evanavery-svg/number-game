@@ -19,6 +19,9 @@ const KEY_REMIND_LAST = "count.remindLast";       // YYYY-MM-DD last OS notifica
 const KEY_UNLOCK_AT = "count.unlockAt";   // timestamp of last unlock (for the grace window)
 const KEY_SINCE = "count.since";          // [{ id, name, start }]
 const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's taps; cleared on End Day
+const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hydration, auto-resets daily
+const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
+const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -72,6 +75,10 @@ const el = {
   sinceClose: document.getElementById("sinceClose"),
   sinceList: document.getElementById("sinceList"),
   sinceAdd: document.getElementById("sinceAdd"),
+  waterBtn: document.getElementById("waterBtn"),
+  waterOverlay: document.getElementById("waterOverlay"),
+  waterClose: document.getElementById("waterClose"),
+  waterBody: document.getElementById("waterBody"),
 };
 
 // ---- state ----
@@ -93,6 +100,10 @@ let reminderOn = load(KEY_REMIND, false);
 let reminderTime = load(KEY_REMIND_TIME, "20:00");
 let since = load(KEY_SINCE, []);
 let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
+let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
+let waterGlass = load(KEY_WATER_GLASS, 8);
+let waterGoal = load(KEY_WATER_GOAL, 64);
+let calOffset = 0;                   // Insights calendar: months back from the current one
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -337,7 +348,17 @@ function renderTapLog() {
 const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
 const WK_NAME = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
 
-// Calendar heatmap of the current month — each day tinted under (green) / over (red).
+// How many whole months back the earliest logged day sits (history is sorted ascending).
+function earliestMonthOffset() {
+  if (!history.length) return 0;
+  const now = new Date();
+  const first = new Date(history[0].endedAt || history[0].date);
+  if (isNaN(first.getTime())) return 0;
+  return Math.max(0, (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()));
+}
+
+// Calendar heatmap — each day tinted under (green) / over (red). calOffset lets
+// you page back through previous months (0 = current month).
 function renderCalendar() {
   const card = el.calCard;
   if (history.length === 0 && today === 0) { card.style.display = "none"; return; }
@@ -345,20 +366,34 @@ function renderCalendar() {
   card.textContent = "";
 
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
+  const target = new Date(now.getFullYear(), now.getMonth() - calOffset, 1);
+  const y = target.getFullYear(), m = target.getMonth();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const lead = new Date(y, m, 1).getDay();
   const todayStr = isoLocal(now);
 
-  // map date -> total for this month (history + today in progress)
+  // map date -> total (history + today in progress); keys are per-day so any month works
   const totals = {};
   history.forEach((d) => { totals[d.date] = d.total; });
   if (today > 0) totals[todayStr] = today;
 
+  // header with ‹ month year › navigation
+  const nav = document.createElement("div");
+  nav.className = "cal-nav";
+  const maxBack = earliestMonthOffset();
+  const prev = document.createElement("button");
+  prev.className = "cal-nav-btn"; prev.textContent = "‹"; prev.setAttribute("aria-label", "Previous month");
+  prev.disabled = calOffset >= maxBack;
+  prev.addEventListener("click", () => { if (calOffset < maxBack) { calOffset++; renderCalendar(); } });
   const title = document.createElement("div");
   title.className = "section-title";
-  title.textContent = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  card.appendChild(title);
+  title.textContent = target.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const next = document.createElement("button");
+  next.className = "cal-nav-btn"; next.textContent = "›"; next.setAttribute("aria-label", "Next month");
+  next.disabled = calOffset <= 0;
+  next.addEventListener("click", () => { if (calOffset > 0) { calOffset--; renderCalendar(); } });
+  nav.append(prev, title, next);
+  card.appendChild(nav);
 
   const grid = document.createElement("div");
   grid.className = "cal";
@@ -456,7 +491,7 @@ function statTile(value, label, opts) {
   return t;
 }
 
-function openInsights() { renderInsights(); el.insightsOverlay.classList.add("show"); }
+function openInsights() { calOffset = 0; renderInsights(); el.insightsOverlay.classList.add("show"); }
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
 // Cheap render for the today area only — used on every tap so rapid
@@ -1453,6 +1488,126 @@ function openSinceForm(id) {
   });
 }
 
+// ---- water (a separate daily hydration counter) ----
+// Tracks ounces drunk today. Auto-resets when the local date rolls over,
+// so there's no "end day" — it just starts fresh each morning.
+function ensureWaterDay() {
+  const t = isoLocal(new Date());
+  if (!water || water.date !== t) { water = { date: t, oz: 0, log: [] }; save(KEY_WATER, water); }
+  else if (!Array.isArray(water.log)) { water.log = []; }
+}
+function addWater(amt) {
+  ensureWaterDay();
+  const prev = water.oz;
+  water.oz = round2(water.oz + amt);
+  water.log.push(amt);
+  save(KEY_WATER, water);
+  buzz(15); click();
+  if (waterGoal > 0 && prev < waterGoal && water.oz >= waterGoal) { buzz([0, 35, 40, 60]); toast("💧 Water goal reached!"); }
+  renderWater();
+}
+function undoWater() {
+  ensureWaterDay();
+  if (!water.log.length) return;
+  const last = water.log.pop();
+  water.oz = round2(Math.max(0, water.oz - last));
+  save(KEY_WATER, water); buzz(8); renderWater();
+}
+function resetWater() {
+  ensureWaterDay();
+  if (!water.oz && !water.log.length) { toast("Nothing to reset"); return; }
+  confirmSheet("Reset water?", "Clears today's water back to 0 oz.", "Reset", () => {
+    water = { date: isoLocal(new Date()), oz: 0, log: [] };
+    save(KEY_WATER, water); renderWater(); toast("Water reset");
+  }, true);
+}
+function openWaterSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Water settings");
+    addEl(s, "label", "Glass size — oz added per tap");
+    const glassInput = numInput(fmt(waterGlass), "0.25");
+    s.appendChild(glassInput);
+    addEl(s, "label", "Daily goal (oz, blank or 0 for none)");
+    const goalInput = numInput(waterGoal > 0 ? fmt(waterGoal) : "", "0");
+    s.appendChild(goalInput);
+    s.appendChild(makeBtn("Save", "primary", () => {
+      const g = parseFloat(glassInput.value);
+      if (isNaN(g) || g <= 0) { toast("Glass size must be greater than 0"); return; }
+      waterGlass = round2(g);
+      const go = parseFloat(goalInput.value);
+      waterGoal = isNaN(go) || go <= 0 ? 0 : round2(go);
+      save(KEY_WATER_GLASS, waterGlass); save(KEY_WATER_GOAL, waterGoal);
+      closeSheet(); renderWater();
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
+}
+function renderWater() {
+  ensureWaterDay();
+  const body = el.waterBody;
+  body.textContent = "";
+
+  const oz = round2(water.oz);
+  const pct = waterGoal > 0 ? Math.min(100, Math.round((oz / waterGoal) * 100)) : 0;
+  const done = waterGoal > 0 && oz >= waterGoal;
+
+  const card = document.createElement("div"); card.className = "water-card";
+  const big = document.createElement("div"); big.className = "water-big";
+  big.innerHTML = `${fmt(oz)}<span class="water-unit">oz</span>`;
+  const gl = document.createElement("div"); gl.className = "water-goal" + (done ? " done" : "");
+  if (waterGoal > 0) {
+    gl.textContent = done
+      ? `Goal reached — ${fmt(oz)} of ${fmt(waterGoal)} oz 💧`
+      : `${fmt(oz)} of ${fmt(waterGoal)} oz · ${fmt(round2(waterGoal - oz))} to go`;
+  } else {
+    gl.textContent = "No daily goal set";
+  }
+  card.append(big, gl);
+  if (waterGoal > 0) {
+    const bar = document.createElement("div"); bar.className = "water-bar";
+    const fill = document.createElement("i"); fill.style.width = pct + "%";
+    bar.appendChild(fill); card.appendChild(bar);
+  }
+  body.appendChild(card);
+
+  const addBtn = document.createElement("button"); addBtn.className = "water-add";
+  addBtn.textContent = `+ ${fmt(waterGlass)} oz`;
+  addBtn.addEventListener("click", () => addWater(waterGlass));
+  body.appendChild(addBtn);
+
+  const row = document.createElement("div"); row.className = "water-row";
+  const undoB = document.createElement("button"); undoB.textContent = "Undo"; undoB.disabled = !water.log.length;
+  undoB.addEventListener("click", undoWater);
+  const resetB = document.createElement("button"); resetB.textContent = "Reset";
+  resetB.addEventListener("click", resetWater);
+  row.append(undoB, resetB);
+  body.appendChild(row);
+
+  addEl(body, "div", "Glass size (oz)", "water-section-title");
+  const presets = document.createElement("div"); presets.className = "water-presets";
+  [4, 8, 12, 16, 20, 24].forEach((n) => {
+    const b = document.createElement("button");
+    b.className = "water-preset" + (n === waterGlass ? " on" : "");
+    b.textContent = fmt(n);
+    b.addEventListener("click", () => { waterGlass = n; save(KEY_WATER_GLASS, waterGlass); buzz(6); renderWater(); });
+    presets.appendChild(b);
+  });
+  body.appendChild(presets);
+
+  const edit = document.createElement("button");
+  edit.className = "sheet-btn link"; edit.style.marginTop = "12px";
+  edit.textContent = "Custom size & daily goal";
+  edit.addEventListener("click", openWaterSettings);
+  body.appendChild(edit);
+
+  const glasses = water.log.length;
+  const stat = document.createElement("div"); stat.className = "water-stat";
+  stat.innerHTML = `<b>${glasses}</b> ${glasses === 1 ? "glass" : "glasses"} today`;
+  body.appendChild(stat);
+}
+function openWater() { renderWater(); el.waterOverlay.classList.add("show"); }
+function closeWater() { el.waterOverlay.classList.remove("show"); }
+
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.quickMinus.addEventListener("click", () => adjustStep(-0.25));
@@ -1470,6 +1625,9 @@ el.sinceBtn.addEventListener("click", openSince);
 el.sinceClose.addEventListener("click", closeSince);
 el.sinceOverlay.addEventListener("click", (e) => { if (e.target === el.sinceOverlay) closeSince(); });
 el.sinceAdd.addEventListener("click", () => openSinceForm(null));
+el.waterBtn.addEventListener("click", openWater);
+el.waterClose.addEventListener("click", closeWater);
+el.waterOverlay.addEventListener("click", (e) => { if (e.target === el.waterOverlay) closeWater(); });
 
 render();
 

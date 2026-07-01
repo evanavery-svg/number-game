@@ -28,6 +28,8 @@
       --btn-glow: rgba(255,149,0,0.38);
       --key: rgba(255,255,255,0.10);
       --key-press: rgba(255,255,255,0.22);
+      --water: #0a84ff;
+      --water-2: #64b5ff;
     }
     /* Follow the phone's appearance: light mode gets a light skin. */
     @media (prefers-color-scheme: light) {
@@ -48,6 +50,8 @@
         --btn-glow: rgba(255,149,0,0.30);
         --key: rgba(0,0,0,0.05);
         --key-press: rgba(0,0,0,0.12);
+        --water: #007aff;
+        --water-2: #4da3ff;
       }
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -429,6 +433,34 @@
     .since-mile.reached { background: rgba(255,149,0,0.16); color: var(--accent); }
     .since-mile.next { box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--accent); }
 
+    /* ---- water tracker (separate panel) ---- */
+    .water-card { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); padding: 24px 18px 20px; text-align: center; margin-bottom: 14px; }
+    .water-big { font-size: 60px; font-weight: 300; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--water); }
+    .water-big .water-unit { font-size: 22px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+    .water-goal { font-size: 14px; color: var(--muted); margin-top: 12px; }
+    .water-goal.done { color: var(--water); font-weight: 700; }
+    .water-bar { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 16px; }
+    .water-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--water-2), var(--water)); transition: width 0.45s cubic-bezier(0.22,1,0.36,1); }
+    .water-add {
+      width: 100%; border: none; border-radius: 20px; padding: 20px; margin-top: 2px;
+      background: linear-gradient(180deg, var(--water-2), var(--water)); color: #fff;
+      font-size: 22px; font-weight: 700; cursor: pointer; letter-spacing: 0.2px;
+      box-shadow: 0 10px 26px rgba(10,132,255,0.34), inset 0 1px 0 rgba(255,255,255,0.35);
+      transition: transform 0.1s ease;
+    }
+    .water-add:active { transform: scale(0.98) translateY(1px); }
+    .water-row { display: flex; gap: 12px; margin-top: 12px; }
+    .water-row button { flex: 1; padding: 14px; border: none; border-radius: 14px; background: var(--surface); color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: var(--card-shadow); transition: background 0.15s ease, transform 0.08s ease; }
+    .water-row button:active { background: var(--surface-2); transform: scale(0.98); }
+    .water-row button:disabled { opacity: 0.35; box-shadow: none; }
+    .water-section-title { font-size: 12px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase; color: var(--muted); margin: 22px 2px 10px; }
+    .water-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+    .water-preset { flex: none; padding: 9px 15px; border-radius: 999px; border: none; background: var(--surface); color: var(--text); font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: var(--card-shadow); font-variant-numeric: tabular-nums; transition: transform 0.08s ease; }
+    .water-preset:active { transform: scale(0.94); }
+    .water-preset.on { background: var(--water); color: #fff; box-shadow: none; }
+    .water-stat { font-size: 13px; color: var(--muted); margin-top: 16px; text-align: center; }
+    .water-stat b { color: var(--text); font-weight: 700; }
+
     /* ---- daily reminder banner ---- */
     .reminder {
       display: flex; align-items: center; gap: 10px;
@@ -455,6 +487,16 @@
     .ss-val { font-size: 13px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
 
     /* ---- calendar heatmap + weekday bars (insights) ---- */
+    .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .cal-nav .section-title { margin: 0; }
+    .cal-nav-btn {
+      background: var(--surface-2); border: none; color: var(--text);
+      width: 32px; height: 32px; border-radius: 50%; font-size: 18px; line-height: 1;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.15s ease, transform 0.08s ease;
+    }
+    .cal-nav-btn:active { transform: scale(0.9); }
+    .cal-nav-btn:disabled { opacity: 0.28; cursor: default; }
     .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .cal-head { font-size: 10px; font-weight: 700; color: var(--faint); text-align: center; padding-bottom: 2px; }
     .cal-day {
@@ -525,7 +567,7 @@
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i { transition: none; }
     }
   </style>
 </head>
@@ -538,6 +580,9 @@
     <div class="header-actions">
       <button class="iconbtn" id="sinceBtn" aria-label="Time since">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+      </button>
+      <button class="iconbtn" id="waterBtn" aria-label="Water">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>
       </button>
       <button class="iconbtn" id="statsBtn" aria-label="Insights">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 19V11M12 19V5M19 19v-7"/></svg>
@@ -602,7 +647,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v3.4 · © Avery LLC</div>
+  <div class="version">v3.5 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -666,6 +711,17 @@
         <div id="sinceList"></div>
         <button class="sheet-btn primary" id="sinceAdd" style="margin-top:6px">+ New tracker</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Water: a separate daily hydration counter (auto-resets each day) -->
+  <div class="panel-overlay" id="waterOverlay">
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Water</h3>
+        <button class="panel-close" id="waterClose">Done</button>
+      </div>
+      <div class="panel-body" id="waterBody"></div>
     </div>
   </div>
 
