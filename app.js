@@ -1031,23 +1031,40 @@ async function pinKey(d) {
     }
   }
 }
-function pinDel() { pinEntry = pinEntry.slice(0, -1); updateDots(); }
+function pinDel() { if (!pinEntry) return; pinEntry = pinEntry.slice(0, -1); updateDots(); buzz(6); }
 async function tryBio() {
   try { await bioUnlock(); buzz(20); hideLock(); }
   catch (e) { el.lockError.textContent = "Face ID failed — enter passcode"; }
 }
+const KEY_ABC = { "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL", "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ" };
 function buildPad() {
   el.lockPad.textContent = "";
   ["1", "2", "3", "4", "5", "6", "7", "8", "9"].forEach((k) => el.lockPad.appendChild(padKey(k, () => pinKey(k))));
-  el.lockPad.appendChild(bioSet() ? padKey("Face ID", tryBio, true) : document.createElement("div"));
+  el.lockPad.appendChild(bioSet() ? padKey("Face ID", tryBio, true) : blankKey());
   el.lockPad.appendChild(padKey("0", () => pinKey("0")));
   el.lockPad.appendChild(padKey("⌫", pinDel, true));
 }
+function blankKey() { const d = document.createElement("div"); d.className = "lock-key blank"; return d; }
 function padKey(label, fn, isFn) {
   const b = document.createElement("button");
+  b.type = "button";
   b.className = "lock-key" + (isFn ? " fn" : "");
-  b.textContent = label;
-  b.addEventListener("click", fn);
+  if (!isFn && /^\d$/.test(label)) {
+    const num = document.createElement("span"); num.className = "num"; num.textContent = label;
+    const abc = document.createElement("span"); abc.className = "abc"; abc.textContent = KEY_ABC[label] || "";
+    b.append(num, abc);
+  } else {
+    b.textContent = label;   // Face ID / ⌫
+  }
+  // Fire on pointer-down for an instant, native-feeling press (no click delay).
+  b.addEventListener("pointerdown", (e) => {
+    if (e.button && e.button !== 0) return;
+    e.preventDefault();
+    b.classList.add("pressed");
+    fn();
+  });
+  const release = () => b.classList.remove("pressed");
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, release));
   return b;
 }
 
