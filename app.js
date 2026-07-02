@@ -19,6 +19,7 @@ const KEY_REMIND_LAST = "count.remindLast";       // YYYY-MM-DD last OS notifica
 const KEY_UNLOCK_AT = "count.unlockAt";   // timestamp of last unlock (for the grace window)
 const KEY_SINCE = "count.since";          // [{ id, name, start }]
 const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's taps; cleared on End Day
+const KEY_ACT_DATE = "count.actDate";     // local date of the last tap — catches days never ended
 const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hydration, auto-resets daily
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
@@ -689,14 +690,21 @@ function renderHistory() {
 // Shared by the main +step button and the quick ±0.25 buttons: adjusts
 // today's total, logs the tap (so Undo and the Insights timeline stay
 // accurate for whichever button was actually used), and re-renders.
-function applyDelta(amt) {
+function applyDelta(amt, confirmed) {
   if (amt < 0 && today <= 0) return;   // nothing to subtract
+  // Accountability: the tap that would cross the goal has to be a conscious
+  // choice — pause and confirm instead of sliding over on autopilot.
+  if (!confirmed && goal > 0 && amt > 0 && today <= goal && round2(today + amt) > goal) {
+    confirmOver(amt);
+    return;
+  }
   const prev = today;
   today = round2(today + amt);
   if (today < 0) today = 0;
   taps += 1;
   tapLog.push({ t: Date.now(), amt: amt, total: today });
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+  save(KEY_ACT_DATE, isoLocal(new Date()));   // remember which day this activity belongs to
   buzz(amt > 0 ? 15 : 10); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
   if (goal > 0 && amt > 0) {
@@ -704,6 +712,16 @@ function applyDelta(amt) {
     else if (prev <= goal && today > goal) warnOver();          // crossed over it
   }
   renderTop(true); renderChart();   // history list doesn't change on a tap
+}
+// The moment of truth: going over the goal requires an explicit yes.
+function confirmOver(amt) {
+  buzz([0, 20, 40, 20]);
+  openSheet((s) => {
+    addEl(s, "h3", "Go over your goal?");
+    addEl(s, "p", `You're at ${fmt(today)} of ${fmt(goal)}. Adding ${fmt(amt)} puts you ${fmt(round2(today + amt - goal))} over.`, "sub");
+    s.appendChild(makeBtn(`Add ${fmt(amt)} anyway`, "danger", () => { closeSheet(); applyDelta(amt, true); }));
+    s.appendChild(makeBtn(`Stay at ${fmt(today)}`, "primary", closeSheet));
+  });
 }
 function addTap(e) {
   spawnRipple(e);
@@ -763,7 +781,14 @@ function openEndDay() {
   if (taps === 0 && today === 0) { toast("Nothing to log yet"); return; }
   openSheet((s) => {
     addEl(s, "h3", "End Day");
-    addEl(s, "p", `Log ${fmt(today)} and start a fresh day.`, "sub");
+    // say plainly where the day landed against the goal
+    let sub = `Log ${fmt(today)} and start a fresh day.`;
+    if (goal > 0) {
+      sub = today > goal
+        ? `Log ${fmt(today)} — ${fmt(round2(today - goal))} over your ${fmt(goal)} goal.`
+        : `Log ${fmt(today)} — under your ${fmt(goal)} goal ✓`;
+    }
+    addEl(s, "p", sub, "sub");
 
     addEl(s, "label", "Date for this day");
     const dateInput = document.createElement("input");
@@ -811,7 +836,8 @@ function commitDay(note, dateStr) {
 
   // a fuller "day complete" moment
   buzz([0, 35, 40, 35, 40, 70]);
-  toast(`Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : ""}`);
+  const overBy = goal > 0 && total > goal ? ` · ${fmt(round2(total - goal))} over goal` : "";
+  toast(`Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
 
   // refresh the header/quote, then let the number roll down to 0 and the ring drain
@@ -828,6 +854,30 @@ function commitDay(note, dateStr) {
     const firstRow = el.history.querySelector(".hist-row");
     if (firstRow) firstRow.classList.add("enter");
   }
+}
+
+// Accountability: if the running count was built on a previous day and never
+// ended, catch it on the next open — otherwise yesterday quietly bleeds into
+// today and the record stops being honest.
+function checkStaleDay() {
+  const actDate = load(KEY_ACT_DATE, null);
+  const todayStr = isoLocal(new Date());
+  if (!(today > 0) || !actDate || actDate >= todayStr) return;
+  if (el.overlay.classList.contains("show")) return;   // don't clobber an open sheet
+  const [y, mo, d] = actDate.split("-").map(Number);
+  const label = dayLabel(new Date(y, mo - 1, d));
+  openSheet((s) => {
+    addEl(s, "h3", "Finish " + label + "?");
+    addEl(s, "p", `You logged ${fmt(today)} on ${label} but never ended the day. Log it to that day so today starts clean?`, "sub");
+    s.appendChild(makeBtn(`Log ${fmt(today)} to ${label}`, "primary", () => {
+      closeSheet();
+      commitDay("", actDate);
+    }));
+    s.appendChild(makeBtn("Keep counting as today", "ghost", () => {
+      save(KEY_ACT_DATE, todayStr);   // fold it into today on purpose — stop asking
+      closeSheet();
+    }));
+  });
 }
 
 // Feature 9: undo the most recent End Day (merges it back into today).
@@ -1725,10 +1775,12 @@ render();
 // Lock on launch and on return — but only if the 5-minute grace window
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
+checkStaleDay();   // un-ended previous day? offer to log it where it belongs
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
   checkReminder();
+  checkStaleDay();   // the date may have rolled over while backgrounded
 });
 
 // Daily reminder + keep the unlock window fresh during active use.
