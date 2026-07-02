@@ -169,9 +169,9 @@ function readRGB(varName) {
 function refreshColorStops() {
   COLOR_STOPS = [
     { at: 0,    c: readRGB("--text") },
-    { at: 0.34, c: readRGB("--safe") },
-    { at: 0.7,  c: readRGB("--warn") },
-    { at: 1,    c: readRGB("--over") },
+    { at: 0.45, c: readRGB("--num-lo") },
+    { at: 0.78, c: readRGB("--num-mid") },
+    { at: 1,    c: readRGB("--num-hi") },
   ];
 }
 function numberColor() {

@@ -30,6 +30,10 @@
       --key-press: rgba(255,255,255,0.22);
       --water: #0a84ff;
       --water-2: #64b5ff;
+      /* soft, muted ramp for the big number as it nears the goal */
+      --num-lo: #7cc6a2;   /* soft sage green */
+      --num-mid: #f0a85a;  /* warm amber, close to the accent */
+      --num-hi: #e2726a;   /* muted coral, not a harsh red */
     }
     /* Follow the phone's appearance: light mode gets a light skin. */
     @media (prefers-color-scheme: light) {
@@ -52,6 +56,10 @@
         --key-press: rgba(0,0,0,0.12);
         --water: #007aff;
         --water-2: #4da3ff;
+        /* slightly deeper on a light background so they stay legible */
+        --num-lo: #3f9f74;
+        --num-mid: #d88a35;
+        --num-hi: #cf5f56;
       }
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -653,7 +661,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v3.7 · © Avery LLC</div>
+  <div class="version">v3.8 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
