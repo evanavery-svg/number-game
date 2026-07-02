@@ -153,8 +153,9 @@
     .total.zone-safe .ring-prog { stroke: url(#gradSafe); filter: drop-shadow(0 0 6px rgba(48,209,88,0.45)); }
     .total.zone-warn .ring-prog { stroke: url(#gradWarn); filter: drop-shadow(0 0 6px rgba(255,159,10,0.45)); }
     .total.zone-over .ring-prog { stroke: url(#gradOver); filter: drop-shadow(0 0 7px rgba(255,69,58,0.50)); }
-    .total.zone-warn .value, .total.zone-warn .goal-label { color: var(--warn); }
-    .total.zone-over .value, .total.zone-over .goal-label { color: var(--over); }
+    /* number colour is set in JS (white→green→orange→red toward the goal); labels keep the zone tint */
+    .total.zone-warn .goal-label { color: var(--warn); }
+    .total.zone-over .goal-label { color: var(--over); }
 
     .ring-wrap.nudge { animation: nudge .42s ease; }
     @keyframes nudge {
@@ -652,7 +653,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v3.6 · © Avery LLC</div>
+  <div class="version">v3.7 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

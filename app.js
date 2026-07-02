@@ -150,6 +150,47 @@ function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros:
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
 function reduceMotion() { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
 
+// Progressive colour for the big number: it starts at the theme text colour
+// (white in dark mode) and moves white → green → orange → red as today climbs
+// toward the goal, so the colour tracks how close you are to your limit.
+let COLOR_STOPS = null;
+function parseRGB(c) {
+  c = c.trim();
+  if (c[0] === "#") {
+    if (c.length === 4) c = "#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+    return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+  }
+  const m = c.match(/[\d.]+/g);
+  return m ? [+m[0], +m[1], +m[2]] : [255, 255, 255];
+}
+function readRGB(varName) {
+  return parseRGB(getComputedStyle(document.documentElement).getPropertyValue(varName));
+}
+function refreshColorStops() {
+  COLOR_STOPS = [
+    { at: 0,    c: readRGB("--text") },
+    { at: 0.34, c: readRGB("--safe") },
+    { at: 0.7,  c: readRGB("--warn") },
+    { at: 1,    c: readRGB("--over") },
+  ];
+}
+function numberColor() {
+  if (goal <= 0) return "";               // no goal → default text colour
+  if (!COLOR_STOPS) refreshColorStops();
+  const f = today / goal;
+  if (f <= 0) return "";                   // at the start → default (white)
+  const s = COLOR_STOPS;
+  if (f >= 1) return `rgb(${s[3].c.join(",")})`;   // at or over goal → red
+  for (let i = 1; i < s.length; i++) {
+    if (f <= s[i].at) {
+      const t = (f - s[i - 1].at) / (s[i].at - s[i - 1].at);
+      const mix = s[i - 1].c.map((v, k) => Math.round(v + (s[i].c[k] - v) * t));
+      return `rgb(${mix.join(",")})`;
+    }
+  }
+  return "";
+}
+
 // Feature 4: roll the big number up/down to its new value instead of snapping.
 let countRAF = null;
 function setValue(target, animate) {
@@ -505,6 +546,7 @@ function renderTop(animate) {
   // colour the today area by how close we are to the goal
   el.totalWrap.classList.remove("zone-safe", "zone-warn", "zone-over");
   if (zone !== "none") el.totalWrap.classList.add("zone-" + zone);
+  el.total.style.color = numberColor();   // white → green → orange → red toward the goal
 
   // streak line — tinted green while alive (Feature 2); a warm hello on a blank first run (Feature 7)
   const streak = underStreak();
@@ -1704,6 +1746,8 @@ const themeMeta = document.querySelector('meta[name="theme-color"]');
 function syncTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   if (themeMeta) themeMeta.setAttribute("content", dark ? "#000000" : "#f2f2f7");
+  refreshColorStops();   // theme colours changed — recompute the number gradient
+  renderTop();
 }
 syncTheme();
 const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
