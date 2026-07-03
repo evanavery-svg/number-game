@@ -535,6 +535,13 @@
     .wk-callout { font-size: 13px; color: var(--muted); margin-top: 12px; }
     .wk-callout b { color: var(--text); font-weight: 700; }
 
+    /* ---- time-of-day chart (insights) ---- */
+    .tod { display: flex; align-items: flex-end; gap: 2px; height: 64px; }
+    .tod-bar { flex: 1; background: var(--surface-2); border-radius: 3px 3px 1px 1px; min-height: 2px; }
+    .tod-bar.peak { background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
+    .tod-labels { display: flex; justify-content: space-between; margin-top: 7px; }
+    .tod-labels span { font-size: 10px; font-weight: 600; color: var(--faint); }
+
     /* ---- app lock ---- */
     .lock {
       position: fixed; inset: 0; z-index: 100; background: var(--bg);
@@ -661,7 +668,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v3.9 · © Avery LLC</div>
+  <div class="version">v4.0 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -695,6 +702,7 @@
         <div class="chart-card" id="tapLogCard" style="display:none"></div>
         <div class="chart-card" id="calCard" style="display:none"></div>
         <div class="chart-card" id="weekdayCard" style="display:none"></div>
+        <div class="chart-card" id="timeCard" style="display:none"></div>
 
         <div class="chart-card" id="chartCard" style="display:none">
           <div class="chart-head">

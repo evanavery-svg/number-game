@@ -70,6 +70,7 @@ const el = {
   reminderDismiss: document.getElementById("reminderDismiss"),
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
+  timeCard: document.getElementById("timeCard"),
   tapLogCard: document.getElementById("tapLogCard"),
   sinceBtn: document.getElementById("sinceBtn"),
   sinceStrip: document.getElementById("sinceStrip"),
@@ -335,6 +336,7 @@ function renderInsights() {
   renderTapLog();
   renderCalendar();
   renderWeekday();
+  renderTimeOfDay();
 }
 
 // Today's taps, by the clock — count plus a row per tap: the time, how much
@@ -509,6 +511,60 @@ function renderWeekday() {
     callout.innerHTML = `Highest on <b>${WK_NAME[peak]}</b> — avg ${fmt(round2(peakVal))}`;
     card.appendChild(callout);
   }
+}
+
+function hourLabel(h) {
+  const ampm = h < 12 ? "AM" : "PM";
+  let hr = h % 12; if (hr === 0) hr = 12;
+  return `${hr} ${ampm}`;
+}
+
+// When you typically tap — every recorded tap time (history + today) bucketed
+// by hour of day, so you can see the rhythm of the habit.
+function renderTimeOfDay() {
+  const card = el.timeCard;
+  const hours = new Array(24).fill(0);
+  let count = 0;
+  const addTimes = (arr) => {
+    (arr || []).forEach((raw) => {
+      const d = new Date(tapEntry(raw).t);
+      if (!isNaN(d.getTime())) { hours[d.getHours()]++; count++; }
+    });
+  };
+  history.forEach((d) => addTimes(d.tapTimes));
+  addTimes(tapLog);
+
+  if (count < 5) { card.style.display = "none"; return; }   // too little to be meaningful
+  card.style.display = "block";
+  card.textContent = "";
+
+  const max = Math.max(1, ...hours);
+  let peak = 0;
+  hours.forEach((c, h) => { if (c > hours[peak]) peak = h; });
+
+  addEl(card, "div", "By time of day", "section-title");
+
+  const chart = document.createElement("div");
+  chart.className = "tod";
+  hours.forEach((c, h) => {
+    const bar = document.createElement("div");
+    bar.className = "tod-bar" + (h === peak ? " peak" : "");
+    bar.style.height = Math.max(2, (c / max) * 100) + "%";
+    bar.title = `${hourLabel(h)}: ${c} tap${c === 1 ? "" : "s"}`;
+    chart.appendChild(bar);
+  });
+  card.appendChild(chart);
+
+  const labels = document.createElement("div");
+  labels.className = "tod-labels";
+  ["12 AM", "6 AM", "12 PM", "6 PM", "12 AM"].forEach((t) => addEl(labels, "span", t));
+  card.appendChild(labels);
+
+  const callout = document.createElement("div");
+  callout.className = "wk-callout";
+  const share = Math.round((hours[peak] / count) * 100);
+  callout.innerHTML = `You usually tap around <b>${hourLabel(peak)}</b> — ${share}% of taps`;
+  card.appendChild(callout);
 }
 
 function isoLocal(d) {
