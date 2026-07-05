@@ -26,6 +26,7 @@
       --over: #ff453a;   /* over the goal */
       --card-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 14px 34px rgba(0,0,0,0.38);
       --btn-glow: rgba(255,149,0,0.38);
+      --btn-text: #1a1300;   /* text on the accent button */
       --key: rgba(255,255,255,0.10);
       --key-press: rgba(255,255,255,0.22);
       --water: #0a84ff;
@@ -52,6 +53,7 @@
         --over: #ff3b30;
         --card-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 12px 26px rgba(0,0,0,0.07);
         --btn-glow: rgba(255,149,0,0.30);
+        --btn-text: #1a1300;
         --key: rgba(0,0,0,0.05);
         --key-press: rgba(0,0,0,0.12);
         --water: #007aff;
@@ -62,6 +64,35 @@
         --num-hi: #cf5f56;
       }
     }
+    /* Optional blue theme (Settings toggle). Overrides both light and dark,
+       driven by the palette #296DBE / #1F3238 / #BABCAD. */
+    :root[data-theme="blue"] {
+      --bg: #1f3238;
+      --surface: #26404a;
+      --surface-2: #314c56;
+      --hair: rgba(255,255,255,0.09);
+      --text: #eceee6;
+      --muted: #babcad;
+      --faint: #7e8b84;
+      --accent: #296dbe;
+      --accent-2: #4c8fdd;
+      --safe: #4cc38a;
+      --warn: #f0a85a;
+      --over: #e2726a;
+      --card-shadow: 0 1px 0 rgba(255,255,255,0.05), 0 14px 34px rgba(0,0,0,0.45);
+      --btn-glow: rgba(41,109,190,0.42);
+      --btn-text: #ffffff;
+      --key: rgba(255,255,255,0.10);
+      --key-press: rgba(255,255,255,0.24);
+      --water: #3f9ad6;
+      --water-2: #74bff0;
+      --num-lo: #8fc9b4;
+      --num-mid: #7fb0e6;
+      --num-hi: #e2726a;
+    }
+    /* Recolour the SVG ring's default gradient to the theme blue */
+    :root[data-theme="blue"] #gradAccent stop:nth-child(1) { stop-color: #4c8fdd; }
+    :root[data-theme="blue"] #gradAccent stop:nth-child(2) { stop-color: #296dbe; }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { background: var(--bg); }
     html, body {
@@ -198,7 +229,7 @@
       border: none;
       border-radius: 28px;
       background: linear-gradient(180deg, var(--accent-2) 0%, var(--accent) 100%);
-      color: #1a1300;
+      color: var(--btn-text);
       font-size: 34px;
       font-weight: 700;
       letter-spacing: 0.3px;
@@ -360,7 +391,7 @@
       transition: transform 0.08s ease, filter 0.15s ease;
     }
     .sheet-btn:active { transform: scale(0.985); filter: brightness(0.92); }
-    .sheet-btn.primary { background: var(--accent); color: #1a1300; }
+    .sheet-btn.primary { background: var(--accent); color: var(--btn-text); }
     .sheet-btn.danger { background: transparent; color: var(--over); }
     .sheet-btn.ghost { background: transparent; color: var(--muted); }
     .sheet-btn.link { background: transparent; color: var(--accent); margin-top: 6px; }
@@ -591,6 +622,10 @@
       .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i { transition: none; }
     }
   </style>
+  <script>
+    // Apply the saved theme before first paint so there's no colour flash.
+    try { if (JSON.parse(localStorage.getItem("count.theme")) === "blue") document.documentElement.setAttribute("data-theme", "blue"); } catch (e) {}
+  </script>
 </head>
 <body>
   <header>
@@ -668,7 +703,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.0 · © Avery LLC</div>
+  <div class="version">v4.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

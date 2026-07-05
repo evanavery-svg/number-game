@@ -20,6 +20,7 @@ const KEY_UNLOCK_AT = "count.unlockAt";   // timestamp of last unlock (for the g
 const KEY_SINCE = "count.since";          // [{ id, name, start }]
 const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's taps; cleared on End Day
 const KEY_ACT_DATE = "count.actDate";     // local date of the last tap — catches days never ended
+const KEY_THEME = "count.theme";          // "blue" for the alternate palette, else default
 const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hydration, auto-resets daily
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
@@ -108,6 +109,7 @@ let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
 let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
+let theme = load(KEY_THEME, "default");
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -1011,6 +1013,15 @@ function openSettings() {
     const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
     const soundToggle = makeToggle(s, "Sound on tap", sound);
 
+    // Blue theme — applies live and reverts instantly when switched off.
+    const themeToggle = makeToggle(s, "Blue theme", theme === "blue");
+    themeToggle.addEventListener("change", () => {
+      theme = themeToggle.checked ? "blue" : "default";
+      save(KEY_THEME, theme);
+      applyTheme();
+      buzz(8);
+    });
+
     const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
     addEl(s, "label", "Reminder time");
     const timeInput = document.createElement("input");
@@ -1853,11 +1864,19 @@ setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1
 const themeMeta = document.querySelector('meta[name="theme-color"]');
 function syncTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  if (themeMeta) themeMeta.setAttribute("content", dark ? "#000000" : "#f2f2f7");
+  let tc = dark ? "#000000" : "#f2f2f7";
+  if (theme === "blue") tc = "#1f3238";
+  if (themeMeta) themeMeta.setAttribute("content", tc);
   refreshColorStops();   // theme colours changed — recompute the number gradient
   renderTop();
 }
-syncTheme();
+// Apply / remove the alternate palette and keep the status bar + number ramp in sync.
+function applyTheme() {
+  if (theme === "blue") document.documentElement.setAttribute("data-theme", "blue");
+  else document.documentElement.removeAttribute("data-theme");
+  syncTheme();
+}
+applyTheme();   // honour the saved theme (also keeps the data-theme attribute in sync)
 const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
 (darkMq.addEventListener ? darkMq.addEventListener.bind(darkMq, "change") : darkMq.addListener.bind(darkMq))(syncTheme);
 
