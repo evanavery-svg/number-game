@@ -21,6 +21,8 @@ const KEY_SINCE = "count.since";          // [{ id, name, start }]
 const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's taps; cleared on End Day
 const KEY_ACT_DATE = "count.actDate";     // local date of the last tap — catches days never ended
 const KEY_THEME = "count.theme";          // "blue" for the alternate palette, else default
+const KEY_TREE = "count.tree";            // { level, progress, sad, seenLevel, seenProgress }
+const TREE_DAYS = 30;                     // under-goal days to fully grow + prestige
 const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hydration, auto-resets daily
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
@@ -83,6 +85,10 @@ const el = {
   waterOverlay: document.getElementById("waterOverlay"),
   waterClose: document.getElementById("waterClose"),
   waterBody: document.getElementById("waterBody"),
+  treeBtn: document.getElementById("treeBtn"),
+  treeOverlay: document.getElementById("treeOverlay"),
+  treeClose: document.getElementById("treeClose"),
+  treeBody: document.getElementById("treeBody"),
 };
 
 // ---- state ----
@@ -110,6 +116,7 @@ let waterGoal = load(KEY_WATER_GOAL, 64);
 let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
 let theme = load(KEY_THEME, "default");
+let tree = load(KEY_TREE, { level: 0, progress: 0, sad: false, seenLevel: 0, seenProgress: 0 });
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -892,10 +899,25 @@ function commitDay(note, dateStr) {
   save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
 
+  // grow the tree on an under-goal day; a miss makes it droop (no growth)
+  let prestiged = false;
+  if (goal > 0) {
+    if (underGoal) {
+      tree.sad = false;
+      tree.progress += 1;
+      if (tree.progress >= TREE_DAYS) { tree.progress = 0; tree.level += 1; prestiged = true; }
+    } else {
+      tree.sad = true;
+    }
+    save(KEY_TREE, tree);
+  }
+
   // a fuller "day complete" moment
-  buzz([0, 35, 40, 35, 40, 70]);
+  buzz(prestiged ? [0, 40, 60, 40, 60, 90] : [0, 35, 40, 35, 40, 70]);
   const overBy = goal > 0 && total > goal ? ` · ${fmt(round2(total - goal))} over goal` : "";
-  toast(`Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
+  toast(prestiged
+    ? `🌳 Tree fully grown — Prestige ${tree.level}!`
+    : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
 
   // refresh the header/quote, then let the number roll down to 0 and the ring drain
@@ -1816,6 +1838,87 @@ function renderWater() {
 function openWater() { renderWater(); el.waterOverlay.classList.add("show"); }
 function closeWater() { el.waterOverlay.classList.remove("show"); }
 
+// ---- growth tree ----
+// A living reward for staying under the goal: it grows one stage each
+// under-goal day, prestiges into a new tree after a month, and droops on a miss.
+function treeSVG(progress) {
+  const f = Math.max(0, Math.min(1, progress / TREE_DAYS));
+  const gY = 196, cx = 120;
+  const trunkH = 14 + f * 92;
+  const wB = 5 + f * 14, wT = Math.max(2.5, (5 + f * 14) * 0.4);
+  const topY = gY - trunkH;
+  const R = 15 + f * 52;
+  const trunk = `M${cx - wB} ${gY} C ${cx - wB} ${gY - trunkH * 0.45}, ${cx - wT} ${topY + 12}, ${cx - wT} ${topY} `
+    + `L ${cx + wT} ${topY} C ${cx + wT} ${topY + 12}, ${cx + wB} ${gY - trunkH * 0.45}, ${cx + wB} ${gY} Z`;
+  const circ = (x, y, r, cls) => `<circle ${cls ? `class="${cls}" ` : ""}cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"/>`;
+  const canopy =
+    circ(cx, topY + R * 0.05, R) +
+    circ(cx - R * 0.72, topY + R * 0.3, R * 0.72) +
+    circ(cx + R * 0.72, topY + R * 0.3, R * 0.72) +
+    circ(cx, topY - R * 0.55, R * 0.75) +
+    circ(cx - R * 0.28, topY - R * 0.22, R * 0.32, "hl");
+  return `<svg class="tree-svg" viewBox="0 0 240 210" fill="none" aria-hidden="true">
+    <ellipse class="tree-ground" cx="120" cy="199" rx="${(40 + f * 54).toFixed(0)}" ry="12"></ellipse>
+    <g class="tree-top">
+      <path class="tree-trunk" d="${trunk}"></path>
+      <g class="canopy">${canopy}</g>
+    </g>
+  </svg>`;
+}
+function renderTree() {
+  const body = el.treeBody;
+  body.textContent = "";
+  const grew = tree.progress > (tree.seenProgress || 0) || tree.level > (tree.seenLevel || 0);
+  const prestiged = tree.level > (tree.seenLevel || 0);
+
+  const scene = document.createElement("div");
+  scene.className = "tree-scene" + (tree.sad ? " sad" : prestiged ? " prestige" : grew ? " grew" : "");
+  let html = treeSVG(tree.progress);
+  if (prestiged) {
+    html += '<div class="tree-sparkles">';
+    for (let i = 0; i < 8; i++) html += `<span style="--a:${i * 45}deg"></span>`;
+    html += "</div>";
+  }
+  scene.innerHTML = html;
+  body.appendChild(scene);
+
+  if (tree.level > 0) {
+    const badge = document.createElement("div");
+    badge.className = "tree-level";
+    badge.innerHTML = `🌳 Prestige <b>${tree.level}</b>`;
+    body.appendChild(badge);
+  }
+
+  const cap = document.createElement("div");
+  cap.className = "tree-caption";
+  if (goal <= 0) cap.textContent = "Set a daily goal in Settings to start growing your tree.";
+  else if (tree.sad) cap.textContent = "Your tree is drooping — finish today under your goal to perk it back up.";
+  else if (tree.progress === 0) cap.textContent = tree.level > 0 ? "A fresh seedling. Keep under your goal to grow it again." : "A tiny seed. Stay under your goal each day to grow it.";
+  else cap.textContent = "Thriving 🌱 keep finishing under your goal.";
+  body.appendChild(cap);
+
+  const wrap = document.createElement("div");
+  wrap.className = "tree-prog";
+  const head = document.createElement("div");
+  head.className = "tree-prog-head";
+  head.innerHTML = `<span>Day ${tree.progress} of ${TREE_DAYS}</span><span>${Math.round((tree.progress / TREE_DAYS) * 100)}%</span>`;
+  const bar = document.createElement("div");
+  bar.className = "tree-bar";
+  const fill = document.createElement("i");
+  fill.style.width = (tree.progress / TREE_DAYS) * 100 + "%";
+  bar.appendChild(fill);
+  wrap.append(head, bar);
+  body.appendChild(wrap);
+
+  addEl(body, "div", "Each day you finish at or under your goal, your tree grows a little. Reach 30 days and it prestiges into a brand-new one. Miss a day and it droops until you're back under.", "tree-note");
+
+  // remember what's been seen so the next visit only celebrates fresh growth
+  if (grew) { tree.seenProgress = tree.progress; tree.seenLevel = tree.level; save(KEY_TREE, tree); }
+  if (prestiged) buzz([0, 40, 60, 40, 80]);
+}
+function openTree() { renderTree(); el.treeOverlay.classList.add("show"); }
+function closeTree() { el.treeOverlay.classList.remove("show"); }
+
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.quickMinus.addEventListener("click", () => adjustStep(-0.25));
@@ -1836,6 +1939,9 @@ el.sinceAdd.addEventListener("click", () => openSinceForm(null));
 el.waterBtn.addEventListener("click", openWater);
 el.waterClose.addEventListener("click", closeWater);
 el.waterOverlay.addEventListener("click", (e) => { if (e.target === el.waterOverlay) closeWater(); });
+el.treeBtn.addEventListener("click", openTree);
+el.treeClose.addEventListener("click", closeTree);
+el.treeOverlay.addEventListener("click", (e) => { if (e.target === el.treeOverlay) closeTree(); });
 
 render();
 

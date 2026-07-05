@@ -126,23 +126,26 @@
       text-transform: uppercase;
       color: var(--muted);
     }
+    .header-title { min-width: 0; }
     .header-title .date {
-      font-size: 22px;
+      font-size: 21px;
       font-weight: 700;
       letter-spacing: -0.3px;
       margin-top: 2px;
+      white-space: nowrap;
     }
-    .header-actions { display: flex; align-items: center; gap: 2px; margin-right: -8px; }
+    .header-actions { flex: none; }
+    .header-actions { display: flex; align-items: center; gap: 0; margin-right: -6px; }
     .iconbtn {
       background: none; border: none; color: var(--muted);
-      cursor: pointer; padding: 8px; display: flex; align-items: center;
+      cursor: pointer; padding: 7px; display: flex; align-items: center;
       transition: opacity 0.15s ease, transform 0.15s ease;
     }
     .iconbtn:active { opacity: 0.5; transform: scale(0.88); }
     .gear {
       background: none; border: none;
       color: var(--muted); font-size: 22px;
-      cursor: pointer; padding: 8px;
+      cursor: pointer; padding: 7px;
       transition: opacity 0.15s ease, transform 0.25s ease;
     }
     .gear:active { opacity: 0.5; transform: rotate(45deg); }
@@ -506,6 +509,51 @@
     .water-stat { font-size: 13px; color: var(--muted); margin-top: 16px; text-align: center; }
     .water-stat b { color: var(--text); font-weight: 700; }
 
+    /* ---- growth tree ---- */
+    .tree-scene { position: relative; display: flex; align-items: flex-end; justify-content: center; height: 234px; margin: 8px 0 2px; }
+    .tree-svg { width: 260px; max-width: 82%; height: auto; overflow: visible; animation: treeRise 0.6s cubic-bezier(0.22,1,0.36,1); }
+    .tree-ground { fill: var(--surface-2); }
+    .tree-trunk { fill: #8a5a3c; transition: fill 0.5s ease; }
+    .canopy { transform-box: fill-box; transform-origin: center bottom; }
+    .canopy circle { fill: #43b078; transition: fill 0.5s ease; }
+    .canopy .hl { fill: #6bd7a0; }
+    .tree-top { transform-box: fill-box; transform-origin: bottom center; animation: treeSway 5.5s ease-in-out infinite; }
+    .tree-scene.grew .canopy { animation: treeGrow 0.75s cubic-bezier(0.22,1,0.36,1); }
+
+    /* sad: droop + wither */
+    .tree-scene.sad .tree-top { animation: none; transform: rotate(3deg); }
+    .tree-scene.sad .canopy { transform: translateY(7px) scaleY(0.9); transition: transform 0.6s ease; }
+    .tree-scene.sad .canopy circle { fill: #9c8f5c; }
+    .tree-scene.sad .canopy .hl { fill: #b3a76c; }
+    .tree-scene.sad .tree-trunk { fill: #6f4a31; }
+
+    /* prestige: glow burst + pop + sparkles */
+    .tree-scene.prestige::before {
+      content: ""; position: absolute; left: 50%; top: 44%; width: 160px; height: 160px;
+      transform: translate(-50%,-50%); border-radius: 50%;
+      background: radial-gradient(circle, rgba(76,195,138,0.55), transparent 70%);
+      animation: treeBurst 1s ease-out; pointer-events: none;
+    }
+    .tree-scene.prestige .tree-svg { animation: treePop 0.85s cubic-bezier(0.22,1,0.36,1); }
+    .tree-sparkles { position: absolute; left: 50%; top: 44%; pointer-events: none; }
+    .tree-sparkles span { position: absolute; width: 9px; height: 9px; margin: -4px; border-radius: 50%; background: var(--accent); animation: sparkle 1s ease-out forwards; }
+
+    @keyframes treeSway { 0%,100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+    @keyframes treeRise { from { opacity: 0.25; transform: translateY(10px) scale(0.93); } to { opacity: 1; transform: none; } }
+    @keyframes treeGrow { 0% { transform: scale(0.82); } 55% { transform: scale(1.08); } 100% { transform: scale(1); } }
+    @keyframes treeBurst { from { opacity: 0.85; transform: translate(-50%,-50%) scale(0.3); } to { opacity: 0; transform: translate(-50%,-50%) scale(2.3); } }
+    @keyframes treePop { 0% { transform: scale(0.6); } 60% { transform: scale(1.13); } 100% { transform: scale(1); } }
+    @keyframes sparkle { from { transform: rotate(var(--a)) translateY(0); opacity: 1; } to { transform: rotate(var(--a)) translateY(-94px); opacity: 0; } }
+
+    .tree-level { text-align: center; font-size: 15px; font-weight: 700; color: var(--text); margin-top: 2px; }
+    .tree-level b { color: var(--accent); }
+    .tree-caption { text-align: center; font-size: 14px; color: var(--muted); margin: 10px 6px 0; line-height: 1.45; }
+    .tree-prog { margin: 18px 2px 0; }
+    .tree-prog-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+    .tree-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .tree-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #6bd7a0, #43b078); transition: width 0.5s cubic-bezier(0.22,1,0.36,1); }
+    .tree-note { font-size: 12px; color: var(--faint); text-align: center; margin: 18px 8px 0; line-height: 1.5; }
+
     /* ---- daily reminder banner ---- */
     .reminder {
       display: flex; align-items: center; gap: 10px;
@@ -618,7 +666,8 @@
     }
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
-      .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots { animation: none; }
+      .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
+      .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span { animation: none; }
       .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i { transition: none; }
     }
   </style>
@@ -635,13 +684,16 @@
     </div>
     <div class="header-actions">
       <button class="iconbtn" id="sinceBtn" aria-label="Time since">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
       </button>
       <button class="iconbtn" id="waterBtn" aria-label="Water">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>
+      </button>
+      <button class="iconbtn" id="treeBtn" aria-label="Your tree">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M12 17c-3.3 0-5.5-2.2-5.5-5.3C6.5 8 9 4.8 12 2c3 2.8 5.5 6 5.5 9.7 0 3.1-2.2 5.3-5.5 5.3z"/></svg>
       </button>
       <button class="iconbtn" id="statsBtn" aria-label="Insights">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 19V11M12 19V5M19 19v-7"/></svg>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 19V11M12 19V5M19 19v-7"/></svg>
       </button>
       <button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
     </div>
@@ -703,7 +755,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.1 · © Avery LLC</div>
+  <div class="version">v4.2 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -779,6 +831,17 @@
         <button class="panel-close" id="waterClose">Done</button>
       </div>
       <div class="panel-body" id="waterBody"></div>
+    </div>
+  </div>
+
+  <!-- Growth tree: grows on under-goal days, prestiges after a month, droops on a miss -->
+  <div class="panel-overlay" id="treeOverlay">
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Your Tree</h3>
+        <button class="panel-close" id="treeClose">Done</button>
+      </div>
+      <div class="panel-body" id="treeBody"></div>
     </div>
   </div>
 
