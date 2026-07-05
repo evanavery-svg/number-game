@@ -858,7 +858,11 @@ function openEndDay() {
     addEl(s, "label", "Date for this day");
     const dateInput = document.createElement("input");
     dateInput.type = "date";
-    dateInput.value = isoLocal(new Date());
+    // Default to the day these taps actually belong to (not necessarily
+    // "today") — e.g. tapping through the evening and ending the day the
+    // next morning should default to yesterday, not the day you happen to
+    // be tapping "End Day" on.
+    dateInput.value = load(KEY_ACT_DATE, isoLocal(new Date()));
     dateInput.max = isoLocal(new Date());
     s.appendChild(dateInput);
 

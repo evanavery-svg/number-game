@@ -86,13 +86,33 @@
       --key-press: rgba(255,255,255,0.24);
       --water: #3f9ad6;
       --water-2: #74bff0;
+      /* Kept warm (green→amber→coral) rather than blue-tinted: this ramp is a
+         goal-proximity/urgency signal like the ring, and blending blue with
+         the coral end produces a muddy purple instead of a clean transition. */
       --num-lo: #8fc9b4;
-      --num-mid: #7fb0e6;
+      --num-mid: #f0a85a;
       --num-hi: #e2726a;
     }
-    /* Recolour the SVG ring's default gradient to the theme blue */
+    /* Recolour the SVG ring's gradients to match the theme (they're raw SVG
+       stop-colors, not CSS variables, so they need explicit overrides here —
+       otherwise the zone ring stays neon green/orange/red against the muted
+       blue palette). Tuned to match --safe / --warn / --over above. */
     :root[data-theme="blue"] #gradAccent stop:nth-child(1) { stop-color: #4c8fdd; }
     :root[data-theme="blue"] #gradAccent stop:nth-child(2) { stop-color: #296dbe; }
+    :root[data-theme="blue"] #gradSafe stop:nth-child(1) { stop-color: #7ad9ae; }
+    :root[data-theme="blue"] #gradSafe stop:nth-child(2) { stop-color: #3fa374; }
+    :root[data-theme="blue"] #gradWarn stop:nth-child(1) { stop-color: #f6c98f; }
+    :root[data-theme="blue"] #gradWarn stop:nth-child(2) { stop-color: #e2934a; }
+    :root[data-theme="blue"] #gradOver stop:nth-child(1) { stop-color: #ef9089; }
+    :root[data-theme="blue"] #gradOver stop:nth-child(2) { stop-color: #cf5f56; }
+    /* Halo glow + drop-shadow behind the ring also use fixed rgba colours;
+       re-tint them to the same muted family so the whole hero area agrees. */
+    :root[data-theme="blue"] .total.zone-safe { --halo: rgba(76,195,138,0.20); }
+    :root[data-theme="blue"] .total.zone-warn { --halo: rgba(240,168,90,0.22); }
+    :root[data-theme="blue"] .total.zone-over { --halo: rgba(226,114,106,0.24); }
+    :root[data-theme="blue"] .total.zone-safe .ring-prog { filter: drop-shadow(0 0 6px rgba(76,195,138,0.45)); }
+    :root[data-theme="blue"] .total.zone-warn .ring-prog { filter: drop-shadow(0 0 6px rgba(240,168,90,0.45)); }
+    :root[data-theme="blue"] .total.zone-over .ring-prog { filter: drop-shadow(0 0 7px rgba(226,114,106,0.50)); }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { background: var(--bg); }
     html, body {
@@ -755,7 +775,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.2 · © Avery LLC</div>
+  <div class="version">v4.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
