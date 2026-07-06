@@ -35,6 +35,13 @@
       --num-lo: #7cc6a2;   /* soft sage green */
       --num-mid: #f0a85a;  /* warm amber, close to the accent */
       --num-hi: #e2726a;   /* muted coral, not a harsh red */
+      /* ring gradient stops, halos + glows — variables so themes can retint them */
+      --r-acc-1: #ffc46b; --r-acc-2: #ff9500;
+      --r-safe-1: #5be584; --r-safe-2: #28c24c;
+      --r-warn-1: #ffcf6b; --r-warn-2: #ff9f0a;
+      --r-over-1: #ff7a6e; --r-over-2: #ff3b30;
+      --halo-safe: rgba(48,209,88,0.20); --halo-warn: rgba(255,159,10,0.22); --halo-over: rgba(255,69,58,0.24);
+      --glow-safe: rgba(48,209,88,0.45); --glow-warn: rgba(255,159,10,0.45); --glow-over: rgba(255,69,58,0.50);
     }
     /* Follow the phone's appearance: light mode gets a light skin. */
     @media (prefers-color-scheme: light) {
@@ -64,55 +71,75 @@
         --num-hi: #cf5f56;
       }
     }
-    /* Optional blue theme (Settings toggle). Overrides both light and dark,
-       driven by the palette #296DBE / #1F3238 / #BABCAD. */
-    :root[data-theme="blue"] {
-      --bg: #1f3238;
-      --surface: #26404a;
-      --surface-2: #314c56;
+    /* ---- alternate themes (Settings picker) ----
+       Shared block: every non-default theme is dark, with white hairlines and
+       one cohesive muted status/ring/glow set, so the ring never clashes.
+       Each theme below then only supplies its own core palette + accent. */
+    :root[data-theme] {
       --hair: rgba(255,255,255,0.09);
-      --text: #eceee6;
-      --muted: #babcad;
-      --faint: #7e8b84;
-      --accent: #296dbe;
-      --accent-2: #4c8fdd;
-      --safe: #4cc38a;
-      --warn: #f0a85a;
-      --over: #e2726a;
       --card-shadow: 0 1px 0 rgba(255,255,255,0.05), 0 14px 34px rgba(0,0,0,0.45);
-      --btn-glow: rgba(41,109,190,0.42);
-      --btn-text: #ffffff;
       --key: rgba(255,255,255,0.10);
       --key-press: rgba(255,255,255,0.24);
-      --water: #3f9ad6;
-      --water-2: #74bff0;
-      /* Kept warm (green→amber→coral) rather than blue-tinted: this ramp is a
-         goal-proximity/urgency signal like the ring, and blending blue with
-         the coral end produces a muddy purple instead of a clean transition. */
-      --num-lo: #8fc9b4;
-      --num-mid: #f0a85a;
-      --num-hi: #e2726a;
+      --btn-text: #ffffff;
+      --safe: #4cc38a; --warn: #f0a85a; --over: #e2726a;
+      --r-safe-1: #7ad9ae; --r-safe-2: #3fa374;
+      --r-warn-1: #f6c98f; --r-warn-2: #e2934a;
+      --r-over-1: #ef9089; --r-over-2: #cf5f56;
+      --halo-safe: rgba(76,195,138,0.20); --halo-warn: rgba(240,168,90,0.22); --halo-over: rgba(226,114,106,0.24);
+      --glow-safe: rgba(76,195,138,0.45); --glow-warn: rgba(240,168,90,0.45); --glow-over: rgba(226,114,106,0.50);
+      --num-lo: #8fc9b4; --num-mid: #f0a85a; --num-hi: #e2726a;
     }
-    /* Recolour the SVG ring's gradients to match the theme (they're raw SVG
-       stop-colors, not CSS variables, so they need explicit overrides here —
-       otherwise the zone ring stays neon green/orange/red against the muted
-       blue palette). Tuned to match --safe / --warn / --over above. */
-    :root[data-theme="blue"] #gradAccent stop:nth-child(1) { stop-color: #4c8fdd; }
-    :root[data-theme="blue"] #gradAccent stop:nth-child(2) { stop-color: #296dbe; }
-    :root[data-theme="blue"] #gradSafe stop:nth-child(1) { stop-color: #7ad9ae; }
-    :root[data-theme="blue"] #gradSafe stop:nth-child(2) { stop-color: #3fa374; }
-    :root[data-theme="blue"] #gradWarn stop:nth-child(1) { stop-color: #f6c98f; }
-    :root[data-theme="blue"] #gradWarn stop:nth-child(2) { stop-color: #e2934a; }
-    :root[data-theme="blue"] #gradOver stop:nth-child(1) { stop-color: #ef9089; }
-    :root[data-theme="blue"] #gradOver stop:nth-child(2) { stop-color: #cf5f56; }
-    /* Halo glow + drop-shadow behind the ring also use fixed rgba colours;
-       re-tint them to the same muted family so the whole hero area agrees. */
-    :root[data-theme="blue"] .total.zone-safe { --halo: rgba(76,195,138,0.20); }
-    :root[data-theme="blue"] .total.zone-warn { --halo: rgba(240,168,90,0.22); }
-    :root[data-theme="blue"] .total.zone-over { --halo: rgba(226,114,106,0.24); }
-    :root[data-theme="blue"] .total.zone-safe .ring-prog { filter: drop-shadow(0 0 6px rgba(76,195,138,0.45)); }
-    :root[data-theme="blue"] .total.zone-warn .ring-prog { filter: drop-shadow(0 0 6px rgba(240,168,90,0.45)); }
-    :root[data-theme="blue"] .total.zone-over .ring-prog { filter: drop-shadow(0 0 7px rgba(226,114,106,0.50)); }
+    :root[data-theme="blue"] {   /* Ocean */
+      --bg: #1f3238; --surface: #26404a; --surface-2: #314c56;
+      --text: #eceee6; --muted: #babcad; --faint: #7e8b84;
+      --accent: #296dbe; --accent-2: #4c8fdd; --r-acc-1: #4c8fdd; --r-acc-2: #296dbe;
+      --btn-glow: rgba(41,109,190,0.42);
+    }
+    :root[data-theme="forest"] {
+      --bg: #10221a; --surface: #1a3129; --surface-2: #244034;
+      --text: #e6efe8; --muted: #9db3a6; --faint: #6a8377;
+      --accent: #2fae6a; --accent-2: #4fd589; --r-acc-1: #4fd589; --r-acc-2: #2fae6a;
+      --btn-glow: rgba(47,174,106,0.42);
+    }
+    :root[data-theme="teal"] {
+      --bg: #16191c; --surface: #22262b; --surface-2: #2e343a;
+      --text: #e8ebee; --muted: #9aa4ad; --faint: #69727b;
+      --accent: #2bb7c4; --accent-2: #4fd6e2; --r-acc-1: #4fd6e2; --r-acc-2: #2bb7c4;
+      --btn-glow: rgba(43,183,196,0.42);
+    }
+    :root[data-theme="grape"] {
+      --bg: #1c1526; --surface: #2a2038; --surface-2: #362a48;
+      --text: #ece7f2; --muted: #b0a6c0; --faint: #7d7291;
+      --accent: #9b5de5; --accent-2: #b57cf0; --r-acc-1: #b57cf0; --r-acc-2: #9b5de5;
+      --btn-glow: rgba(155,93,229,0.42);
+    }
+    :root[data-theme="rose"] {
+      --bg: #241820; --surface: #34232e; --surface-2: #432e3b;
+      --text: #f2e7ee; --muted: #c1a8b6; --faint: #8f7482;
+      --accent: #e5548b; --accent-2: #f27aa8; --r-acc-1: #f27aa8; --r-acc-2: #e5548b;
+      --btn-glow: rgba(229,84,139,0.42);
+    }
+    :root[data-theme="ember"] {
+      --bg: #201312; --surface: #31201e; --surface-2: #422b28;
+      --text: #f2e6e4; --muted: #c0a6a2; --faint: #8f7470;
+      --accent: #f0632e; --accent-2: #f7864f; --r-acc-1: #f7864f; --r-acc-2: #f0632e;
+      --btn-glow: rgba(240,99,46,0.42);
+    }
+    :root[data-theme="gold"] {
+      --bg: #201c10; --surface: #2f2a1a; --surface-2: #3d3624;
+      --text: #f1ece0; --muted: #bcb59d; --faint: #8a8368;
+      --accent: #d9a520; --accent-2: #f0c14e; --r-acc-1: #f0c14e; --r-acc-2: #d9a520;
+      --btn-glow: rgba(217,165,32,0.42); --btn-text: #241d00;
+    }
+    /* SVG ring gradient stops read from variables so themes retint them */
+    #gradAccent stop:nth-child(1) { stop-color: var(--r-acc-1); }
+    #gradAccent stop:nth-child(2) { stop-color: var(--r-acc-2); }
+    #gradSafe stop:nth-child(1) { stop-color: var(--r-safe-1); }
+    #gradSafe stop:nth-child(2) { stop-color: var(--r-safe-2); }
+    #gradWarn stop:nth-child(1) { stop-color: var(--r-warn-1); }
+    #gradWarn stop:nth-child(2) { stop-color: var(--r-warn-2); }
+    #gradOver stop:nth-child(1) { stop-color: var(--r-over-1); }
+    #gradOver stop:nth-child(2) { stop-color: var(--r-over-2); }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { background: var(--bg); }
     html, body {
@@ -209,12 +236,12 @@
     @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 100% { transform: scale(1); } }
 
     /* Goal is a ceiling: ring, halo + number shift colour as you near and pass it. */
-    .total.zone-safe { --halo: rgba(48,209,88,0.20); }
-    .total.zone-warn { --halo: rgba(255,159,10,0.22); }
-    .total.zone-over { --halo: rgba(255,69,58,0.24); }
-    .total.zone-safe .ring-prog { stroke: url(#gradSafe); filter: drop-shadow(0 0 6px rgba(48,209,88,0.45)); }
-    .total.zone-warn .ring-prog { stroke: url(#gradWarn); filter: drop-shadow(0 0 6px rgba(255,159,10,0.45)); }
-    .total.zone-over .ring-prog { stroke: url(#gradOver); filter: drop-shadow(0 0 7px rgba(255,69,58,0.50)); }
+    .total.zone-safe { --halo: var(--halo-safe); }
+    .total.zone-warn { --halo: var(--halo-warn); }
+    .total.zone-over { --halo: var(--halo-over); }
+    .total.zone-safe .ring-prog { stroke: url(#gradSafe); filter: drop-shadow(0 0 6px var(--glow-safe)); }
+    .total.zone-warn .ring-prog { stroke: url(#gradWarn); filter: drop-shadow(0 0 6px var(--glow-warn)); }
+    .total.zone-over .ring-prog { stroke: url(#gradOver); filter: drop-shadow(0 0 7px var(--glow-over)); }
     /* number colour is set in JS (white→green→orange→red toward the goal); labels keep the zone tint */
     .total.zone-warn .goal-label { color: var(--warn); }
     .total.zone-over .goal-label { color: var(--over); }
@@ -419,6 +446,22 @@
     .sheet-btn.ghost { background: transparent; color: var(--muted); }
     .sheet-btn.link { background: transparent; color: var(--accent); margin-top: 6px; }
     .sheet-divider { height: 1px; background: var(--hair); margin: 18px 0 2px; border: none; }
+
+    /* theme picker (settings) */
+    .theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 6px; margin-top: 8px; }
+    .theme-swatch { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 2px 0; }
+    .theme-dot {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--sw-bg) 0 50%, var(--sw-accent) 50% 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+      transition: transform 0.1s ease;
+    }
+    .theme-swatch:active .theme-dot { transform: scale(0.9); }
+    .theme-swatch.on .theme-dot { box-shadow: 0 0 0 2.5px var(--accent), inset 0 0 0 1px rgba(255,255,255,0.16); }
+    .theme-name { font-size: 11px; font-weight: 600; color: var(--muted); }
+    .theme-swatch.on .theme-name { color: var(--text); }
+    .theme-swatch:disabled { opacity: 0.5; cursor: default; }
+    .theme-swatch:disabled:active .theme-dot { transform: none; }
 
     /* ---- insights panel ---- */
     .panel-overlay {
@@ -692,8 +735,19 @@
     }
   </style>
   <script>
-    // Apply the saved theme before first paint so there's no colour flash.
-    try { if (JSON.parse(localStorage.getItem("count.theme")) === "blue") document.documentElement.setAttribute("data-theme", "blue"); } catch (e) {}
+    // Apply the saved (or auto-rotated) theme before first paint — no colour flash.
+    try {
+      var order = ["default","blue","forest","teal","grape","rose","ember","gold"];
+      var t;
+      if (JSON.parse(localStorage.getItem("count.themeAuto"))) {
+        var d = new Date();
+        var i = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000);
+        t = order[((i % order.length) + order.length) % order.length];
+      } else {
+        t = JSON.parse(localStorage.getItem("count.theme"));
+      }
+      if (t && t !== "default") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
   </script>
 </head>
 <body>
@@ -775,7 +829,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.3 · © Avery LLC</div>
+  <div class="version">v4.4 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

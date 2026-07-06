@@ -20,7 +20,8 @@ const KEY_UNLOCK_AT = "count.unlockAt";   // timestamp of last unlock (for the g
 const KEY_SINCE = "count.since";          // [{ id, name, start }]
 const KEY_TAPLOG = "count.tapLog";        // [timestamp, …] times of today's taps; cleared on End Day
 const KEY_ACT_DATE = "count.actDate";     // local date of the last tap — catches days never ended
-const KEY_THEME = "count.theme";          // "blue" for the alternate palette, else default
+const KEY_THEME = "count.theme";          // active theme key (see THEMES), else "default"
+const KEY_THEME_AUTO = "count.themeAuto"; // rotate through themes daily
 const KEY_TREE = "count.tree";            // { level, progress, sad, seenLevel, seenProgress }
 const TREE_DAYS = 30;                     // under-goal days to fully grow + prestige
 const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hydration, auto-resets daily
@@ -115,7 +116,28 @@ let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
 let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
+// Theme keys must match the CSS blocks + the head inline script's `order`.
+const THEMES = [
+  { key: "default", name: "Classic", accent: "#ff9500", bg: "#000000" },
+  { key: "blue",    name: "Ocean",   accent: "#296dbe", bg: "#1f3238" },
+  { key: "forest",  name: "Forest",  accent: "#2fae6a", bg: "#10221a" },
+  { key: "teal",    name: "Teal",    accent: "#2bb7c4", bg: "#16191c" },
+  { key: "grape",   name: "Grape",   accent: "#9b5de5", bg: "#1c1526" },
+  { key: "rose",    name: "Rose",    accent: "#e5548b", bg: "#241820" },
+  { key: "ember",   name: "Ember",   accent: "#f0632e", bg: "#201312" },
+  { key: "gold",    name: "Gold",    accent: "#d9a520", bg: "#201c10" },
+];
 let theme = load(KEY_THEME, "default");
+let themeAuto = load(KEY_THEME_AUTO, false);
+// Local-midnight day number, so the auto theme flips on a new calendar day.
+function dayIndex() {
+  const d = new Date();
+  return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000);
+}
+function themeForToday() {
+  const n = THEMES.length;
+  return THEMES[((dayIndex() % n) + n) % n].key;
+}
 let tree = load(KEY_TREE, { level: 0, progress: 0, sad: false, seenLevel: 0, seenProgress: 0 });
 
 // ---- daily encouragement ----
@@ -1039,14 +1061,41 @@ function openSettings() {
     const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
     const soundToggle = makeToggle(s, "Sound on tap", sound);
 
-    // Blue theme — applies live and reverts instantly when switched off.
-    const themeToggle = makeToggle(s, "Blue theme", theme === "blue");
-    themeToggle.addEventListener("change", () => {
-      theme = themeToggle.checked ? "blue" : "default";
-      save(KEY_THEME, theme);
-      applyTheme();
-      buzz(8);
+    // Theme picker — swatches apply live; daily auto-rotate is a toggle.
+    addEl(s, "label", "Theme");
+    const themeGrid = document.createElement("div");
+    themeGrid.className = "theme-grid";
+    let autoInput;
+    const buildSwatches = () => {
+      themeGrid.textContent = "";
+      THEMES.forEach((th) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "theme-swatch" + (theme === th.key ? " on" : "");
+        b.disabled = themeAuto;
+        b.style.setProperty("--sw-accent", th.accent);
+        b.style.setProperty("--sw-bg", th.bg);
+        const dot = document.createElement("span"); dot.className = "theme-dot";
+        const nm = document.createElement("span"); nm.className = "theme-name"; nm.textContent = th.name;
+        b.append(dot, nm);
+        b.addEventListener("click", () => {
+          theme = th.key; themeAuto = false; save(KEY_THEME_AUTO, false);
+          if (autoInput) autoInput.checked = false;
+          applyTheme(); buzz(6); buildSwatches();
+        });
+        themeGrid.appendChild(b);
+      });
+    };
+    buildSwatches();
+    s.appendChild(themeGrid);
+
+    autoInput = makeToggle(s, "Switch theme every day", themeAuto);
+    autoInput.addEventListener("change", () => {
+      themeAuto = autoInput.checked;
+      save(KEY_THEME_AUTO, themeAuto);
+      applyTheme(); buzz(8); buildSwatches();
     });
+    addEl(s, "p", "Rotates through all themes — a new one each day.", "sub");
 
     const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
     addEl(s, "label", "Reminder time");
@@ -1958,12 +2007,14 @@ document.addEventListener("visibilitychange", () => {
   maybeLock();
   checkReminder();
   checkStaleDay();   // the date may have rolled over while backgrounded
+  if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
 
 // Daily reminder + keep the unlock window fresh during active use.
 checkReminder();
 setInterval(() => {
   checkReminder();
+  if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight
   if (lockSet() && el.lock.style.display !== "flex" && !document.hidden) save(KEY_UNLOCK_AT, Date.now());
 }, 60000);
 
@@ -1975,15 +2026,21 @@ const themeMeta = document.querySelector('meta[name="theme-color"]');
 function syncTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   let tc = dark ? "#000000" : "#f2f2f7";
-  if (theme === "blue") tc = "#1f3238";
+  if (theme && theme !== "default") {
+    const th = THEMES.find((t) => t.key === theme);
+    if (th) tc = th.bg;
+  }
   if (themeMeta) themeMeta.setAttribute("content", tc);
   refreshColorStops();   // theme colours changed — recompute the number gradient
   renderTop();
 }
-// Apply / remove the alternate palette and keep the status bar + number ramp in sync.
+// Apply the active theme (auto-rotate picks today's) and keep everything in sync.
 function applyTheme() {
-  if (theme === "blue") document.documentElement.setAttribute("data-theme", "blue");
-  else document.documentElement.removeAttribute("data-theme");
+  if (themeAuto) theme = themeForToday();
+  const root = document.documentElement;
+  if (theme && theme !== "default") root.setAttribute("data-theme", theme);
+  else root.removeAttribute("data-theme");
+  save(KEY_THEME, theme);
   syncTheme();
 }
 applyTheme();   // honour the saved theme (also keeps the data-theme attribute in sync)
