@@ -1252,7 +1252,7 @@ function randHex(n) {
   const a = new Uint8Array(n); crypto.getRandomValues(a);
   return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-const LOCK_GRACE_MS = 5 * 60 * 1000;   // don't re-ask within 5 min of unlocking
+const LOCK_GRACE_MS = 60 * 60 * 1000;   // don't re-ask within 1 hour of unlocking
 
 async function setPin(pin) {
   const salt = randHex(16);
@@ -1305,7 +1305,7 @@ function showLock() {
 function hideLock() {
   el.lock.style.display = "none";
   document.body.style.overflow = "";
-  save(KEY_UNLOCK_AT, Date.now());   // start the 5-minute grace window
+  save(KEY_UNLOCK_AT, Date.now());   // start the grace window (LOCK_GRACE_MS)
 }
 function updateDots() {
   el.lockDots.querySelectorAll("i").forEach((d, i) => d.classList.toggle("on", i < pinEntry.length));
@@ -1998,7 +1998,7 @@ el.treeOverlay.addEventListener("click", (e) => { if (e.target === el.treeOverla
 
 render();
 
-// Lock on launch and on return — but only if the 5-minute grace window
+// Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
 checkStaleDay();   // un-ended previous day? offer to log it where it belongs
