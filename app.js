@@ -183,6 +183,54 @@ function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros:
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
 function reduceMotion() { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
 
+// ---- shared motion helpers ----
+// Staggered entrance for a container's children (panels, grids, sheets).
+function staggerIn(container, step, cap) {
+  if (reduceMotion() || !container) return;
+  step = step || 35; cap = cap == null ? 14 : cap;
+  [...container.children].forEach((c, i) => {
+    c.style.setProperty("--stg", Math.min(i, cap) * step);
+    c.classList.add("stg-in");
+    c.addEventListener("animationend", () => c.classList.remove("stg-in"), { once: true });
+  });
+}
+// Replay a bar/fill growth: shrink to nothing, force reflow, restore —
+// the element's existing CSS transition animates it back to size.
+function growBars(container, sel, prop) {
+  if (reduceMotion() || !container) return;
+  prop = prop || "height";
+  container.querySelectorAll(sel).forEach((b) => {
+    const target = b.style[prop];
+    const t = b.style.transition;
+    b.style.transition = "none";
+    b.style[prop] = prop === "height" ? "2px" : "0%";
+    void b.getBoundingClientRect();
+    b.style.transition = t;
+    b.style[prop] = target;
+  });
+}
+// A little burst of theme-coloured confetti from (x, y) — celebration only.
+function confettiBurst(x, y, n) {
+  if (reduceMotion()) return;
+  const cs = getComputedStyle(document.documentElement);
+  const colors = [cs.getPropertyValue("--accent"), cs.getPropertyValue("--safe"), cs.getPropertyValue("--accent-2"), cs.getPropertyValue("--warn")];
+  for (let i = 0; i < (n || 18); i++) {
+    const bit = document.createElement("span");
+    bit.className = "confetti-bit";
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 110;
+    bit.style.left = x + "px";
+    bit.style.top = y + "px";
+    bit.style.background = colors[i % colors.length];
+    bit.style.borderRadius = Math.random() < 0.5 ? "50%" : "2px";
+    bit.style.setProperty("--dx", Math.cos(ang) * dist + "px");
+    bit.style.setProperty("--dy", (Math.sin(ang) * dist - 55) + "px");   // biased upward
+    bit.style.setProperty("--rot", (Math.random() * 540 - 270) + "deg");
+    document.body.appendChild(bit);
+    bit.addEventListener("animationend", () => bit.remove());
+  }
+}
+
 // Progressive colour for the big number: it starts at the theme text colour
 // (white in dark mode) and moves white → green → orange → red as today climbs
 // toward the goal, so the colour tracks how close you are to your limit.
@@ -638,7 +686,20 @@ function statTile(value, label, opts) {
   return t;
 }
 
-function openInsights() { calOffset = 0; renderInsights(); el.insightsOverlay.classList.add("show"); }
+function openInsights() {
+  calOffset = 0;
+  renderInsights();
+  el.insightsOverlay.classList.add("show");
+  // entrance choreography: tiles + cards rise in, bars grow to height
+  staggerIn(el.insightsGrid, 30);
+  const body = el.insightsOverlay.querySelector(".panel-body");
+  if (body) staggerIn(body, 55, 8);
+  growBars(el.chart, ".bar");
+  growBars(el.weekdayCard, ".wk-bar");
+  growBars(el.timeCard, ".tod-bar");
+  const cal = el.calCard.querySelector(".cal");
+  if (cal) staggerIn(cal, 6, 40);
+}
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
 // Cheap render for the today area only — used on every tap so rapid
@@ -962,6 +1023,13 @@ function commitDay(note, dateStr) {
     : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
 
+  // confetti from the ring for a day finished under the goal (never when over —
+  // the celebration is reserved for keeping the promise)
+  if (underGoal) {
+    const r = el.ringWrap.getBoundingClientRect();
+    confettiBurst(r.left + r.width / 2, r.top + r.height / 2, prestiged ? 28 : 18);
+  }
+
   // refresh the header/quote, then let the number roll down to 0 and the ring drain
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   el.quote.textContent = quoteOfTheDay();
@@ -1019,7 +1087,12 @@ function undoEndDay() {
 }
 
 // ---- bottom sheet plumbing ----
-function openSheet(builder) { el.sheet.textContent = ""; builder(el.sheet); el.overlay.classList.add("show"); }
+function openSheet(builder) {
+  el.sheet.textContent = "";
+  builder(el.sheet);
+  el.overlay.classList.add("show");
+  staggerIn(el.sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
+}
 function closeSheet() { el.overlay.classList.remove("show"); }
 function addEl(parent, tag, text, cls) {
   const e = document.createElement(tag);
@@ -1097,7 +1170,7 @@ function openSettings() {
         b.addEventListener("click", () => {
           theme = th.key; themeAuto = false; save(KEY_THEME_AUTO, false);
           if (autoInput) autoInput.checked = false;
-          applyTheme(); buzz(6); buildSwatches();
+          themeFade(); applyTheme(); buzz(6); buildSwatches();
         });
         themeGrid.appendChild(b);
       });
@@ -1109,7 +1182,7 @@ function openSettings() {
     autoInput.addEventListener("change", () => {
       themeAuto = autoInput.checked;
       save(KEY_THEME_AUTO, themeAuto);
-      applyTheme(); buzz(8); buildSwatches();
+      themeFade(); applyTheme(); buzz(8); buildSwatches();
     });
     addEl(s, "p", "Rotates through all themes — a new one each day.", "sub");
 
@@ -1313,16 +1386,21 @@ async function bioUnlock() {
 function showLock() {
   pinEntry = "";
   el.lockError.textContent = "";
+  el.lock.classList.remove("out");
   el.lock.style.display = "flex";
   document.body.style.overflow = "hidden";
   buildPad();
+  staggerIn(el.lockPad, 12, 12);   // quick key cascade — input works immediately
   updateDots();
 }
 function hideLock() {
-  el.lock.style.display = "none";
-  document.body.style.overflow = "";
-  save(KEY_UNLOCK_AT, Date.now());   // start the grace window (LOCK_GRACE_MS)
+  // grace window + ghost-click guard start immediately; the visual melts out
+  save(KEY_UNLOCK_AT, Date.now());
   swallowGhostClick();
+  document.body.style.overflow = "";
+  if (reduceMotion()) { el.lock.style.display = "none"; return; }
+  el.lock.classList.add("out");   // pointer-events:none while fading
+  setTimeout(() => { el.lock.style.display = "none"; el.lock.classList.remove("out"); }, 230);
 }
 // The passcode keys respond on pointerdown for instant feedback, so the last
 // correct digit can hide the lock screen before the browser's trailing
@@ -1636,6 +1714,7 @@ function renderSince() {
 }
 // Compact main-page strip: one chip per tracker (name + elapsed), live.
 const SS_CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>';
+let sinceStripAnimated = false;   // chips slide in once per app open, not on every re-render
 function renderSinceStrip() {
   const strip = el.sinceStrip;
   if (!since.length) { strip.style.display = "none"; strip.textContent = ""; return; }
@@ -1651,6 +1730,7 @@ function renderSinceStrip() {
     chip.addEventListener("click", openSince);
     strip.appendChild(chip);
   });
+  if (!sinceStripAnimated) { sinceStripAnimated = true; staggerIn(strip, 60, 6); }
 }
 // Cheap per-second update: refresh just the values so horizontal scroll isn't reset.
 function tickSinceStrip() {
@@ -1665,6 +1745,10 @@ function tickSinceStrip() {
 function openSince() {
   renderSince();
   el.sinceOverlay.classList.add("show");
+  // cards rise in and their milestone bars fill (kept quick — the panel
+  // re-renders every second, so the entrance must finish well before then)
+  staggerIn(el.sinceList, 60, 6);
+  growBars(el.sinceList, ".since-bar i", "width");
   clearInterval(sinceTimer);
   sinceTimer = setInterval(() => { if (el.sinceOverlay.classList.contains("show")) renderSince(); }, 1000);
 }
@@ -1769,8 +1853,16 @@ function addWater(amt) {
   water.log.push(amt);
   save(KEY_WATER, water);
   buzz(15); click();
-  if (waterGoal > 0 && prev < waterGoal && water.oz >= waterGoal) { buzz([0, 35, 40, 60]); toast("💧 Water goal reached!"); }
+  const goalHit = waterGoal > 0 && prev < waterGoal && water.oz >= waterGoal;
+  if (goalHit) { buzz([0, 35, 40, 60]); toast("💧 Water goal reached!"); }
   renderWater();
+  // pop the big oz readout on every pour; confetti when the goal is reached
+  const big = el.waterBody.querySelector(".water-big");
+  if (big && !reduceMotion()) { big.classList.add("bump"); big.addEventListener("animationend", () => big.classList.remove("bump"), { once: true }); }
+  if (goalHit && big) {
+    const r = big.getBoundingClientRect();
+    confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 14);
+  }
 }
 function undoWater() {
   ensureWaterDay();
@@ -1918,7 +2010,12 @@ function renderWater() {
   stat.innerHTML = `<b>${glasses}</b> ${glasses === 1 ? "glass" : "glasses"} today`;
   body.appendChild(stat);
 }
-function openWater() { renderWater(); el.waterOverlay.classList.add("show"); }
+function openWater() {
+  renderWater();
+  el.waterOverlay.classList.add("show");
+  staggerIn(el.waterBody, 45, 10);
+  growBars(el.waterBody, ".water-bar i", "width");
+}
 function closeWater() { el.waterOverlay.classList.remove("show"); }
 
 // ---- growth tree ----
@@ -2028,6 +2125,20 @@ el.treeOverlay.addEventListener("click", (e) => { if (e.target === el.treeOverla
 
 render();
 
+// Launch flourish: the number rolls up from 0 and the ring sweeps to its fill
+// (a frame after first paint, so the transitions actually play).
+if (!reduceMotion() && today > 0) {
+  const ringTarget = el.ringProg.style.strokeDashoffset;
+  el.ringProg.style.transition = "none";
+  el.ringProg.style.strokeDashoffset = RING_C;
+  el.total.textContent = "0";
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.ringProg.style.transition = "";
+    el.ringProg.style.strokeDashoffset = ringTarget;
+    renderTop(true);   // count-up animation from the seeded 0
+  }));
+}
+
 // Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
@@ -2072,6 +2183,15 @@ function applyTheme() {
   else root.removeAttribute("data-theme");
   save(KEY_THEME, theme);
   syncTheme();
+}
+// Cross-fade every colour in the app for a user-initiated theme change
+// (never on load — the head script paints the right theme before first frame).
+let themeFadeTimer = null;
+function themeFade() {
+  if (reduceMotion()) return;
+  document.documentElement.classList.add("theme-fade");
+  clearTimeout(themeFadeTimer);
+  themeFadeTimer = setTimeout(() => document.documentElement.classList.remove("theme-fade"), 450);
 }
 applyTheme();   // honour the saved theme (also keeps the data-theme attribute in sync)
 const darkMq = window.matchMedia("(prefers-color-scheme: dark)");

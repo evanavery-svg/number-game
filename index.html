@@ -542,6 +542,7 @@
     /* ---- water tracker (separate panel) ---- */
     .water-card { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); padding: 24px 18px 20px; text-align: center; margin-bottom: 14px; }
     .water-big { font-size: 60px; font-weight: 300; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--water); }
+    .water-big.bump { animation: bump 0.22s ease; }
     .water-big .water-unit { font-size: 22px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
     .water-goal { font-size: 14px; color: var(--muted); margin-top: 12px; }
     .water-goal.done { color: var(--water); font-weight: 700; }
@@ -670,7 +671,7 @@
     .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
     .wk { display: flex; align-items: flex-end; gap: 6px; height: 60px; }
-    .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; }
+    .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     .wk-bar.peak { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
     .wk-labels { display: flex; gap: 6px; margin-top: 7px; }
     .wk-labels span { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
@@ -679,7 +680,7 @@
 
     /* ---- time-of-day chart (insights) ---- */
     .tod { display: flex; align-items: flex-end; gap: 2px; height: 64px; }
-    .tod-bar { flex: 1; background: var(--surface-2); border-radius: 3px 3px 1px 1px; min-height: 2px; }
+    .tod-bar { flex: 1; background: var(--surface-2); border-radius: 3px 3px 1px 1px; min-height: 2px; transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     .tod-bar.peak { background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
     .tod-labels { display: flex; justify-content: space-between; margin-top: 7px; }
     .tod-labels span { font-size: 10px; font-weight: 600; color: var(--faint); }
@@ -730,11 +731,46 @@
       padding: 8px 0 4px;
       letter-spacing: 0.3px;
     }
+
+    /* ---- shared motion utilities ---- */
+    /* staggered entrance for list/grid children — JS sets --stg per child */
+    @keyframes itemIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+    .stg-in { animation: itemIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards; animation-delay: calc(var(--stg, 0) * 1ms); }
+    /* launch choreography — the home screen builds up on open */
+    @keyframes bootIn { from { opacity: 0; transform: translateY(12px); } }
+    header { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+    .since-strip { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s backwards; }
+    .total { animation: bootIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.08s backwards; }
+    .quote { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.14s backwards; }
+    .quick-cap { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.22s backwards; }
+    .quick-row { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.24s backwards; }
+    .row:not(.quick-row) { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.27s backwards; }
+    .version { animation: bootIn 0.5s ease 0.32s backwards; }
+    /* celebration confetti (under-goal End Day) */
+    .confetti-bit {
+      position: fixed; width: 7px; height: 7px; z-index: 60; pointer-events: none;
+      animation: confetti 0.95s cubic-bezier(0.16, 0.8, 0.4, 1) forwards;
+    }
+    @keyframes confetti { to { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+    /* unlocking melts away instead of snapping */
+    .lock { transition: opacity 0.22s ease, transform 0.22s ease; }
+    .lock.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
+    /* brief whole-app colour cross-fade when the theme changes */
+    .theme-fade, .theme-fade * { transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease, fill 0.4s ease, stroke 0.4s ease !important; }
+    /* the big button breathes very gently while idle */
+    @keyframes btnBreathe {
+      0%, 100% { box-shadow: 0 14px 36px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.35); }
+      50% { box-shadow: 0 16px 44px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.35); }
+    }
+    .add-btn { animation: bootIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.18s backwards, btnBreathe 3.4s ease-in-out 1s infinite; }
+
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
-      .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i { transition: none; }
+      .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
+      .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .quick-cap, .quick-row, .row, .version { animation: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar { transition: none; }
+      .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
   <script>
@@ -832,7 +868,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.7 · © Avery LLC</div>
+  <div class="version">v4.8 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
