@@ -376,26 +376,42 @@ function tapEntry(e) {
   // tolerate the old format where a tap was stored as just a timestamp
   return typeof e === "number" ? { t: e, amt: null, total: null } : e;
 }
-// A row-per-tap timeline (time · +amount · running total) for a list of taps.
+// A timeline for a list of taps (time · amount added · running total).
+// Taps that land in the same clock-minute are grouped into one row whose
+// amount is their sum, so "+0.25 11:00 PM / +0.25 11:00 PM" reads "+0.50 11:00 PM".
 function tapRows(taps) {
   const list = document.createElement("div");
   list.className = "tap-list";
+
+  const groups = [];
   taps.forEach((raw) => {
     const e = tapEntry(raw);
+    const label = new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) {
+      if (e.amt != null) last.amt = round2((last.amt || 0) + e.amt);
+      if (e.total != null) last.total = e.total;   // running total at the end of the minute
+      last.count += 1;
+    } else {
+      groups.push({ label, amt: e.amt, total: e.total, count: 1 });
+    }
+  });
+
+  groups.forEach((g) => {
     const row = document.createElement("div");
     row.className = "tap-row";
 
     const time = document.createElement("span");
     time.className = "tap-t";
-    time.textContent = new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    time.textContent = g.label + (g.count > 1 ? ` · ${g.count} taps` : "");
 
     const amt = document.createElement("span");
-    amt.className = "tap-amt" + (e.amt < 0 ? " neg" : "");
-    amt.textContent = e.amt != null ? (e.amt < 0 ? "− " + fmt(-e.amt) : "+" + fmt(e.amt)) : "";
+    amt.className = "tap-amt" + (g.amt < 0 ? " neg" : "");
+    amt.textContent = g.amt != null ? (g.amt < 0 ? "− " + fmt(-g.amt) : "+" + fmt(g.amt)) : "";
 
     const tot = document.createElement("span");
     tot.className = "tap-total";
-    tot.textContent = e.total != null ? fmt(e.total) : "—";
+    tot.textContent = g.total != null ? fmt(g.total) : "—";
 
     row.append(time, amt, tot);
     list.appendChild(row);
@@ -1361,13 +1377,15 @@ function padKey(label, fn, isFn) {
     b.textContent = label;   // Face ID / ⌫
   }
   // Fire on pointer-down for an instant, native-feeling press (no click delay).
+  const release = () => b.classList.remove("pressed");
   b.addEventListener("pointerdown", (e) => {
-    if (e.button && e.button !== 0) return;
+    if (e.button && e.button !== 0) return;        // ignore right/middle mouse
+    if (el.lock.style.display !== "flex") return;  // ignore stray events when hidden
     e.preventDefault();
     b.classList.add("pressed");
+    setTimeout(release, 180);   // guarantee the visual clears even if pointerup is missed
     fn();
   });
-  const release = () => b.classList.remove("pressed");
   ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, release));
   return b;
 }

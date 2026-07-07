@@ -689,6 +689,7 @@
       position: fixed; inset: 0; z-index: 100; background: var(--bg);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       padding: calc(env(safe-area-inset-top) + 20px) 24px calc(env(safe-area-inset-bottom) + 28px);
+      touch-action: none; user-select: none; -webkit-user-select: none;
     }
     .lock-inner { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 300px; }
     .lock-ring { filter: drop-shadow(0 0 12px rgba(255,149,0,0.55)); margin-bottom: 24px; }
@@ -703,21 +704,23 @@
     .lock-error { min-height: 18px; color: var(--over); font-size: 13px; font-weight: 600; margin-top: 16px; letter-spacing: 0.1px; }
     .lock.shake .lock-dots { animation: nudge .42s ease; }
 
-    .lock-pad { display: grid; grid-template-columns: repeat(3, 76px); gap: 20px 26px; margin-top: 26px; }
+    .lock-pad { display: grid; grid-template-columns: repeat(3, 76px); gap: 20px 26px; margin-top: 26px; touch-action: none; }
     .lock-key {
-      height: 76px; width: 76px; border-radius: 50%; border: none;
+      height: 76px; width: 76px; border-radius: 50%; border: none; outline: none;
       background: var(--key); color: var(--text);
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-      cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
-      transition: background 0.1s ease, transform 0.05s ease;
+      cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none;
+      user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+      transition: background 0.12s ease, transform 0.09s ease;
     }
     .lock-key .num { font-size: 31px; font-weight: 400; line-height: 1; letter-spacing: 0.5px; }
     .lock-key .abc { font-size: 9px; font-weight: 700; letter-spacing: 1.6px; color: var(--muted); height: 10px; margin-top: 3px; }
-    .lock-key.pressed, .lock-key:active { background: var(--key-press); transform: scale(0.92); }
+    /* pressed state is driven only by JS (.pressed) — iOS :active can stick */
+    .lock-key.pressed { background: var(--key-press); transform: scale(0.92); }
     .lock-key.fn {
       background: transparent; font-size: 15px; font-weight: 600; color: var(--accent);
     }
-    .lock-key.fn.pressed, .lock-key.fn:active { background: transparent; transform: scale(0.9); opacity: 0.55; }
+    .lock-key.fn.pressed { background: transparent; transform: scale(0.9); opacity: 0.55; }
     .lock-key.blank { background: transparent; pointer-events: none; }
 
     .version {
@@ -829,7 +832,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.6 · © Avery LLC</div>
+  <div class="version">v4.7 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
