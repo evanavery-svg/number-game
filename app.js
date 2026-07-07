@@ -1306,6 +1306,18 @@ function hideLock() {
   el.lock.style.display = "none";
   document.body.style.overflow = "";
   save(KEY_UNLOCK_AT, Date.now());   // start the grace window (LOCK_GRACE_MS)
+  swallowGhostClick();
+}
+// The passcode keys respond on pointerdown for instant feedback, so the last
+// correct digit can hide the lock screen before the browser's trailing
+// "click" for that same tap fires. With the lock screen already gone, that
+// click falls through to whatever's underneath — usually the ring, which
+// opens Settings. Swallow exactly one click right after unlocking so it
+// never reaches the page behind the lock screen.
+function swallowGhostClick() {
+  const swallow = (e) => { e.preventDefault(); e.stopPropagation(); };
+  document.addEventListener("click", swallow, { capture: true, once: true });
+  setTimeout(() => document.removeEventListener("click", swallow, true), 500);
 }
 function updateDots() {
   el.lockDots.querySelectorAll("i").forEach((d, i) => d.classList.toggle("on", i < pinEntry.length));
