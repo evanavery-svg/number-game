@@ -41,8 +41,7 @@ const el = {
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
-  quickMinus: document.getElementById("quickMinusBtn"),
-  quickPlus: document.getElementById("quickPlusBtn"),
+  moreBtn: document.getElementById("moreBtn"),
   undo: document.getElementById("undoBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
@@ -76,17 +75,14 @@ const el = {
   weekdayCard: document.getElementById("weekdayCard"),
   timeCard: document.getElementById("timeCard"),
   tapLogCard: document.getElementById("tapLogCard"),
-  sinceBtn: document.getElementById("sinceBtn"),
   sinceStrip: document.getElementById("sinceStrip"),
   sinceOverlay: document.getElementById("sinceOverlay"),
   sinceClose: document.getElementById("sinceClose"),
   sinceList: document.getElementById("sinceList"),
   sinceAdd: document.getElementById("sinceAdd"),
-  waterBtn: document.getElementById("waterBtn"),
   waterOverlay: document.getElementById("waterOverlay"),
   waterClose: document.getElementById("waterClose"),
   waterBody: document.getElementById("waterBody"),
-  treeBtn: document.getElementById("treeBtn"),
   treeOverlay: document.getElementById("treeOverlay"),
   treeClose: document.getElementById("treeClose"),
   treeBody: document.getElementById("treeBody"),
@@ -730,17 +726,13 @@ function renderTop(animate) {
     el.totalWrap.classList.add("has-goal");
     const frac = Math.min(1, today / goal);
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
-    el.goalText.classList.remove("hint");
-    if (zone === "over") {
-      el.goalText.textContent = `Over goal by ${fmt(today - goal)}`;
-    } else if (today === goal) {
-      el.goalText.textContent = `At your goal of ${fmt(goal)}`;
-    } else {
-      el.goalText.textContent = `${Math.round((today / goal) * 100)}% of ${fmt(goal)} goal`;
-    }
+    // progress is already shown by the ring, the number's colour and the
+    // button's "X left today" — no separate goal caption needed
+    el.goalText.style.display = "none";
   } else {
     el.totalWrap.classList.remove("has-goal");
     el.ringProg.style.strokeDashoffset = RING_C;   // just the grey frame
+    el.goalText.style.display = "";
     el.goalText.classList.add("hint");
     el.goalText.textContent = "Tap to set a daily goal →";
   }
@@ -890,16 +882,6 @@ function confirmOver(amt) {
 function addTap(e) {
   spawnRipple(e);
   applyDelta(step);
-}
-// The ±0.25 buttons change how much each tap adds (the big button's amount) —
-// e.g. bump it to 0.50 or 0.75 — rather than changing today's total.
-function adjustStep(delta) {
-  const ns = round2(Math.max(0.25, step + delta));
-  if (ns === step) { buzz(6); return; }   // already at the 0.25 minimum
-  step = ns;
-  save(KEY_STEP, step);
-  buzz(8);
-  renderTop();   // refresh the big button's "+ x" label
 }
 
 // expanding ripple from the tap point on the big button
@@ -2099,27 +2081,35 @@ function renderTree() {
 function openTree() { renderTree(); el.treeOverlay.classList.add("show"); }
 function closeTree() { el.treeOverlay.classList.remove("show"); }
 
+// The three secondary tools live behind one "More" launcher to keep the
+// header (and the whole screen) uncluttered.
+function openMore() {
+  openSheet((s) => {
+    addEl(s, "h3", "More");
+    s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); openSince(); }));
+    s.appendChild(makeBtn("💧   Water", "", () => { closeSheet(); openWater(); }));
+    s.appendChild(makeBtn("🌳   Your Tree", "", () => { closeSheet(); openTree(); }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
+}
+
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
-el.quickMinus.addEventListener("click", () => adjustStep(-0.25));
-el.quickPlus.addEventListener("click", () => adjustStep(0.25));
 el.undo.addEventListener("click", undo);
 el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
+el.moreBtn.addEventListener("click", openMore);
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 el.statsBtn.addEventListener("click", openInsights);
 el.insightsClose.addEventListener("click", closeInsights);
 el.insightsOverlay.addEventListener("click", (e) => { if (e.target === el.insightsOverlay) closeInsights(); });
 el.reminderDismiss.addEventListener("click", () => { save(KEY_REMIND_DISMISS, isoLocal(new Date())); el.reminder.style.display = "none"; });
-el.sinceBtn.addEventListener("click", openSince);
 el.sinceClose.addEventListener("click", closeSince);
 el.sinceOverlay.addEventListener("click", (e) => { if (e.target === el.sinceOverlay) closeSince(); });
 el.sinceAdd.addEventListener("click", () => openSinceForm(null));
-el.waterBtn.addEventListener("click", openWater);
 el.waterClose.addEventListener("click", closeWater);
 el.waterOverlay.addEventListener("click", (e) => { if (e.target === el.waterOverlay) closeWater(); });
-el.treeBtn.addEventListener("click", openTree);
 el.treeClose.addEventListener("click", closeTree);
 el.treeOverlay.addEventListener("click", (e) => { if (e.target === el.treeOverlay) closeTree(); });
 

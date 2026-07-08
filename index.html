@@ -261,11 +261,11 @@
 
     .quote {
       text-align: center;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.45;
-      padding: 20px 14px 16px;
-      min-height: 20px;
+      color: var(--faint);
+      font-size: 13px;
+      line-height: 1.4;
+      padding: 14px 16px 12px;
+      min-height: 16px;
       font-style: italic;
     }
 
@@ -305,30 +305,23 @@
     @keyframes ripple { to { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
 
     .row { display: flex; gap: 12px; margin-bottom: 18px; }
+    /* secondary controls — deliberately quieter than the big add button */
     .row button {
       flex: 1;
-      padding: 16px;
+      padding: 15px;
       border: none;
-      border-radius: 16px;
-      background: var(--surface);
-      color: var(--text);
-      font-size: 16px;
+      border-radius: 15px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      box-shadow: var(--card-shadow);
-      transition: background 0.15s ease, transform 0.08s ease;
+      box-shadow: inset 0 0 0 1px var(--hair);
+      transition: background 0.15s ease, transform 0.08s ease, color 0.15s ease;
     }
     .row button:active { background: var(--surface-2); transform: scale(0.98); }
-    .row button:disabled { opacity: 0.35; box-shadow: none; }
+    .row button:disabled { opacity: 0.4; box-shadow: inset 0 0 0 1px var(--hair); }
     .row .end { color: var(--accent); }
-    .quick-cap { text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); margin: 2px 0 8px; }
-    .quick-row { margin-bottom: 12px; }
-    .quick-row .quick {
-      padding: 13px; font-size: 14px; font-weight: 700;
-      font-variant-numeric: tabular-nums; letter-spacing: 0.2px;
-    }
-    .quick-row #quickPlusBtn { color: var(--accent); }
-    .quick-row #quickMinusBtn { color: var(--muted); }
 
     /* ---- cards ---- */
     .chart-card, .history { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); }
@@ -742,10 +735,8 @@
     .since-strip { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.05s backwards; }
     .total { animation: bootIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.08s backwards; }
     .quote { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.14s backwards; }
-    .quick-cap { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.22s backwards; }
-    .quick-row { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.24s backwards; }
-    .row:not(.quick-row) { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.27s backwards; }
-    .version { animation: bootIn 0.5s ease 0.32s backwards; }
+    .row { animation: bootIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.24s backwards; }
+    .version { animation: bootIn 0.5s ease 0.3s backwards; }
     /* celebration confetti (under-goal End Day) */
     .confetti-bit {
       position: fixed; width: 7px; height: 7px; z-index: 60; pointer-events: none;
@@ -768,7 +759,7 @@
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
-      .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .quick-cap, .quick-row, .row, .version { animation: none; }
+      .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version { animation: none; }
       .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
@@ -796,17 +787,11 @@
       <div class="date" id="dateLabel"></div>
     </div>
     <div class="header-actions">
-      <button class="iconbtn" id="sinceBtn" aria-label="Time since">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
-      </button>
-      <button class="iconbtn" id="waterBtn" aria-label="Water">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>
-      </button>
-      <button class="iconbtn" id="treeBtn" aria-label="Your tree">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M12 17c-3.3 0-5.5-2.2-5.5-5.3C6.5 8 9 4.8 12 2c3 2.8 5.5 6 5.5 9.7 0 3.1-2.2 5.3-5.5 5.3z"/></svg>
-      </button>
       <button class="iconbtn" id="statsBtn" aria-label="Insights">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 19V11M12 19V5M19 19v-7"/></svg>
+      </button>
+      <button class="iconbtn" id="moreBtn" aria-label="More">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
       </button>
       <button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
     </div>
@@ -857,18 +842,12 @@
     <small>tap to add</small>
   </button>
 
-  <div class="quick-cap">Adjust amount per tap</div>
-  <div class="row quick-row">
-    <button class="quick" id="quickMinusBtn">− 0.25</button>
-    <button class="quick" id="quickPlusBtn">+ 0.25</button>
-  </div>
-
   <div class="row">
     <button id="undoBtn" disabled>Undo</button>
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v4.8 · © Avery LLC</div>
+  <div class="version">v4.9 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
