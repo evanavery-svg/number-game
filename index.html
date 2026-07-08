@@ -481,6 +481,10 @@
       font-weight: 700; color: var(--muted); background: var(--surface-2);
       padding: 3px 11px; border-radius: 999px; font-size: 13px; min-width: 44px; text-align: center;
     }
+    .tap-row.tap-editable { cursor: pointer; margin: 0 -6px; padding-left: 8px; padding-right: 8px; border-radius: 8px; transition: background 0.12s ease; }
+    .tap-row.tap-editable:active { background: var(--surface-2); }
+    .tap-row.tap-editable .tap-t::after { content: " ✎"; color: var(--faint); font-size: 11px; }
+    .tap-hint { font-size: 11px; color: var(--faint); margin: -4px 2px 8px; }
     .tap-empty { font-size: 13px; color: var(--faint); }
     .tap-scroll { max-height: 34vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 2px; }
 
@@ -823,7 +827,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v5.2 · © Avery LLC</div>
+  <div class="version">v5.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

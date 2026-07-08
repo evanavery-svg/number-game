@@ -420,12 +420,14 @@ function tapEntry(e) {
 // A timeline for a list of taps (time · amount added · running total).
 // Taps that land in the same clock-minute are grouped into one row whose
 // amount is their sum, so "+0.25 11:00 PM / +0.25 11:00 PM" reads "+0.50 11:00 PM".
-function tapRows(taps) {
+// When `editable` is true each row can be tapped to edit that minute's time
+// (from/to are the covered indices into `taps`, passed to openTapTimeEdit).
+function tapRows(taps, editable) {
   const list = document.createElement("div");
   list.className = "tap-list";
 
   const groups = [];
-  taps.forEach((raw) => {
+  taps.forEach((raw, i) => {
     const e = tapEntry(raw);
     const label = new Date(e.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
     const last = groups[groups.length - 1];
@@ -433,14 +435,15 @@ function tapRows(taps) {
       if (e.amt != null) last.amt = round2((last.amt || 0) + e.amt);
       if (e.total != null) last.total = e.total;   // running total at the end of the minute
       last.count += 1;
+      last.to = i;
     } else {
-      groups.push({ label, amt: e.amt, total: e.total, count: 1 });
+      groups.push({ label, amt: e.amt, total: e.total, count: 1, from: i, to: i });
     }
   });
 
   groups.forEach((g) => {
     const row = document.createElement("div");
-    row.className = "tap-row";
+    row.className = "tap-row" + (editable ? " tap-editable" : "");
 
     const time = document.createElement("span");
     time.className = "tap-t";
@@ -455,9 +458,44 @@ function tapRows(taps) {
     tot.textContent = g.total != null ? fmt(g.total) : "—";
 
     row.append(time, amt, tot);
+    if (editable) row.addEventListener("click", () => openTapTimeEdit(g.from, g.to));
     list.appendChild(row);
   });
   return list;
+}
+// Edit the clock time of a minute's worth of taps (indices from..to in tapLog).
+function openTapTimeEdit(from, to) {
+  const first = tapEntry(tapLog[from]);
+  const base = new Date(first.t);
+  const n = to - from + 1;
+  openSheet((s) => {
+    addEl(s, "h3", "Edit tap time");
+    addEl(s, "p", n > 1 ? `${n} taps happened in this minute — move them together.` : "Move this tap to a different time.", "sub");
+    addEl(s, "label", "Time");
+    const input = document.createElement("input");
+    input.type = "time";
+    input.value = `${String(base.getHours()).padStart(2, "0")}:${String(base.getMinutes()).padStart(2, "0")}`;
+    s.appendChild(input);
+    s.appendChild(makeBtn("Save", "primary", () => {
+      const parts = (input.value || "").split(":");
+      const h = Number(parts[0]), m = Number(parts[1]);
+      if (isNaN(h) || isNaN(m)) { toast("Pick a valid time"); return; }
+      // normalise everything to objects, move the selected minute's taps
+      tapLog = tapLog.map((raw) => { const e = tapEntry(raw); return { t: e.t, amt: e.amt, total: e.total }; });
+      for (let i = from; i <= to; i++) {
+        const d = new Date(tapLog[i].t);
+        d.setHours(h, m, i - from, 0);   // stagger seconds so they keep order + stay in one minute
+        tapLog[i].t = d.getTime();
+      }
+      // re-sort by time and recompute running totals so the timeline stays consistent
+      tapLog.sort((a, b) => a.t - b.t);
+      let run = 0;
+      tapLog.forEach((e) => { if (e.amt != null) { run = round2(run + e.amt); e.total = run; } });
+      save(KEY_TAPLOG, tapLog);
+      closeSheet(); renderTapLog();
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
 }
 function renderTapLog() {
   const card = el.tapLogCard;
@@ -476,7 +514,8 @@ function renderTapLog() {
     card.appendChild(empty);
     return;
   }
-  card.appendChild(tapRows(tapLog));
+  addEl(card, "div", "Tap a row to edit its time.", "tap-hint");
+  card.appendChild(tapRows(tapLog, true));
 }
 
 const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
