@@ -118,12 +118,9 @@ const THEMES = [
   { key: "blue",    name: "Ocean",   accent: "#296dbe", bg: "#1f3238" },
   { key: "forest",  name: "Forest",  accent: "#2fae6a", bg: "#10221a" },
   { key: "teal",    name: "Teal",    accent: "#2bb7c4", bg: "#16191c" },
-  { key: "grape",   name: "Grape",   accent: "#9b5de5", bg: "#1c1526" },
-  { key: "rose",    name: "Rose",    accent: "#e5548b", bg: "#241820" },
-  { key: "ember",   name: "Ember",   accent: "#f0632e", bg: "#201312" },
-  { key: "gold",    name: "Gold",    accent: "#d9a520", bg: "#201c10" },
 ];
 let theme = load(KEY_THEME, "default");
+if (!THEMES.some((t) => t.key === theme)) theme = "default";   // a since-removed theme was saved — fall back cleanly
 let themeAuto = load(KEY_THEME_AUTO, false);
 // Local-midnight day number, so the auto theme flips on a new calendar day.
 function dayIndex() {
