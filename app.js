@@ -1028,30 +1028,6 @@ function commitDay(note, dateStr) {
   }
 }
 
-// Accountability: if the running count was built on a previous day and never
-// ended, catch it on the next open — otherwise yesterday quietly bleeds into
-// today and the record stops being honest.
-function checkStaleDay() {
-  const actDate = load(KEY_ACT_DATE, null);
-  const todayStr = isoLocal(new Date());
-  if (!(today > 0) || !actDate || actDate >= todayStr) return;
-  if (el.overlay.classList.contains("show")) return;   // don't clobber an open sheet
-  const [y, mo, d] = actDate.split("-").map(Number);
-  const label = dayLabel(new Date(y, mo - 1, d));
-  openSheet((s) => {
-    addEl(s, "h3", "Finish " + label + "?");
-    addEl(s, "p", `You logged ${fmt(today)} on ${label} but never ended the day. Log it to that day so today starts clean?`, "sub");
-    s.appendChild(makeBtn(`Log ${fmt(today)} to ${label}`, "primary", () => {
-      closeSheet();
-      commitDay("", actDate);
-    }));
-    s.appendChild(makeBtn("Keep counting as today", "ghost", () => {
-      save(KEY_ACT_DATE, todayStr);   // fold it into today on purpose — stop asking
-      closeSheet();
-    }));
-  });
-}
-
 // Feature 9: undo the most recent End Day (merges it back into today).
 function undoEndDay() {
   if (!lastEnded) { toast("Nothing to restore"); return; }
@@ -2132,12 +2108,10 @@ if (!reduceMotion() && today > 0) {
 // Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
-checkStaleDay();   // un-ended previous day? offer to log it where it belongs
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
   checkReminder();
-  checkStaleDay();   // the date may have rolled over while backgrounded
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
 
