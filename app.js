@@ -661,6 +661,17 @@ function renderTimeOfDay() {
 function isoLocal(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+// Taps made in the wee hours still belong to the day before, the way a late
+// night out "counts" as last night even after midnight. Anything tapped
+// before this hour rolls back to the previous calendar day for the purposes
+// of KEY_ACT_DATE / End Day's date default.
+const DAY_CUTOFF_HOUR = 4;
+function sessionDate(d) {
+  d = d || new Date();
+  const shifted = new Date(d);
+  if (shifted.getHours() < DAY_CUTOFF_HOUR) shifted.setDate(shifted.getDate() - 1);
+  return isoLocal(shifted);
+}
 
 function statTile(value, label, opts) {
   opts = opts || {};
@@ -860,7 +871,7 @@ function applyDelta(amt, confirmed) {
   taps += 1;
   tapLog.push({ t: Date.now(), amt: amt, total: today });
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
-  save(KEY_ACT_DATE, isoLocal(new Date()));   // remember which day this activity belongs to
+  save(KEY_ACT_DATE, sessionDate());   // remember which day this activity belongs to (past-midnight taps still count as the day before)
   buzz(amt > 0 ? 15 : 10); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
   if (goal > 0 && amt > 0) {
@@ -943,7 +954,7 @@ function openEndDay() {
     // "today") — e.g. tapping through the evening and ending the day the
     // next morning should default to yesterday, not the day you happen to
     // be tapping "End Day" on.
-    dateInput.value = load(KEY_ACT_DATE, isoLocal(new Date()));
+    dateInput.value = load(KEY_ACT_DATE, sessionDate());
     dateInput.max = isoLocal(new Date());
     s.appendChild(dateInput);
 
