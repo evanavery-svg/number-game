@@ -117,19 +117,26 @@
     #gradOver stop:nth-child(1) { stop-color: var(--r-over-1); }
     #gradOver stop:nth-child(2) { stop-color: var(--r-over-2); }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html { background: var(--bg); }
+    html { background: var(--bg); height: 100%; overflow: hidden; }
     html, body {
       margin: 0;
-      min-height: 100%;
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
       overscroll-behavior: none;
     }
+    /* Lock the home screen to one viewport — no scrolling there. Panels and
+       sheets are separate position:fixed overlays with their own internal
+       scroll, so this doesn't affect them. 100vh is a fallback: it measures
+       the *largest* possible viewport, so on iOS Safari (whose address bar
+       collapses/expands) content sized to it can peek a few px below the
+       visible area — 100dvh tracks the actual visible viewport instead. */
     body {
       background: var(--bg);
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
@@ -735,6 +742,20 @@
     }
     .add-btn { animation: bootIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.18s backwards, btnBreathe 3.4s ease-in-out 1s infinite; }
 
+    /* Compact layout for short screens (iPhone SE-class, ~667–736px tall) so
+       the home screen fits in one viewport without clipping anything. */
+    @media (max-height: 700px) {
+      header { padding: 10px 0 2px; }
+      .total { padding: 2px 0 0; }
+      .ring-wrap { width: 220px; }
+      .total .value { font-size: 58px; }
+      .quote { padding: 6px 16px 2px; min-height: 0; }
+      .add-btn { min-height: 108px; margin: 2px 0 10px; font-size: 28px; }
+      .row { margin-bottom: 10px; }
+      .row button { padding: 12px; }
+      .version { padding: 4px 0 2px; }
+    }
+
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
@@ -827,7 +848,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v5.3 · © Avery LLC</div>
+  <div class="version">v5.4 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
