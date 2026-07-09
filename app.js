@@ -116,8 +116,8 @@ let calOffset = 0;                   // Insights calendar: months back from the 
 const THEMES = [
   { key: "default", name: "Classic",    accent: "#ff9500", bg: "#000000" },
   { key: "blue",    name: "Invincible", accent: "#ffd23e", bg: "#0e1839" },
-  { key: "forest",  name: "Volt",       accent: "#ffd60a", bg: "#141414" },
-  { key: "teal",    name: "Spidey",     accent: "#e13b32", bg: "#120a0b" },
+  { key: "forest",  name: "Midnight",   accent: "#2f7ff2", bg: "#090b12" },
+  { key: "teal",    name: "Spidey",     accent: "#e01f2b", bg: "#edeef2" },
 ];
 let theme = load(KEY_THEME, "default");
 if (!THEMES.some((t) => t.key === theme)) theme = "default";   // a since-removed theme was saved — fall back cleanly

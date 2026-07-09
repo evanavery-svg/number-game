@@ -95,17 +95,27 @@
       --accent: #ffd23e; --accent-2: #ffdf73; --r-acc-1: #ffdf73; --r-acc-2: #ffce2e;
       --btn-glow: rgba(255,210,62,0.42); --btn-text: #1a1400;
     }
-    :root[data-theme="forest"] {   /* Volt — Invincible's yellow on charcoal */
-      --bg: #141414; --surface: #202020; --surface-2: #2b2b2b;
-      --text: #f2f2f0; --muted: #a8a8a2; --faint: #74746e;
-      --accent: #ffd60a; --accent-2: #ffe45c; --r-acc-1: #ffe45c; --r-acc-2: #ffcc00;
-      --btn-glow: rgba(255,214,10,0.42); --btn-text: #1a1500;
+    :root[data-theme="forest"] {   /* Midnight — Invincible's blue & black suit */
+      --bg: #090b12; --surface: #141824; --surface-2: #1e2433;
+      --text: #eef2fb; --muted: #97a1b6; --faint: #5f6a80;
+      --accent: #2f7ff2; --accent-2: #5b9cff; --r-acc-1: #5b9cff; --r-acc-2: #2f7ff2;
+      --btn-glow: rgba(47,127,242,0.42); --btn-text: #ffffff;
     }
-    :root[data-theme="teal"] {   /* Spidey — Insomniac Advanced Suit red/white on black */
-      --bg: #120a0b; --surface: #1f1315; --surface-2: #2b1a1d;
-      --text: #f6eef0; --muted: #c2a6aa; --faint: #8c7074;
-      --accent: #e13b32; --accent-2: #f45a4f; --r-acc-1: #f45a4f; --r-acc-2: #d1332b;
-      --btn-glow: rgba(225,59,50,0.45);
+    :root[data-theme="teal"] {   /* Spidey — Advanced Suit red & white (light, white-forward) */
+      --bg: #edeef2; --surface: #ffffff; --surface-2: #e2e4ec;
+      --text: #17181d; --muted: #6c7280; --faint: #a9afbb;
+      --accent: #e01f2b; --accent-2: #f23b45; --r-acc-1: #f23b45; --r-acc-2: #e01f2b;
+      --btn-glow: rgba(224,31,43,0.30); --btn-text: #ffffff;
+      --hair: rgba(0,0,0,0.08);
+      --card-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 12px 26px rgba(0,0,0,0.08);
+      --key: rgba(0,0,0,0.05); --key-press: rgba(0,0,0,0.12);
+      --safe: #1a9e5f; --warn: #d98a1f; --over: #d1332b;
+      --r-safe-1: #38c98a; --r-safe-2: #1a9e5f;
+      --r-warn-1: #f0b45a; --r-warn-2: #d98a1f;
+      --r-over-1: #f0574d; --r-over-2: #d1332b;
+      --halo-safe: rgba(26,158,95,0.16); --halo-warn: rgba(217,138,31,0.18); --halo-over: rgba(209,51,43,0.18);
+      --glow-safe: rgba(26,158,95,0.35); --glow-warn: rgba(217,138,31,0.35); --glow-over: rgba(209,51,43,0.40);
+      --num-lo: #2f9e6a; --num-mid: #d98a1f; --num-hi: #d1332b;
     }
     /* SVG ring gradient stops read from variables so themes retint them */
     #gradAccent stop:nth-child(1) { stop-color: var(--r-acc-1); }
@@ -848,7 +858,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v5.5 · © Avery LLC</div>
+  <div class="version">v5.6 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
