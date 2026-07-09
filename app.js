@@ -114,10 +114,10 @@ let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
 // Theme keys must match the CSS blocks + the head inline script's `order`.
 const THEMES = [
-  { key: "default", name: "Classic", accent: "#ff9500", bg: "#000000" },
-  { key: "blue",    name: "Ocean",   accent: "#296dbe", bg: "#1f3238" },
-  { key: "forest",  name: "Forest",  accent: "#2fae6a", bg: "#10221a" },
-  { key: "teal",    name: "Teal",    accent: "#2bb7c4", bg: "#16191c" },
+  { key: "default", name: "Classic",    accent: "#ff9500", bg: "#000000" },
+  { key: "blue",    name: "Invincible", accent: "#ffd23e", bg: "#0e1839" },
+  { key: "forest",  name: "Volt",       accent: "#ffd60a", bg: "#141414" },
+  { key: "teal",    name: "Spidey",     accent: "#e13b32", bg: "#120a0b" },
 ];
 let theme = load(KEY_THEME, "default");
 if (!THEMES.some((t) => t.key === theme)) theme = "default";   // a since-removed theme was saved — fall back cleanly

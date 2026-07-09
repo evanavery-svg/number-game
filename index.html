@@ -89,23 +89,23 @@
       --glow-safe: rgba(76,195,138,0.45); --glow-warn: rgba(240,168,90,0.45); --glow-over: rgba(226,114,106,0.50);
       --num-lo: #8fc9b4; --num-mid: #f0a85a; --num-hi: #e2726a;
     }
-    :root[data-theme="blue"] {   /* Ocean */
-      --bg: #1f3238; --surface: #26404a; --surface-2: #314c56;
-      --text: #eceee6; --muted: #babcad; --faint: #7e8b84;
-      --accent: #296dbe; --accent-2: #4c8fdd; --r-acc-1: #4c8fdd; --r-acc-2: #296dbe;
-      --btn-glow: rgba(41,109,190,0.42);
+    :root[data-theme="blue"] {   /* Invincible — royal blue suit, yellow accents */
+      --bg: #0e1839; --surface: #17245a; --surface-2: #21306e;
+      --text: #eef2ff; --muted: #9db0dd; --faint: #61729b;
+      --accent: #ffd23e; --accent-2: #ffdf73; --r-acc-1: #ffdf73; --r-acc-2: #ffce2e;
+      --btn-glow: rgba(255,210,62,0.42); --btn-text: #1a1400;
     }
-    :root[data-theme="forest"] {
-      --bg: #10221a; --surface: #1a3129; --surface-2: #244034;
-      --text: #e6efe8; --muted: #9db3a6; --faint: #6a8377;
-      --accent: #2fae6a; --accent-2: #4fd589; --r-acc-1: #4fd589; --r-acc-2: #2fae6a;
-      --btn-glow: rgba(47,174,106,0.42);
+    :root[data-theme="forest"] {   /* Volt — Invincible's yellow on charcoal */
+      --bg: #141414; --surface: #202020; --surface-2: #2b2b2b;
+      --text: #f2f2f0; --muted: #a8a8a2; --faint: #74746e;
+      --accent: #ffd60a; --accent-2: #ffe45c; --r-acc-1: #ffe45c; --r-acc-2: #ffcc00;
+      --btn-glow: rgba(255,214,10,0.42); --btn-text: #1a1500;
     }
-    :root[data-theme="teal"] {
-      --bg: #16191c; --surface: #22262b; --surface-2: #2e343a;
-      --text: #e8ebee; --muted: #9aa4ad; --faint: #69727b;
-      --accent: #2bb7c4; --accent-2: #4fd6e2; --r-acc-1: #4fd6e2; --r-acc-2: #2bb7c4;
-      --btn-glow: rgba(43,183,196,0.42);
+    :root[data-theme="teal"] {   /* Spidey — Insomniac Advanced Suit red/white on black */
+      --bg: #120a0b; --surface: #1f1315; --surface-2: #2b1a1d;
+      --text: #f6eef0; --muted: #c2a6aa; --faint: #8c7074;
+      --accent: #e13b32; --accent-2: #f45a4f; --r-acc-1: #f45a4f; --r-acc-2: #d1332b;
+      --btn-glow: rgba(225,59,50,0.45);
     }
     /* SVG ring gradient stops read from variables so themes retint them */
     #gradAccent stop:nth-child(1) { stop-color: var(--r-acc-1); }
@@ -848,7 +848,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v5.4 · © Avery LLC</div>
+  <div class="version">v5.5 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
