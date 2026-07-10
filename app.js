@@ -42,7 +42,6 @@ const el = {
   totalWrap: document.getElementById("totalWrap"),
   ringWrap: document.getElementById("ringWrap"),
   ringProg: document.getElementById("ringProg"),
-  ringCap: document.getElementById("ringCap"),
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
@@ -1061,21 +1060,10 @@ function openInsights() {
 }
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
-// The leading cap sits at the progress tip and rounds off as you approach the
-// goal — flat/barely-there early on, ramping to a full rounded bead by the
-// halfway mark and staying round from there. It orbits the ring via a rotate
-// transform so it stays glued to the end of the fill.
-const RING_CAP_MAX = 3.5;   // = stroke-width / 2, so it's a flush round cap when full
+// The progress line starts with flat ends, then rounds off once you're at
+// least halfway to the goal — a clean rounded stroke end, no floating dot.
 function updateRingCap(frac) {
-  if (!el.ringCap) return;
-  if (!(frac > 0)) { el.ringCap.style.opacity = "0"; el.ringCap.setAttribute("r", "0"); return; }
-  const f = Math.min(1, frac);
-  // fully round by 50%; ease-in so it starts flat then rounds as it nears halfway
-  const roundT = Math.min(1, f / 0.5);
-  const r = RING_CAP_MAX * Math.pow(roundT, 1.3);
-  el.ringCap.setAttribute("r", r.toFixed(2));
-  el.ringCap.style.opacity = "1";
-  el.ringCap.style.transform = "rotate(" + (f * 360).toFixed(2) + "deg)";
+  el.ringProg.style.strokeLinecap = frac >= 0.5 ? "round" : "butt";
 }
 
 // Cheap render for the today area only — used on every tap so rapid
@@ -2849,12 +2837,9 @@ if (!reduceMotion() && today > 0) {
   const ringTarget = el.ringProg.style.strokeDashoffset;
   el.ringProg.style.transition = "none";
   el.ringProg.style.strokeDashoffset = RING_C;
-  // reset the leading cap to the start so it sweeps in with the ring
-  if (el.ringCap) { el.ringCap.style.transition = "none"; updateRingCap(0); }
   el.total.textContent = "0";
   requestAnimationFrame(() => requestAnimationFrame(() => {
     el.ringProg.style.transition = "";
-    if (el.ringCap) el.ringCap.style.transition = "";
     el.ringProg.style.strokeDashoffset = ringTarget;
     renderTop(true);   // count-up animation from the seeded 0
   }));
