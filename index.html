@@ -513,6 +513,93 @@
     .tap-empty { font-size: 13px; color: var(--faint); }
     .tap-scroll { max-height: 34vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 2px; }
 
+    /* ---- end day: mood, factors, tiny wins, worry dump ---- */
+    .mood-row { display: flex; gap: 7px; }
+    .mood-btn {
+      flex: 1; padding: 11px 0 8px; border-radius: 14px; border: none;
+      background: var(--bg); color: var(--text); cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      box-shadow: inset 0 0 0 1px var(--surface-2);
+      transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .mood-btn .mood-emoji { font-size: 23px; line-height: 1; filter: saturate(0.85); transition: filter 0.15s ease; }
+    .mood-btn .mood-cap { font-size: 10px; color: var(--muted); font-weight: 600; }
+    .mood-btn:active { transform: scale(0.93); }
+    .mood-btn.on { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
+    .mood-btn.on .mood-emoji { filter: saturate(1.1); }
+    .mood-btn.on .mood-cap { color: var(--accent); }
+
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px;
+      border-radius: 999px; border: none; background: var(--bg); color: var(--text);
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      box-shadow: inset 0 0 0 1px var(--surface-2);
+      transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .chip .chip-emoji { font-size: 15px; }
+    .chip:active { transform: scale(0.95); }
+    .chip.on { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
+
+    .win-row { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
+    .win-row .win-n { color: var(--faint); font-size: 15px; font-weight: 700; width: 12px; text-align: center; flex: none; }
+    .win-row input { margin: 0; }
+
+    .worry-open {
+      width: 100%; text-align: left; border: none; cursor: pointer; margin-top: 6px;
+      background: var(--bg); color: var(--text); border-radius: 12px; padding: 14px;
+      box-shadow: inset 0 0 0 1px var(--surface-2);
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      transition: transform 0.08s ease;
+    }
+    .worry-open:active { transform: scale(0.99); }
+    .worry-open .worry-ttl { font-size: 15px; font-weight: 700; }
+    .worry-open .worry-sub { font-size: 12px; color: var(--muted); font-weight: 500; margin-top: 3px; }
+    .worry-open .worry-arrow { color: var(--accent); font-size: 20px; flex: none; }
+
+    /* worry dump flow */
+    .worry-timer { font-size: 42px; font-weight: 300; letter-spacing: -1px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: 6px 0 0; }
+    .worry-timer.done { color: var(--muted); }
+    .worry-timer-sub { text-align: center; font-size: 12px; color: var(--faint); margin: 2px 0 4px; }
+    .worry-item { padding: 13px 0; border-top: 1px solid var(--hair); }
+    .worry-item:first-child { border-top: none; }
+    .worry-item .worry-text { font-size: 15px; margin-bottom: 9px; line-height: 1.35; }
+    .ctl-row { display: flex; gap: 8px; }
+    .ctl-btn { flex: 1; padding: 10px; border-radius: 10px; border: none; cursor: pointer; font-size: 13px; font-weight: 700; background: var(--bg); color: var(--muted); box-shadow: inset 0 0 0 1px var(--surface-2); transition: transform 0.08s ease, box-shadow 0.15s ease, color 0.15s ease; }
+    .ctl-btn:active { transform: scale(0.96); }
+    .ctl-btn.in.on { color: var(--safe); box-shadow: inset 0 0 0 2px var(--safe); }
+    .ctl-btn.out.on { color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--muted); }
+    .worry-let-go { font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .worry-lg-item { padding: 9px 0; border-top: 1px solid var(--hair); }
+    .worry-lg-item:first-child { border-top: none; }
+    .worry-action-lbl { font-size: 15px; line-height: 1.35; margin: 14px 0 6px; }
+    .worry-action-lbl .wa-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--safe); margin-bottom: 3px; }
+
+    /* ---- insights: mood & patterns + tiny wins ---- */
+    .mood-head { display: flex; align-items: center; gap: 13px; margin-bottom: 2px; }
+    .mood-head .mood-avg-emoji { font-size: 34px; line-height: 1; }
+    .mood-head .mood-avg-val { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .mood-head .mood-avg-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .mood-spark { display: flex; align-items: flex-end; gap: 3px; height: 42px; margin: 14px 0 2px; }
+    .mood-spark .ms-bar { flex: 1; border-radius: 4px 4px 2px 2px; background: var(--accent); opacity: 0.85; min-height: 3px; transition: height 0.5s cubic-bezier(0.22,1,0.36,1); }
+    .mood-spark .ms-bar.empty { background: var(--surface-2); opacity: 1; }
+    .mood-corr { font-size: 13px; color: var(--muted); margin-top: 11px; line-height: 1.45; }
+    .mood-corr b { color: var(--text); font-weight: 700; }
+    .mood-corr .mc-up { color: var(--safe); font-weight: 700; }
+    .mood-corr .mc-down { color: var(--over); font-weight: 700; }
+    .mood-hint { font-size: 12px; color: var(--faint); margin-top: 10px; line-height: 1.4; }
+    .win-item { display: flex; gap: 10px; align-items: baseline; padding: 10px 2px; border-top: 1px solid var(--hair); font-size: 14px; line-height: 1.35; }
+    .win-item:first-of-type { border-top: none; }
+    .win-item .win-check { color: var(--safe); flex: none; font-weight: 700; }
+    .win-item .win-day { color: var(--faint); font-size: 12px; margin-left: auto; flex: none; white-space: nowrap; }
+
+    /* ---- history sheet recap (read-only mood/wins/worries) ---- */
+    .day-recap { font-size: 14px; color: var(--muted); line-height: 1.55; margin-top: 8px; }
+    .day-recap b { color: var(--text); font-weight: 700; }
+    .day-recap .dr-mood-emoji { font-size: 22px; vertical-align: middle; margin-right: 6px; }
+    .day-recap .dr-list { margin: 4px 0 0; padding-left: 18px; }
+    .day-recap .dr-list li { margin: 3px 0; }
+
     /* ---- time since cards ---- */
     .since-card { background: var(--surface); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--card-shadow); cursor: pointer; transition: transform 0.08s ease; overflow: hidden; }
     .since-card:active { transform: scale(0.99); }
@@ -779,7 +866,7 @@
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -866,7 +953,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v5.8 · © Avery LLC</div>
+  <div class="version">v5.9 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -901,6 +988,8 @@
         <div class="chart-card" id="calCard" style="display:none"></div>
         <div class="chart-card" id="weekdayCard" style="display:none"></div>
         <div class="chart-card" id="timeCard" style="display:none"></div>
+        <div class="chart-card" id="moodCard" style="display:none"></div>
+        <div class="chart-card" id="winsCard" style="display:none"></div>
 
         <div class="chart-card" id="chartCard" style="display:none">
           <div class="chart-head">

@@ -74,6 +74,8 @@ const el = {
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
   timeCard: document.getElementById("timeCard"),
+  moodCard: document.getElementById("moodCard"),
+  winsCard: document.getElementById("winsCard"),
   tapLogCard: document.getElementById("tapLogCard"),
   sinceStrip: document.getElementById("sinceStrip"),
   sinceOverlay: document.getElementById("sinceOverlay"),
@@ -132,6 +134,32 @@ function themeForToday() {
   return THEMES[((dayIndex() % n) + n) % n].key;
 }
 let tree = load(KEY_TREE, { level: 0, progress: 0, sad: false, seenLevel: 0, seenProgress: 0 });
+
+// ---- end-day reflection: mood, daily factors, tiny wins, worry dump ----
+// These live on each history entry (all optional), so nothing extra persists
+// on its own. A quick daily mood check-in gets correlated against the factors
+// over time to surface patterns ("your mood is lower on days you skip breakfast").
+const MOODS = [
+  { v: 1, emoji: "😞", cap: "Rough" },
+  { v: 2, emoji: "😕", cap: "Low" },
+  { v: 3, emoji: "😐", cap: "Okay" },
+  { v: 4, emoji: "🙂", cap: "Good" },
+  { v: 5, emoji: "😄", cap: "Great" },
+];
+const FACTORS = [
+  { key: "sleep",     emoji: "😴", label: "Slept well",    phrase: "sleep well" },
+  { key: "exercise",  emoji: "🏃", label: "Exercised",     phrase: "exercise" },
+  { key: "social",    emoji: "💬", label: "Saw people",    phrase: "see people" },
+  { key: "breakfast", emoji: "🍳", label: "Ate breakfast", phrase: "eat breakfast" },
+  { key: "outside",   emoji: "☀️", label: "Went outside",  phrase: "get outside" },
+];
+function moodEmoji(v) { const m = MOODS.find((x) => x.v === Math.round(v)); return m ? m.emoji : "—"; }
+// Draft state so the multi-step worry-dump flow can leave the End Day sheet and
+// return without losing the mood/factors/wins captured so far.
+let endDayDraft = null;
+function freshDraft() {
+  return { date: null, note: "", mood: null, factors: {}, wins: ["", "", ""], worries: [] };
+}
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -409,6 +437,93 @@ function renderInsights() {
   renderCalendar();
   renderWeekday();
   renderTimeOfDay();
+  renderMood();
+  renderWins();
+}
+
+// Mood & patterns — average check-in, a recent sparkline, and factor
+// correlations (avg mood on days a factor is present vs absent), surfacing
+// the strongest as plain sentences like "your mood is lower on days you skip
+// breakfast".
+function renderMood() {
+  const card = el.moodCard;
+  const withMood = history.filter((d) => typeof d.mood === "number" && d.mood >= 1);
+  if (withMood.length < 3) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+
+  addEl(card, "div", "Mood & patterns", "section-title");
+
+  const avg = withMood.reduce((s, d) => s + d.mood, 0) / withMood.length;
+  const head = document.createElement("div");
+  head.className = "mood-head";
+  addEl(head, "div", moodEmoji(avg), "mood-avg-emoji");
+  const col = document.createElement("div");
+  addEl(col, "div", avg.toFixed(1), "mood-avg-val");
+  addEl(col, "div", `avg mood · ${withMood.length} day${withMood.length === 1 ? "" : "s"}`, "mood-avg-sub");
+  head.appendChild(col);
+  card.appendChild(head);
+
+  // sparkline of the most recent check-ins (up to 21), oldest → newest
+  const recent = withMood.slice(-21);
+  const spark = document.createElement("div");
+  spark.className = "mood-spark";
+  recent.forEach((d) => {
+    const bar = document.createElement("div");
+    bar.className = "ms-bar";
+    bar.style.height = Math.max(8, (d.mood / 5) * 100) + "%";
+    bar.title = `${d.label}: ${moodEmoji(d.mood)}`;
+    spark.appendChild(bar);
+  });
+  card.appendChild(spark);
+
+  // factor correlations — need enough days each side to be meaningful
+  const lines = [];
+  FACTORS.forEach((f) => {
+    const on = withMood.filter((d) => (d.factors || []).includes(f.key));
+    const off = withMood.filter((d) => !(d.factors || []).includes(f.key));
+    if (on.length < 2 || off.length < 2) return;
+    const aOn = on.reduce((s, d) => s + d.mood, 0) / on.length;
+    const aOff = off.reduce((s, d) => s + d.mood, 0) / off.length;
+    const delta = aOn - aOff;
+    if (Math.abs(delta) >= 0.3) lines.push({ f, delta });
+  });
+  lines.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  lines.slice(0, 3).forEach(({ f, delta }) => {
+    const p = document.createElement("div");
+    p.className = "mood-corr";
+    const up = delta > 0;
+    const mag = Math.abs(delta).toFixed(1);
+    p.innerHTML = up
+      ? `Your mood runs <span class="mc-up">higher</span> on days you <b>${f.phrase}</b> — +${mag}`
+      : `Your mood runs <span class="mc-down">lower</span> on days you <b>${f.phrase}</b> — −${mag}`;
+    card.appendChild(p);
+  });
+  if (!lines.length) addEl(card, "div", "Keep checking in — patterns between your mood and daily habits will show up here.", "mood-hint");
+}
+
+// Tiny wins — a running log of the small things, newest first.
+function renderWins() {
+  const card = el.winsCard;
+  const items = [];
+  for (let i = history.length - 1; i >= 0 && items.length < 15; i--) {
+    const d = history[i];
+    if (!d.wins || !d.wins.length) continue;
+    const short = new Date(d.endedAt || d.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    d.wins.forEach((w) => { if (items.length < 15) items.push({ text: w, day: short }); });
+  }
+  if (!items.length) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+  addEl(card, "div", "Tiny wins", "section-title");
+  items.forEach((it) => {
+    const row = document.createElement("div");
+    row.className = "win-item";
+    addEl(row, "span", "✓", "win-check");
+    row.appendChild(document.createTextNode(it.text));
+    addEl(row, "span", it.day, "win-day");
+    card.appendChild(row);
+  });
 }
 
 // Today's taps, by the clock — count plus a row per tap: the time, how much
@@ -740,6 +855,7 @@ function openInsights() {
   growBars(el.chart, ".bar");
   growBars(el.weekdayCard, ".wk-bar");
   growBars(el.timeCard, ".tod-bar");
+  growBars(el.moodCard, ".ms-bar");
   const cal = el.calCard.querySelector(".cal");
   if (cal) staggerIn(cal, 6, 40);
 }
@@ -969,9 +1085,14 @@ function undo() {
   renderTop(true); renderChart();
 }
 
-// New: End Day opens a sheet with an optional note.
-function openEndDay() {
+// End Day: a short daily wind-down — log the total plus an optional mood
+// check-in, factor chips, tiny wins and a worry dump. `resume` is true only
+// when returning from the worry-dump sub-flow, so a fresh open starts clean.
+function openEndDay(resume) {
   if (taps === 0 && today === 0) { toast("Nothing to log yet"); return; }
+  if (resume !== true) endDayDraft = freshDraft();   // click handler passes an Event, not true
+  const draft = endDayDraft;
+
   openSheet((s) => {
     addEl(s, "h3", "End Day");
     // say plainly where the day landed against the goal
@@ -990,23 +1111,241 @@ function openEndDay() {
     // "today") — e.g. tapping through the evening and ending the day the
     // next morning should default to yesterday, not the day you happen to
     // be tapping "End Day" on.
-    dateInput.value = load(KEY_ACT_DATE, sessionDate());
+    dateInput.value = draft.date || load(KEY_ACT_DATE, sessionDate());
     dateInput.max = isoLocal(new Date());
     s.appendChild(dateInput);
 
+    // --- quick mood check-in (tap once) ---
+    addEl(s, "label", "How did today feel?");
+    const moodRow = document.createElement("div");
+    moodRow.className = "mood-row";
+    MOODS.forEach((m) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "mood-btn" + (draft.mood === m.v ? " on" : "");
+      const e = document.createElement("span"); e.className = "mood-emoji"; e.textContent = m.emoji;
+      const c = document.createElement("span"); c.className = "mood-cap"; c.textContent = m.cap;
+      b.append(e, c);
+      b.addEventListener("click", () => {
+        draft.mood = draft.mood === m.v ? null : m.v;   // tap again to clear
+        moodRow.querySelectorAll(".mood-btn").forEach((x, i) => x.classList.toggle("on", MOODS[i].v === draft.mood));
+        buzz(10);
+      });
+      moodRow.appendChild(b);
+    });
+    s.appendChild(moodRow);
+
+    // --- daily factors (what correlates with mood over time) ---
+    addEl(s, "label", "Today I…");
+    const chipRow = document.createElement("div");
+    chipRow.className = "chip-row";
+    FACTORS.forEach((f) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip" + (draft.factors[f.key] ? " on" : "");
+      const em = document.createElement("span"); em.className = "chip-emoji"; em.textContent = f.emoji;
+      b.append(em, document.createTextNode(f.label));
+      b.addEventListener("click", () => {
+        draft.factors[f.key] = !draft.factors[f.key];
+        b.classList.toggle("on", !!draft.factors[f.key]);
+        buzz(10);
+      });
+      chipRow.appendChild(b);
+    });
+    s.appendChild(chipRow);
+
+    // --- tiny wins log ---
+    addEl(s, "label", "Tiny wins today (no matter how small)");
+    const winInputs = [];
+    for (let i = 0; i < 3; i++) {
+      const row = document.createElement("div");
+      row.className = "win-row";
+      addEl(row, "span", "✓", "win-n");
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.value = draft.wins[i] || "";
+      inp.placeholder = i === 0 ? "e.g. made the bed, called a friend…" : "Another win (optional)";
+      row.appendChild(inp);
+      winInputs.push(inp);
+      s.appendChild(row);
+    }
+
+    // --- worry dump entry point ---
+    const ta = document.createElement("textarea");   // declared early so sync() can read it
+    // pull the current form values into the draft (before leaving for a sub-flow or committing)
+    const sync = () => {
+      draft.date = dateInput.value;
+      draft.note = ta.value;
+      draft.wins = winInputs.map((x) => x.value);
+    };
+
+    addEl(s, "label", "Worry dump");
+    const worry = document.createElement("button");
+    worry.type = "button";
+    worry.className = "worry-open";
+    const wleft = document.createElement("div");
+    addEl(wleft, "div", "Empty your head", "worry-ttl");
+    const nW = draft.worries.length;
+    const nAct = draft.worries.filter((w) => w.control === "in" && (w.action || "").trim()).length;
+    addEl(wleft, "div", nW ? `${nW} noted${nAct ? ` · ${nAct} to act on` : ""}` : "Timed brain dump, then sort what you can control", "worry-sub");
+    worry.appendChild(wleft);
+    addEl(worry, "div", nW ? "✎" : "→", "worry-arrow");
+    worry.addEventListener("click", () => { sync(); openWorryDump(); });
+    s.appendChild(worry);
+
     addEl(s, "label", "Note for this day (optional)");
-    const ta = document.createElement("textarea");
-    ta.rows = 3; ta.placeholder = "e.g. how it went, anything notable…";
+    ta.rows = 3; ta.placeholder = "e.g. how it went, anything notable…"; ta.value = draft.note || "";
     s.appendChild(ta);
+
     s.appendChild(makeBtn("Log day ✓", "primary", () => {
-      commitDay(ta.value.replace(/\s*\n\s*/g, " ").trim(), dateInput.value);
+      sync();
+      commitDay(ta.value.replace(/\s*\n\s*/g, " ").trim(), dateInput.value, {
+        mood: draft.mood,
+        factors: draft.factors,
+        wins: draft.wins,
+        worries: draft.worries,
+      });
+      endDayDraft = null;
       closeSheet();
     }));
-    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
-    setTimeout(() => ta.focus(), 50);
+    s.appendChild(makeBtn("Cancel", "ghost", () => { endDayDraft = null; closeSheet(); }));
   });
 }
-function commitDay(note, dateStr) {
+
+// ---- worry dump: timed brain dump → sort in/out of control → next actions ----
+let worryTimer = null;
+function clearWorryTimer() { if (worryTimer) { clearInterval(worryTimer); worryTimer = null; } }
+const WORRY_SECONDS = 120;
+
+// Stage 1 — a gently timed free write, one worry per line.
+function openWorryDump() {
+  clearWorryTimer();
+  openSheet((s) => {
+    addEl(s, "h3", "Worry dump");
+    addEl(s, "p", "Set a timer and write whatever's on your mind — one worry per line. Don't overthink it.", "sub");
+
+    const timer = document.createElement("div");
+    timer.className = "worry-timer";
+    s.appendChild(timer);
+    addEl(s, "div", "then we'll sort them", "worry-timer-sub");
+
+    const ta = document.createElement("textarea");
+    ta.rows = 7;
+    ta.placeholder = "money is tight\nthat text I haven't answered\nthe presentation friday…";
+    // prefill with anything already captured so re-opening doesn't lose it
+    if (endDayDraft && endDayDraft.worries.length) ta.value = endDayDraft.worries.map((w) => w.text).join("\n");
+    s.appendChild(ta);
+
+    const toSort = () => {
+      clearWorryTimer();
+      const items = ta.value.split("\n").map((t) => t.trim()).filter(Boolean);
+      if (!items.length) { endDayDraft.worries = []; openEndDay(true); return; }
+      // preserve prior control/action choices when the text matches
+      const prev = endDayDraft.worries;
+      const worries = items.map((text) => {
+        const match = prev.find((w) => w.text === text);
+        return { text, control: match ? match.control : null, action: match ? match.action : "" };
+      });
+      openWorrySort(worries);
+    };
+
+    s.appendChild(makeBtn("Sort them →", "primary", toSort));
+    s.appendChild(makeBtn("Back", "ghost", () => { clearWorryTimer(); openEndDay(true); }));
+
+    let left = WORRY_SECONDS;
+    const paint = () => {
+      const mm = Math.floor(left / 60), ss = left % 60;
+      timer.textContent = `${mm}:${String(ss).padStart(2, "0")}`;
+    };
+    paint();
+    worryTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        left = 0; paint();
+        timer.classList.add("done");
+        clearWorryTimer();
+        buzz([0, 40, 60, 40]);
+        if (ta.value.trim()) toSort();   // auto-advance once time's up and there's something written
+      } else {
+        paint();
+      }
+    }, 1000);
+  });
+}
+
+// Stage 2 — sort each worry into in / out of your control.
+function openWorrySort(worries) {
+  openSheet((s) => {
+    addEl(s, "h3", "In your control?");
+    addEl(s, "p", "For each worry, decide: is this something you can act on, or something to let go of?", "sub");
+
+    worries.forEach((w) => {
+      const item = document.createElement("div");
+      item.className = "worry-item";
+      addEl(item, "div", w.text, "worry-text");
+      const row = document.createElement("div");
+      row.className = "ctl-row";
+      const inBtn = document.createElement("button");
+      inBtn.type = "button"; inBtn.className = "ctl-btn in" + (w.control === "in" ? " on" : "");
+      inBtn.textContent = "In my control";
+      const outBtn = document.createElement("button");
+      outBtn.type = "button"; outBtn.className = "ctl-btn out" + (w.control === "out" ? " on" : "");
+      outBtn.textContent = "Not in my control";
+      inBtn.addEventListener("click", () => { w.control = "in"; inBtn.classList.add("on"); outBtn.classList.remove("on"); buzz(10); });
+      outBtn.addEventListener("click", () => { w.control = "out"; outBtn.classList.add("on"); inBtn.classList.remove("on"); buzz(10); });
+      row.append(inBtn, outBtn);
+      item.appendChild(row);
+      s.appendChild(item);
+    });
+
+    s.appendChild(makeBtn("Next →", "primary", () => {
+      if (worries.some((w) => !w.control)) { toast("Sort each one first"); return; }
+      openWorryActions(worries);
+    }));
+    s.appendChild(makeBtn("Back", "ghost", () => openWorryDump()));
+  });
+}
+
+// Stage 3 — turn the controllable worries into a next action; let the rest go.
+function openWorryActions(worries) {
+  const controllable = worries.filter((w) => w.control === "in");
+  const letGo = worries.filter((w) => w.control === "out");
+  openSheet((s) => {
+    addEl(s, "h3", "Next actions");
+
+    if (controllable.length) {
+      addEl(s, "p", "For each one you can act on, name the very next small step.", "sub");
+      controllable.forEach((w) => {
+        const lbl = document.createElement("div");
+        lbl.className = "worry-action-lbl";
+        addEl(lbl, "div", "You can act on", "wa-tag");
+        lbl.appendChild(document.createTextNode(w.text));
+        s.appendChild(lbl);
+        const inp = document.createElement("input");
+        inp.type = "text"; inp.value = w.action || "";
+        inp.placeholder = "Next step — e.g. text them back tomorrow AM";
+        inp.addEventListener("input", () => { w.action = inp.value; });
+        s.appendChild(inp);
+      });
+    } else {
+      addEl(s, "p", "Nothing here is in your control right now — and that's okay.", "sub");
+    }
+
+    if (letGo.length) {
+      addEl(s, "label", "Out of your hands — let these go");
+      const box = document.createElement("div");
+      box.className = "worry-let-go";
+      letGo.forEach((w) => addEl(box, "div", w.text, "worry-lg-item"));
+      s.appendChild(box);
+    }
+
+    s.appendChild(makeBtn("Save ✓", "primary", () => {
+      endDayDraft.worries = worries;
+      openEndDay(true);
+    }));
+    s.appendChild(makeBtn("Back", "ghost", () => openWorrySort(worries)));
+  });
+}
+function commitDay(note, dateStr, extras) {
   const now = new Date();
   // log under the chosen date (keeping the current time of day), or today
   let when = now;
@@ -1022,6 +1361,18 @@ function commitDay(note, dateStr) {
     total: total, taps: taps, endedAt: when.toISOString(),
     note: note || "", tapTimes: tapLog.slice(),
   };
+  // optional end-day reflection (mood check-in, factors, tiny wins, worries)
+  if (extras) {
+    if (extras.mood) entry.mood = extras.mood;
+    const facs = FACTORS.map((f) => f.key).filter((k) => extras.factors && extras.factors[k]);
+    if (facs.length) entry.factors = facs;
+    const wins = (extras.wins || []).map((w) => (w || "").trim()).filter(Boolean).slice(0, 3);
+    if (wins.length) entry.wins = wins;
+    const worries = (extras.worries || [])
+      .filter((w) => w && (w.text || "").trim())
+      .map((w) => ({ text: w.text.trim(), control: w.control || null, action: (w.action || "").trim() }));
+    if (worries.length) entry.worries = worries;
+  }
   history.push(entry);
   // keep chronological order so the chart, streaks and calendar stay correct
   // even when a day is logged under an earlier date
@@ -1098,7 +1449,7 @@ function openSheet(builder) {
   el.overlay.classList.add("show");
   staggerIn(el.sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
 }
-function closeSheet() { el.overlay.classList.remove("show"); }
+function closeSheet() { clearWorryTimer(); el.overlay.classList.remove("show"); }
 function addEl(parent, tag, text, cls) {
   const e = document.createElement(tag);
   if (text != null) e.textContent = text;
@@ -1263,6 +1614,45 @@ function openHistorySheet(idx) {
       scroll.className = "tap-scroll";
       scroll.appendChild(tapRows(day.tapTimes));
       s.appendChild(scroll);
+    }
+
+    // read-only recap of the end-day reflection, if any was captured
+    if (day.mood || (day.factors && day.factors.length) || (day.wins && day.wins.length) || (day.worries && day.worries.length)) {
+      addEl(s, "label", "That day's check-in");
+      const recap = document.createElement("div");
+      recap.className = "day-recap";
+      if (day.mood) {
+        const m = MOODS.find((x) => x.v === day.mood);
+        const line = document.createElement("div");
+        line.innerHTML = `<span class="dr-mood-emoji">${moodEmoji(day.mood)}</span>Mood: <b>${m ? m.cap : day.mood}</b>`;
+        recap.appendChild(line);
+      }
+      if (day.factors && day.factors.length) {
+        const labels = day.factors.map((k) => { const f = FACTORS.find((x) => x.key === k); return f ? f.label : k; });
+        const line = document.createElement("div");
+        line.innerHTML = `<b>${labels.join(", ")}</b>`;
+        recap.appendChild(line);
+      }
+      if (day.wins && day.wins.length) {
+        addEl(recap, "div", "Tiny wins:");
+        const ul = document.createElement("ul");
+        ul.className = "dr-list";
+        day.wins.forEach((w) => addEl(ul, "li", w));
+        recap.appendChild(ul);
+      }
+      if (day.worries && day.worries.length) {
+        const acts = day.worries.filter((w) => w.control === "in" && w.action);
+        if (acts.length) {
+          addEl(recap, "div", "Next actions:");
+          const ul = document.createElement("ul");
+          ul.className = "dr-list";
+          acts.forEach((w) => addEl(ul, "li", w.action));
+          recap.appendChild(ul);
+        }
+        const letGo = day.worries.filter((w) => w.control === "out").length;
+        if (letGo) addEl(recap, "div", `Let go of ${letGo} thing${letGo === 1 ? "" : "s"} out of your control.`);
+      }
+      s.appendChild(recap);
     }
 
     s.appendChild(makeBtn("Save", "primary", () => {
