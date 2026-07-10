@@ -1841,6 +1841,8 @@ function openSettings() {
       // turned on and not yet played today → show it right away
       if (gameOn && gamePlayed !== moodGateKey()) { closeSheet(); setTimeout(runDailyGates, 380); }
     });
+    // test it any time, even after today's round is already done
+    s.appendChild(makeBtn("▶ Play now (test)", "link", () => { closeSheet(); setTimeout(showGameGate, 380); }));
 
     s.appendChild(makeBtn("Save", "primary", () => {
       const ns = parseFloat(stepInput.value);
