@@ -277,9 +277,9 @@ const GG_LIFE_MS = 1600;     // how long a face lingers before fading
 function showGameGate() {
   const arena = el.ggArena;
   arena.textContent = "";
-  // fixed 3×3 board — faces appear one per empty cell
+  // just two big cells — faces appear one per empty cell
   const cells = [];
-  for (let i = 0; i < 9; i++) { const c = document.createElement("div"); c.className = "gg-cell"; arena.appendChild(c); cells.push(c); }
+  for (let i = 0; i < 2; i++) { const c = document.createElement("div"); c.className = "gg-cell"; arena.appendChild(c); cells.push(c); }
   let score = 0, left = GG_DURATION;
   el.ggScore.textContent = "0";
   el.ggTimer.textContent = String(left);
@@ -293,7 +293,7 @@ function showGameGate() {
     const empty = cells.filter((c) => !c.firstChild);
     if (!empty.length) return;
     const cell = empty[(Math.random() * empty.length) | 0];
-    const smile = Math.random() < 0.62;   // more smileys than frowns
+    const smile = Math.random() < 0.68;   // mostly smileys — nice and easy
     const face = document.createElement("button");
     face.type = "button";
     face.className = "gg-face";
