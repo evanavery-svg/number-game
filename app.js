@@ -28,6 +28,7 @@ const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hy
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
 const KEY_WATER_PRESETS = "count.waterPresets"; // [oz, …] quick glass-size buttons
+const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandatory once-a-day mood pulse
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -88,6 +89,11 @@ const el = {
   treeOverlay: document.getElementById("treeOverlay"),
   treeClose: document.getElementById("treeClose"),
   treeBody: document.getElementById("treeBody"),
+  moodGate: document.getElementById("moodGate"),
+  mgFaces: document.getElementById("mgFaces"),
+  mgTimer: document.getElementById("mgTimer"),
+  mgCount: document.getElementById("mgCount"),
+  mgBar: document.getElementById("mgBar"),
 };
 
 // ---- state ----
@@ -109,6 +115,7 @@ let reminderOn = load(KEY_REMIND, false);
 let reminderTime = load(KEY_REMIND_TIME, "20:00");
 let since = load(KEY_SINCE, []);
 let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
+let moodDaily = load(KEY_MOOD_DAILY, {});   // once-a-day mood pulse, keyed by day
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
@@ -171,6 +178,81 @@ function moodEmoji(v) { const m = MOODS.find((x) => x.v === Math.round(v)); retu
 let endDayDraft = null;
 function freshDraft() {
   return { date: null, note: "", mood: null, factors: {}, wins: ["", "", ""], worries: [], extra: 0, extraTimes: [] };
+}
+
+// ---- mandatory daily mood gate ----
+// A quick, once-a-day check-in that covers the app until you tap a face. Keyed
+// by the app's day (so before 4am still counts as the previous day). The pulse
+// also seeds End Day's mood so the patterns in Insights stay in one place.
+let moodGateTimer = null;
+function moodGateKey() { return sessionDate(); }
+function maybeMoodCheck() {
+  if (el.moodGate.classList.contains("show")) return;        // already up
+  if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
+  if (moodDaily[moodGateKey()] != null) return;              // already checked in today
+  showMoodGate();
+}
+function showMoodGate() {
+  const faces = el.mgFaces;
+  faces.textContent = "";
+  faces.classList.remove("nudge");
+  el.mgTimer.style.opacity = "";
+  MOODS.forEach((m, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mg-face";
+    b.style.setProperty("--stg", i * 70);   // sequenced spring-in + idle bob
+    const e = document.createElement("span"); e.className = "mg-emoji"; e.textContent = m.emoji;
+    const c = document.createElement("span"); c.className = "mg-cap"; c.textContent = m.cap;
+    b.append(e, c);
+    b.addEventListener("click", () => recordDailyMood(m.v, b));
+    faces.appendChild(b);
+  });
+  el.moodGate.style.display = "flex";
+  el.moodGate.classList.remove("out");
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => el.moodGate.classList.add("show"));
+
+  // decorative ~10s countdown + depleting bar — it never auto-dismisses
+  // (this is mandatory), it just nudges you to answer.
+  el.mgBar.classList.remove("run");
+  el.mgBar.style.width = "100%";
+  requestAnimationFrame(() => requestAnimationFrame(() => el.mgBar.classList.add("run")));
+  let left = 10;
+  el.mgCount.textContent = left;
+  if (moodGateTimer) clearInterval(moodGateTimer);
+  moodGateTimer = setInterval(() => {
+    left -= 1;
+    el.mgCount.textContent = Math.max(0, left);
+    el.mgTimer.classList.remove("tick"); void el.mgTimer.offsetWidth; el.mgTimer.classList.add("tick");
+    if (left <= 0) {
+      clearInterval(moodGateTimer); moodGateTimer = null;
+      faces.classList.remove("nudge"); void faces.offsetWidth; faces.classList.add("nudge");
+      buzz([0, 30, 50, 30]);
+    }
+  }, 1000);
+}
+function recordDailyMood(v, faceEl) {
+  if (moodGateTimer) { clearInterval(moodGateTimer); moodGateTimer = null; }
+  moodDaily[moodGateKey()] = v;
+  save(KEY_MOOD_DAILY, moodDaily);
+  buzz([0, 15, 30, 45]);
+  // celebrate: the chosen face pops with confetti, the rest dim away
+  el.mgFaces.querySelectorAll(".mg-face").forEach((f) => f.classList.add(f === faceEl ? "chosen" : "dim"));
+  if (faceEl) {
+    const r = faceEl.getBoundingClientRect();
+    confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 20);
+  }
+  el.mgTimer.style.opacity = "0";
+  setTimeout(hideMoodGate, reduceMotion() ? 0 : 640);
+}
+function hideMoodGate() {
+  el.mgTimer.style.opacity = "";
+  document.body.style.overflow = "";
+  if (reduceMotion()) { el.moodGate.classList.remove("show"); el.moodGate.style.display = "none"; return; }
+  el.moodGate.classList.remove("show");
+  el.moodGate.classList.add("out");
+  setTimeout(() => { el.moodGate.style.display = "none"; el.moodGate.classList.remove("out"); }, 360);
 }
 
 // ---- daily encouragement ----
@@ -1101,7 +1183,12 @@ function undo() {
 // check-in, factor chips, tiny wins and a worry dump. `resume` is true only
 // when returning from the worry-dump sub-flow, so a fresh open starts clean.
 function openEndDay(resume) {
-  if (resume !== true) endDayDraft = freshDraft();   // click handler passes an Event, not true
+  if (resume !== true) {
+    endDayDraft = freshDraft();   // click handler passes an Event, not true
+    // seed the mood picker from today's mandatory check-in, if it happened
+    const dk = load(KEY_ACT_DATE, sessionDate());
+    if (moodDaily[dk] != null) endDayDraft.mood = moodDaily[dk];
+  }
   const draft = endDayDraft;
   // the total that will actually be logged = today's taps + any you add here
   const projected = () => round2(today + draft.extra);
@@ -1453,6 +1540,8 @@ function commitDay(note, dateStr, extras) {
   // optional end-day reflection (mood check-in, factors, tiny wins, worries)
   if (extras) {
     if (extras.mood) entry.mood = extras.mood;
+    // fall back to that day's mandatory mood pulse if none was set in End Day
+    if (entry.mood == null && moodDaily[entry.date] != null) entry.mood = moodDaily[entry.date];
     const facs = FACTORS.map((f) => f.key).filter((k) => extras.factors && extras.factors[k]);
     if (facs.length) entry.factors = facs;
     const wins = (extras.wins || []).map((w) => (w || "").trim()).filter(Boolean).slice(0, 3);
@@ -1882,9 +1971,9 @@ function hideLock() {
   save(KEY_UNLOCK_AT, Date.now());
   swallowGhostClick();
   document.body.style.overflow = "";
-  if (reduceMotion()) { el.lock.style.display = "none"; return; }
+  if (reduceMotion()) { el.lock.style.display = "none"; maybeMoodCheck(); return; }
   el.lock.classList.add("out");   // pointer-events:none while fading
-  setTimeout(() => { el.lock.style.display = "none"; el.lock.classList.remove("out"); }, 230);
+  setTimeout(() => { el.lock.style.display = "none"; el.lock.classList.remove("out"); maybeMoodCheck(); }, 230);
 }
 // The passcode keys respond on pointerdown for instant feedback, so the last
 // correct digit can hide the lock screen before the browser's trailing
@@ -2634,9 +2723,11 @@ if (!reduceMotion() && today > 0) {
 // Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
+maybeMoodCheck();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
+  maybeMoodCheck();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });

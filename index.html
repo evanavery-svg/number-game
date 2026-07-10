@@ -828,6 +828,52 @@
       letter-spacing: 0.3px;
     }
 
+    /* ---- daily mood gate (mandatory once-a-day check-in) ---- */
+    .mood-gate {
+      position: fixed; inset: 0; z-index: 95; background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: calc(env(safe-area-inset-top) + 20px) 24px calc(env(safe-area-inset-bottom) + 28px);
+      touch-action: none; user-select: none; -webkit-user-select: none;
+      opacity: 0; transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    .mood-gate.show { opacity: 1; }
+    .mood-gate.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
+    .mg-inner { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 360px; text-align: center; }
+    .mg-timer {
+      width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent);
+      box-shadow: inset 0 0 0 2px var(--surface-2); margin-bottom: 24px;
+    }
+    .mg-timer.tick { animation: mgTick 0.5s ease; }
+    @keyframes mgTick { 0% { transform: scale(1); } 40% { transform: scale(1.16); } 100% { transform: scale(1); } }
+    .mg-title { font-size: 27px; font-weight: 700; letter-spacing: -0.6px; margin: 0; }
+    .mg-sub { font-size: 14px; color: var(--muted); margin: 9px 0 32px; }
+    .mg-faces { display: flex; gap: 8px; justify-content: center; }
+    .mg-face {
+      flex: 1 1 0; min-width: 0; max-width: 66px; height: 78px; border: none; border-radius: 18px; cursor: pointer;
+      background: var(--surface); color: var(--text);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+      box-shadow: var(--card-shadow);
+      transition: transform 0.14s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, opacity 0.3s ease;
+    }
+    .mg-face .mg-emoji { font-size: 29px; line-height: 1; }
+    .mg-face .mg-cap { font-size: 10px; color: var(--muted); font-weight: 700; }
+    .mg-face:active { transform: scale(0.9); }
+    /* entrance: each face springs up in sequence (JS sets --stg) */
+    .mood-gate.show .mg-face { animation: mgIn 0.5s cubic-bezier(0.34,1.56,0.64,1) backwards; animation-delay: calc(var(--stg, 0) * 1ms); }
+    @keyframes mgIn { from { opacity: 0; transform: translateY(26px) scale(0.55); } }
+    /* gentle idle bob on the emoji once it has landed */
+    .mood-gate.show .mg-face .mg-emoji { animation: mgFloat 3.2s ease-in-out infinite; animation-delay: calc(var(--stg, 0) * 1ms + 550ms); }
+    @keyframes mgFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    .mg-face.chosen { transform: scale(1.16); box-shadow: 0 0 0 2.5px var(--accent), var(--card-shadow); z-index: 2; }
+    .mg-face.chosen .mg-emoji { animation: mgPop 0.55s cubic-bezier(0.34,1.56,0.64,1); }
+    @keyframes mgPop { 0% { transform: scale(1); } 45% { transform: scale(1.55); } 100% { transform: scale(1.16); } }
+    .mg-face.dim { opacity: 0.22; transform: scale(0.82); }
+    .mg-faces.nudge { animation: nudge 0.42s ease; }
+    .mg-bar { width: 180px; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 36px; }
+    .mg-bar i { display: block; height: 100%; width: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+    .mg-bar i.run { width: 0%; transition: width 10s linear; }
+
     /* ---- shared motion utilities ---- */
     /* staggered entrance for list/grid children — JS sets --stg per child */
     @keyframes itemIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
@@ -876,8 +922,9 @@
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
-      .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar { transition: none; }
+      .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version,
+      .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge { animation: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -964,7 +1011,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v6.0 · © Avery LLC</div>
+  <div class="version">v6.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -976,6 +1023,17 @@
       <div class="lock-dots" id="lockDots"><i></i><i></i><i></i><i></i></div>
       <div class="lock-error" id="lockError"></div>
       <div class="lock-pad" id="lockPad"></div>
+    </div>
+  </div>
+
+  <!-- Daily mood gate: a mandatory once-a-day check-in that covers the app -->
+  <div class="mood-gate" id="moodGate" style="display:none">
+    <div class="mg-inner">
+      <div class="mg-timer" id="mgTimer"><span id="mgCount">10</span></div>
+      <h2 class="mg-title" id="mgTitle">How are you feeling?</h2>
+      <p class="mg-sub">A quick daily check-in — tap a face</p>
+      <div class="mg-faces" id="mgFaces"></div>
+      <div class="mg-bar"><i id="mgBar"></i></div>
     </div>
   </div>
 
