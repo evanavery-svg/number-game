@@ -1062,15 +1062,17 @@ function openInsights() {
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
 // The leading cap sits at the progress tip and rounds off as you approach the
-// goal — flat/barely-there early on, a full rounded bead at 100%. It orbits the
-// ring via a rotate transform so it stays glued to the end of the fill.
-const RING_CAP_MAX = 3.5;   // = stroke-width / 2, so it's flush at completion
+// goal — flat/barely-there early on, ramping to a full rounded bead by the
+// halfway mark and staying round from there. It orbits the ring via a rotate
+// transform so it stays glued to the end of the fill.
+const RING_CAP_MAX = 3.5;   // = stroke-width / 2, so it's a flush round cap when full
 function updateRingCap(frac) {
   if (!el.ringCap) return;
   if (!(frac > 0)) { el.ringCap.style.opacity = "0"; el.ringCap.setAttribute("r", "0"); return; }
   const f = Math.min(1, frac);
-  // ease-in so the rounding "kicks in" the closer you get, rather than linearly
-  const r = RING_CAP_MAX * Math.pow(f, 1.4);
+  // fully round by 50%; ease-in so it starts flat then rounds as it nears halfway
+  const roundT = Math.min(1, f / 0.5);
+  const r = RING_CAP_MAX * Math.pow(roundT, 1.3);
   el.ringCap.setAttribute("r", r.toFixed(2));
   el.ringCap.style.opacity = "1";
   el.ringCap.style.transform = "rotate(" + (f * 360).toFixed(2) + "deg)";
