@@ -874,6 +874,44 @@
     .mg-bar i { display: block; height: 100%; width: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
     .mg-bar i.run { width: 0%; transition: width 10s linear; }
 
+    /* ---- daily focus game (tap the smileys) ---- */
+    .game-gate {
+      position: fixed; inset: 0; z-index: 95; background: var(--bg);
+      display: flex; align-items: stretch; justify-content: center;
+      padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px);
+      touch-action: none; user-select: none; -webkit-user-select: none;
+      opacity: 0; transition: opacity 0.3s ease, transform 0.35s ease;
+    }
+    .game-gate.show { opacity: 1; }
+    .game-gate.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
+    .gg-inner { display: flex; flex-direction: column; width: 100%; max-width: 460px; }
+    .gg-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px; }
+    .gg-timer { font-size: 27px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+    .gg-timer.low { color: var(--over); }
+    .gg-score { font-size: 14px; color: var(--muted); }
+    .gg-score b { color: var(--text); font-size: 21px; font-variant-numeric: tabular-nums; margin-left: 3px; display: inline-block; }
+    .gg-score.bump b { animation: bump 0.22s ease; }
+    .gg-title { text-align: center; font-size: 18px; font-weight: 700; margin: 10px 0 12px; letter-spacing: -0.2px; }
+    .gg-arena { position: relative; flex: 1; min-height: 0; border-radius: 22px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); overflow: hidden; }
+    .gg-face {
+      position: absolute; width: 60px; height: 60px; border: none; border-radius: 50%;
+      background: transparent; font-size: 44px; line-height: 1; cursor: pointer; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      animation: ggPop 0.19s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes ggPop { from { transform: scale(0); } }
+    .gg-face.go   { animation: ggGo 0.24s ease forwards; }
+    @keyframes ggGo { to { transform: scale(1.7); opacity: 0; } }
+    .gg-face.bad  { animation: ggBad 0.32s ease forwards; }
+    @keyframes ggBad { 0% { transform: scale(1); } 25% { transform: scale(1.15) rotate(-9deg); } 60% { transform: rotate(9deg); } 100% { transform: scale(0.5); opacity: 0; } }
+    .gg-face.fade { animation: ggFade 0.3s ease forwards; }
+    @keyframes ggFade { to { transform: scale(0.4); opacity: 0; } }
+    .gg-end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; background: var(--surface); animation: itemIn 0.4s cubic-bezier(0.22,1,0.36,1); }
+    .gg-end-emoji { font-size: 54px; line-height: 1; }
+    .gg-end-big { font-size: 34px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; }
+    .gg-end-sub { font-size: 14px; color: var(--muted); font-weight: 600; }
+
     /* ---- shared motion utilities ---- */
     /* staggered entrance for list/grid children — JS sets --stg per child */
     @keyframes itemIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
@@ -923,8 +961,9 @@
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version,
-      .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run { transition: none; }
+      .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
+      .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-score.bump b { animation: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run, .game-gate { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -1011,7 +1050,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v6.1 · © Avery LLC</div>
+  <div class="version">v6.2 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1034,6 +1073,18 @@
       <p class="mg-sub">A quick daily check-in — tap a face</p>
       <div class="mg-faces" id="mgFaces"></div>
       <div class="mg-bar"><i id="mgBar"></i></div>
+    </div>
+  </div>
+
+  <!-- Daily focus game: 10s of tapping the smileys, skipping the frowns (toggleable) -->
+  <div class="game-gate" id="gameGate" style="display:none">
+    <div class="gg-inner">
+      <div class="gg-head">
+        <div class="gg-timer" id="ggTimer">10</div>
+        <div class="gg-score">Score <b id="ggScore">0</b></div>
+      </div>
+      <div class="gg-title">Tap the 🙂 &nbsp;— &nbsp;skip the ☹️</div>
+      <div class="gg-arena" id="ggArena"></div>
     </div>
   </div>
 

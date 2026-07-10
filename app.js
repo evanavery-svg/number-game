@@ -29,6 +29,9 @@ const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
 const KEY_WATER_PRESETS = "count.waterPresets"; // [oz, …] quick glass-size buttons
 const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandatory once-a-day mood pulse
+const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game enabled
+const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
+const KEY_GAME_BEST = "count.gameBest";         // best focus-game score
 
 const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
@@ -94,6 +97,10 @@ const el = {
   mgTimer: document.getElementById("mgTimer"),
   mgCount: document.getElementById("mgCount"),
   mgBar: document.getElementById("mgBar"),
+  gameGate: document.getElementById("gameGate"),
+  ggArena: document.getElementById("ggArena"),
+  ggTimer: document.getElementById("ggTimer"),
+  ggScore: document.getElementById("ggScore"),
 };
 
 // ---- state ----
@@ -116,6 +123,9 @@ let reminderTime = load(KEY_REMIND_TIME, "20:00");
 let since = load(KEY_SINCE, []);
 let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
 let moodDaily = load(KEY_MOOD_DAILY, {});   // once-a-day mood pulse, keyed by day
+let gameOn = load(KEY_GAME_ON, true);       // daily focus game (toggle in Settings)
+let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
+let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
@@ -186,11 +196,13 @@ function freshDraft() {
 // also seeds End Day's mood so the patterns in Insights stay in one place.
 let moodGateTimer = null;
 function moodGateKey() { return sessionDate(); }
-function maybeMoodCheck() {
-  if (el.moodGate.classList.contains("show")) return;        // already up
+// Run the once-a-day gates in order: mood check-in first, then the focus game
+// (if enabled). Each gate chains into the next when it finishes.
+function runDailyGates() {
+  if (el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show")) return;
   if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
-  if (moodDaily[moodGateKey()] != null) return;              // already checked in today
-  showMoodGate();
+  if (moodDaily[moodGateKey()] == null) { showMoodGate(); return; }
+  if (gameOn && gamePlayed !== moodGateKey()) { showGameGate(); return; }
 }
 function showMoodGate() {
   const faces = el.mgFaces;
@@ -249,10 +261,99 @@ function recordDailyMood(v, faceEl) {
 function hideMoodGate() {
   el.mgTimer.style.opacity = "";
   document.body.style.overflow = "";
-  if (reduceMotion()) { el.moodGate.classList.remove("show"); el.moodGate.style.display = "none"; return; }
+  if (reduceMotion()) { el.moodGate.classList.remove("show"); el.moodGate.style.display = "none"; runDailyGates(); return; }
   el.moodGate.classList.remove("show");
   el.moodGate.classList.add("out");
-  setTimeout(() => { el.moodGate.style.display = "none"; el.moodGate.classList.remove("out"); }, 360);
+  setTimeout(() => { el.moodGate.style.display = "none"; el.moodGate.classList.remove("out"); runDailyGates(); }, 360);
+}
+
+// ---- daily focus game: tap the smileys, skip the frowns (10 seconds) ----
+const GG_SMILE = ["😀", "😄", "🙂", "😊", "😁", "😃"];
+const GG_FROWN = ["☹️", "🙁", "😞", "😟", "😠", "😫"];
+let gameSpawnT = null, gameTickT = null;
+function showGameGate() {
+  const arena = el.ggArena;
+  arena.textContent = "";
+  let score = 0, left = 10;
+  el.ggScore.textContent = "0";
+  el.ggTimer.textContent = "10";
+  el.ggTimer.classList.remove("low");
+  el.gameGate.style.display = "flex";
+  el.gameGate.classList.remove("out");
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => el.gameGate.classList.add("show"));
+
+  const spawn = () => {
+    const rect = arena.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const size = 60;
+    const smile = Math.random() < 0.62;   // more smileys than frowns
+    const face = document.createElement("button");
+    face.type = "button";
+    face.className = "gg-face";
+    const set = smile ? GG_SMILE : GG_FROWN;
+    face.textContent = set[(Math.random() * set.length) | 0];
+    face.style.left = (Math.random() * Math.max(0, rect.width - size)) + "px";
+    face.style.top = (Math.random() * Math.max(0, rect.height - size)) + "px";
+    let gone = false;
+    const remove = (cls) => { if (gone) return; gone = true; face.classList.add(cls); setTimeout(() => face.remove(), 300); };
+    face.addEventListener("click", () => {
+      if (gone) return;
+      if (smile) {
+        score += 1; el.ggScore.textContent = String(score);
+        const box = el.ggScore.parentElement;
+        box.classList.remove("bump"); void box.offsetWidth; box.classList.add("bump");
+        buzz(12);
+        const r = face.getBoundingClientRect();
+        confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 8);
+        remove("go");
+      } else {
+        score = Math.max(0, score - 1); el.ggScore.textContent = String(score);
+        buzz([0, 30, 45, 30]);
+        remove("bad");
+      }
+    });
+    arena.appendChild(face);
+    setTimeout(() => remove("fade"), 950);   // auto-expire if not tapped
+  };
+
+  spawn();
+  gameSpawnT = setInterval(spawn, 560);
+  gameTickT = setInterval(() => {
+    left -= 1;
+    el.ggTimer.textContent = String(Math.max(0, left));
+    if (left <= 3) el.ggTimer.classList.add("low");
+    if (left <= 0) endGame(score);
+  }, 1000);
+}
+function endGame(score) {
+  if (gameSpawnT) { clearInterval(gameSpawnT); gameSpawnT = null; }
+  if (gameTickT) { clearInterval(gameTickT); gameTickT = null; }
+  gamePlayed = moodGateKey();
+  save(KEY_GAME_PLAYED, gamePlayed);
+  const isBest = score > gameBest;
+  if (isBest) { gameBest = score; save(KEY_GAME_BEST, gameBest); }
+  el.ggArena.textContent = "";
+  const end = document.createElement("div");
+  end.className = "gg-end";
+  addEl(end, "div", isBest && score > 0 ? "🏆" : "🙂", "gg-end-emoji");
+  addEl(end, "div", `Score ${score}`, "gg-end-big");
+  addEl(end, "div", isBest && score > 0 ? "New best!" : `Best ${gameBest}`, "gg-end-sub");
+  el.ggArena.appendChild(end);
+  buzz([0, 40, 60, 40]);
+  if (score > 0) {
+    const r = el.ggArena.getBoundingClientRect();
+    confettiBurst(r.left + r.width / 2, r.top + r.height / 3, 22);
+  }
+  setTimeout(hideGameGate, reduceMotion() ? 0 : 1500);
+}
+function hideGameGate() {
+  document.body.style.overflow = "";
+  const done = () => { el.gameGate.style.display = "none"; el.gameGate.classList.remove("out"); };
+  if (reduceMotion()) { el.gameGate.classList.remove("show"); done(); return; }
+  el.gameGate.classList.remove("show");
+  el.gameGate.classList.add("out");
+  setTimeout(done, 360);
 }
 
 // ---- daily encouragement ----
@@ -1727,6 +1828,16 @@ function openSettings() {
     s.appendChild(timeInput);
     addEl(s, "p", "A nudge if you haven't tracked by this time. On iPhone, reminders show while the app is open — add it to your Home Screen for the best chance of a notification.", "sub");
 
+    const gameToggle = makeToggle(s, "Daily focus game (10s)", gameOn);
+    addEl(s, "p", `A quick once-a-day warm-up: tap the smileys, skip the frowns.${gameBest > 0 ? ` Best: ${gameBest}.` : ""}`, "sub");
+    gameToggle.addEventListener("change", () => {
+      gameOn = gameToggle.checked;
+      save(KEY_GAME_ON, gameOn);
+      buzz(8);
+      // turned on and not yet played today → show it right away
+      if (gameOn && gamePlayed !== moodGateKey()) { closeSheet(); setTimeout(runDailyGates, 380); }
+    });
+
     s.appendChild(makeBtn("Save", "primary", () => {
       const ns = parseFloat(stepInput.value);
       if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }
@@ -1971,9 +2082,9 @@ function hideLock() {
   save(KEY_UNLOCK_AT, Date.now());
   swallowGhostClick();
   document.body.style.overflow = "";
-  if (reduceMotion()) { el.lock.style.display = "none"; maybeMoodCheck(); return; }
+  if (reduceMotion()) { el.lock.style.display = "none"; runDailyGates(); return; }
   el.lock.classList.add("out");   // pointer-events:none while fading
-  setTimeout(() => { el.lock.style.display = "none"; el.lock.classList.remove("out"); maybeMoodCheck(); }, 230);
+  setTimeout(() => { el.lock.style.display = "none"; el.lock.classList.remove("out"); runDailyGates(); }, 230);
 }
 // The passcode keys respond on pointerdown for instant feedback, so the last
 // correct digit can hide the lock screen before the browser's trailing
@@ -2723,11 +2834,11 @@ if (!reduceMotion() && today > 0) {
 // Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
-maybeMoodCheck();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
+runDailyGates();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
-  maybeMoodCheck();
+  runDailyGates();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
