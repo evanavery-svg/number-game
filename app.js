@@ -115,9 +115,9 @@ let calOffset = 0;                   // Insights calendar: months back from the 
 // Theme keys must match the CSS blocks + the head inline script's `order`.
 const THEMES = [
   { key: "default", name: "Classic",    accent: "#ff9500", bg: "#000000" },
-  { key: "blue",    name: "Invincible", accent: "#ffd23e", bg: "#0e1839" },
-  { key: "forest",  name: "Midnight",   accent: "#2f7ff2", bg: "#090b12" },
-  { key: "teal",    name: "Spidey",     accent: "#e01f2b", bg: "#edeef2" },
+  { key: "blue",    name: "Bolt",     accent: "#ffd23e", bg: "#0e1839" },
+  { key: "forest",  name: "Eclipse",  accent: "#2f7ff2", bg: "#090b12" },
+  { key: "teal",    name: "Scarlet",  accent: "#e01f2b", bg: "#edeef2" },
 ];
 let theme = load(KEY_THEME, "default");
 if (!THEMES.some((t) => t.key === theme)) theme = "default";   // a since-removed theme was saved — fall back cleanly
@@ -2176,13 +2176,9 @@ setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
 function syncTheme() {
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  let tc = dark ? "#000000" : "#f2f2f7";
-  if (theme && theme !== "default") {
-    const th = THEMES.find((t) => t.key === theme);
-    if (th) tc = th.bg;
-  }
-  if (themeMeta) themeMeta.setAttribute("content", tc);
+  // Keep the top status bar black on every theme (iOS only allows black/white
+  // for the web-app status bar); this avoids a light bar on the light themes.
+  if (themeMeta) themeMeta.setAttribute("content", "#000000");
   refreshColorStops();   // theme colours changed — recompute the number gradient
   renderTop();
 }
