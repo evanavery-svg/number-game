@@ -42,6 +42,7 @@ const el = {
   totalWrap: document.getElementById("totalWrap"),
   ringWrap: document.getElementById("ringWrap"),
   ringProg: document.getElementById("ringProg"),
+  ringCap: document.getElementById("ringCap"),
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
@@ -1060,6 +1061,21 @@ function openInsights() {
 }
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
+// The leading cap sits at the progress tip and rounds off as you approach the
+// goal — flat/barely-there early on, a full rounded bead at 100%. It orbits the
+// ring via a rotate transform so it stays glued to the end of the fill.
+const RING_CAP_MAX = 3.5;   // = stroke-width / 2, so it's flush at completion
+function updateRingCap(frac) {
+  if (!el.ringCap) return;
+  if (!(frac > 0)) { el.ringCap.style.opacity = "0"; el.ringCap.setAttribute("r", "0"); return; }
+  const f = Math.min(1, frac);
+  // ease-in so the rounding "kicks in" the closer you get, rather than linearly
+  const r = RING_CAP_MAX * Math.pow(f, 1.4);
+  el.ringCap.setAttribute("r", r.toFixed(2));
+  el.ringCap.style.opacity = "1";
+  el.ringCap.style.transform = "rotate(" + (f * 360).toFixed(2) + "deg)";
+}
+
 // Cheap render for the today area only — used on every tap so rapid
 // tapping never rebuilds the history list.
 function renderTop(animate) {
@@ -1088,12 +1104,14 @@ function renderTop(animate) {
     el.totalWrap.classList.add("has-goal");
     const frac = Math.min(1, today / goal);
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
+    updateRingCap(frac);
     // progress is already shown by the ring, the number's colour and the
     // button's "X left today" — no separate goal caption needed
     el.goalText.style.display = "none";
   } else {
     el.totalWrap.classList.remove("has-goal");
     el.ringProg.style.strokeDashoffset = RING_C;   // just the grey frame
+    updateRingCap(0);
     el.goalText.style.display = "";
     el.goalText.classList.add("hint");
     el.goalText.textContent = "Tap to set a daily goal →";
@@ -2829,9 +2847,12 @@ if (!reduceMotion() && today > 0) {
   const ringTarget = el.ringProg.style.strokeDashoffset;
   el.ringProg.style.transition = "none";
   el.ringProg.style.strokeDashoffset = RING_C;
+  // reset the leading cap to the start so it sweeps in with the ring
+  if (el.ringCap) { el.ringCap.style.transition = "none"; updateRingCap(0); }
   el.total.textContent = "0";
   requestAnimationFrame(() => requestAnimationFrame(() => {
     el.ringProg.style.transition = "";
+    if (el.ringCap) el.ringCap.style.transition = "";
     el.ringProg.style.strokeDashoffset = ringTarget;
     renderTop(true);   // count-up animation from the seeded 0
   }));
