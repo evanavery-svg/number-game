@@ -892,13 +892,14 @@
     .gg-score b { color: var(--text); font-size: 21px; font-variant-numeric: tabular-nums; margin-left: 3px; display: inline-block; }
     .gg-score.bump b { animation: bump 0.22s ease; }
     .gg-title { text-align: center; font-size: 18px; font-weight: 700; margin: 10px 0 12px; letter-spacing: -0.2px; }
-    .gg-arena { position: relative; flex: 1; min-height: 0; border-radius: 22px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); overflow: hidden; }
+    .gg-arena { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 12px; }
+    .gg-cell { border-radius: 18px; box-shadow: inset 0 0 0 1.5px var(--hair); display: flex; align-items: center; justify-content: center; }
     .gg-face {
-      position: absolute; width: 60px; height: 60px; border: none; border-radius: 50%;
-      background: transparent; font-size: 44px; line-height: 1; cursor: pointer; padding: 0;
+      width: 100%; height: 100%; border: none; border-radius: 18px;
+      background: transparent; font-size: clamp(56px, 20vw, 110px); line-height: 1; cursor: pointer; padding: 0;
       display: flex; align-items: center; justify-content: center;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-      animation: ggPop 0.19s cubic-bezier(0.34,1.56,0.64,1);
+      animation: ggPop 0.26s cubic-bezier(0.34,1.56,0.64,1);
     }
     @keyframes ggPop { from { transform: scale(0); } }
     .gg-face.go   { animation: ggGo 0.24s ease forwards; }
@@ -1050,7 +1051,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v6.2 · © Avery LLC</div>
+  <div class="version">v6.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

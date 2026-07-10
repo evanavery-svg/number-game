@@ -271,12 +271,18 @@ function hideMoodGate() {
 const GG_SMILE = ["😀", "😄", "🙂", "😊", "😁", "😃"];
 const GG_FROWN = ["☹️", "🙁", "😞", "😟", "😠", "😫"];
 let gameSpawnT = null, gameTickT = null;
+const GG_DURATION = 10;      // seconds per round
+const GG_SPAWN_MS = 900;     // gap between faces (slower, calmer)
+const GG_LIFE_MS = 1600;     // how long a face lingers before fading
 function showGameGate() {
   const arena = el.ggArena;
   arena.textContent = "";
-  let score = 0, left = 10;
+  // fixed 3×3 board — faces appear one per empty cell
+  const cells = [];
+  for (let i = 0; i < 9; i++) { const c = document.createElement("div"); c.className = "gg-cell"; arena.appendChild(c); cells.push(c); }
+  let score = 0, left = GG_DURATION;
   el.ggScore.textContent = "0";
-  el.ggTimer.textContent = "10";
+  el.ggTimer.textContent = String(left);
   el.ggTimer.classList.remove("low");
   el.gameGate.style.display = "flex";
   el.gameGate.classList.remove("out");
@@ -284,19 +290,17 @@ function showGameGate() {
   requestAnimationFrame(() => el.gameGate.classList.add("show"));
 
   const spawn = () => {
-    const rect = arena.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const size = 60;
+    const empty = cells.filter((c) => !c.firstChild);
+    if (!empty.length) return;
+    const cell = empty[(Math.random() * empty.length) | 0];
     const smile = Math.random() < 0.62;   // more smileys than frowns
     const face = document.createElement("button");
     face.type = "button";
     face.className = "gg-face";
     const set = smile ? GG_SMILE : GG_FROWN;
     face.textContent = set[(Math.random() * set.length) | 0];
-    face.style.left = (Math.random() * Math.max(0, rect.width - size)) + "px";
-    face.style.top = (Math.random() * Math.max(0, rect.height - size)) + "px";
     let gone = false;
-    const remove = (cls) => { if (gone) return; gone = true; face.classList.add(cls); setTimeout(() => face.remove(), 300); };
+    const remove = (cls) => { if (gone) return; gone = true; face.classList.add(cls); setTimeout(() => { if (face.parentNode) face.remove(); }, 300); };
     face.addEventListener("click", () => {
       if (gone) return;
       if (smile) {
@@ -305,7 +309,7 @@ function showGameGate() {
         box.classList.remove("bump"); void box.offsetWidth; box.classList.add("bump");
         buzz(12);
         const r = face.getBoundingClientRect();
-        confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 8);
+        confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 10);
         remove("go");
       } else {
         score = Math.max(0, score - 1); el.ggScore.textContent = String(score);
@@ -313,12 +317,12 @@ function showGameGate() {
         remove("bad");
       }
     });
-    arena.appendChild(face);
-    setTimeout(() => remove("fade"), 950);   // auto-expire if not tapped
+    cell.appendChild(face);
+    setTimeout(() => remove("fade"), GG_LIFE_MS);   // auto-expire if not tapped
   };
 
   spawn();
-  gameSpawnT = setInterval(spawn, 560);
+  gameSpawnT = setInterval(spawn, GG_SPAWN_MS);
   gameTickT = setInterval(() => {
     left -= 1;
     el.ggTimer.textContent = String(Math.max(0, left));
