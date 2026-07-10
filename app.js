@@ -115,7 +115,7 @@ let calOffset = 0;                   // Insights calendar: months back from the 
 // Theme keys must match the CSS blocks + the head inline script's `order`.
 const THEMES = [
   { key: "default", name: "Classic",    accent: "#ff9500", bg: "#000000" },
-  { key: "blue",    name: "Bolt",     accent: "#ffd23e", bg: "#0e1839" },
+  { key: "blue",    name: "Mono",     accent: "#ffffff", bg: "#000000" },
   { key: "forest",  name: "Eclipse",  accent: "#2f7ff2", bg: "#090b12" },
   { key: "teal",    name: "Scarlet",  accent: "#e01f2b", bg: "#edeef2" },
 ];
