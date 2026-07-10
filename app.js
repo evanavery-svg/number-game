@@ -147,18 +147,30 @@ const MOODS = [
   { v: 5, emoji: "😄", cap: "Great" },
 ];
 const FACTORS = [
-  { key: "sleep",     emoji: "😴", label: "Slept well",    phrase: "sleep well" },
-  { key: "exercise",  emoji: "🏃", label: "Exercised",     phrase: "exercise" },
-  { key: "social",    emoji: "💬", label: "Saw people",    phrase: "see people" },
-  { key: "breakfast", emoji: "🍳", label: "Ate breakfast", phrase: "eat breakfast" },
-  { key: "outside",   emoji: "☀️", label: "Went outside",  phrase: "get outside" },
+  { key: "sleep",      emoji: "😴", label: "Slept well",     phrase: "sleep well" },
+  { key: "exercise",   emoji: "🏃", label: "Exercised",      phrase: "exercise" },
+  { key: "social",     emoji: "💬", label: "Saw people",     phrase: "see people" },
+  { key: "breakfast",  emoji: "🍳", label: "Ate breakfast",  phrase: "eat breakfast" },
+  { key: "outside",    emoji: "☀️", label: "Went outside",   phrase: "get outside" },
+  { key: "water",      emoji: "💧", label: "Drank water",    phrase: "drink enough water" },
+  { key: "ate_well",   emoji: "🥗", label: "Ate well",       phrase: "eat well" },
+  { key: "meditate",   emoji: "🧘", label: "Meditated",      phrase: "meditate" },
+  { key: "read",       emoji: "📖", label: "Read",           phrase: "read" },
+  { key: "journal",    emoji: "📓", label: "Journaled",      phrase: "journal" },
+  { key: "music",      emoji: "🎧", label: "Music",          phrase: "listen to music" },
+  { key: "early",      emoji: "🌅", label: "Woke up early",  phrase: "wake up early" },
+  { key: "productive", emoji: "✅", label: "Productive",     phrase: "have a productive day" },
+  { key: "caffeine",   emoji: "☕", label: "Caffeine",       phrase: "have caffeine" },
+  { key: "alcohol",    emoji: "🍷", label: "Alcohol",        phrase: "drink alcohol" },
+  { key: "screens",    emoji: "📱", label: "Lots of screens", phrase: "spend a lot on screens" },
+  { key: "stress",     emoji: "😣", label: "Stressful day",  phrase: "have a stressful day" },
 ];
 function moodEmoji(v) { const m = MOODS.find((x) => x.v === Math.round(v)); return m ? m.emoji : "—"; }
 // Draft state so the multi-step worry-dump flow can leave the End Day sheet and
 // return without losing the mood/factors/wins captured so far.
 let endDayDraft = null;
 function freshDraft() {
-  return { date: null, note: "", mood: null, factors: {}, wins: ["", "", ""], worries: [] };
+  return { date: null, note: "", mood: null, factors: {}, wins: ["", "", ""], worries: [], extra: 0, extraTimes: [] };
 }
 
 // ---- daily encouragement ----
@@ -1089,20 +1101,26 @@ function undo() {
 // check-in, factor chips, tiny wins and a worry dump. `resume` is true only
 // when returning from the worry-dump sub-flow, so a fresh open starts clean.
 function openEndDay(resume) {
-  if (taps === 0 && today === 0) { toast("Nothing to log yet"); return; }
   if (resume !== true) endDayDraft = freshDraft();   // click handler passes an Event, not true
   const draft = endDayDraft;
+  // the total that will actually be logged = today's taps + any you add here
+  const projected = () => round2(today + draft.extra);
 
   openSheet((s) => {
     addEl(s, "h3", "End Day");
-    // say plainly where the day landed against the goal
-    let sub = `Log ${fmt(today)} and start a fresh day.`;
-    if (goal > 0) {
-      sub = today > goal
-        ? `Log ${fmt(today)} — ${fmt(round2(today - goal))} over your ${fmt(goal)} goal.`
-        : `Log ${fmt(today)} — under your ${fmt(goal)} goal ✓`;
-    }
-    addEl(s, "p", sub, "sub");
+    // say plainly where the day landed against the goal (kept live as you add taps)
+    const subEl = addEl(s, "p", "", "sub");
+    const refreshSub = () => {
+      const p = projected();
+      let sub = `Log ${fmt(p)} and start a fresh day.`;
+      if (goal > 0) {
+        sub = p > goal
+          ? `Log ${fmt(p)} — ${fmt(round2(p - goal))} over your ${fmt(goal)} goal.`
+          : `Log ${fmt(p)} — under your ${fmt(goal)} goal ✓`;
+      }
+      subEl.textContent = sub;
+    };
+    refreshSub();
 
     addEl(s, "label", "Date for this day");
     const dateInput = document.createElement("input");
@@ -1114,6 +1132,66 @@ function openEndDay(resume) {
     dateInput.value = draft.date || load(KEY_ACT_DATE, sessionDate());
     dateInput.max = isoLocal(new Date());
     s.appendChild(dateInput);
+
+    // --- add taps you missed (e.g. forgot to log yesterday) ---
+    addEl(s, "label", "Total to log");
+    const adder = document.createElement("div");
+    adder.className = "tap-adder";
+    const totalEl = document.createElement("div");
+    totalEl.className = "tap-adder-total";
+    adder.appendChild(totalEl);
+    const refreshTotal = () => {
+      totalEl.textContent = fmt(projected());
+      refreshSub();
+    };
+    // add a chunk to the projected total, recorded as a tap so it shows in the timeline
+    const addAmount = (amt) => {
+      amt = round2(amt);
+      if (!amt) return;
+      // don't let it go below zero
+      if (round2(draft.extra + amt) < -today) amt = round2(-today - draft.extra);
+      draft.extra = round2(draft.extra + amt);
+      draft.extraTimes.push({ t: Date.now() + draft.extraTimes.length, amt, total: projected() });
+      refreshTotal();
+      buzz(12);
+    };
+    const btnRow = document.createElement("div");
+    btnRow.className = "tap-adder-btns";
+    const stepBtn = document.createElement("button");
+    stepBtn.type = "button"; stepBtn.className = "tap-adder-btn";
+    stepBtn.textContent = `+ ${fmt(step)}`;
+    stepBtn.addEventListener("click", () => addAmount(step));
+    const oneBtn = document.createElement("button");
+    oneBtn.type = "button"; oneBtn.className = "tap-adder-btn";
+    oneBtn.textContent = "+ 1";
+    oneBtn.addEventListener("click", () => addAmount(1));
+    const undoBtn = document.createElement("button");
+    undoBtn.type = "button"; undoBtn.className = "tap-adder-btn ghost";
+    undoBtn.textContent = "Undo";
+    undoBtn.addEventListener("click", () => {
+      const last = draft.extraTimes.pop();
+      if (!last) { toast("Nothing added here yet"); return; }
+      draft.extra = round2(draft.extra - (last.amt || 0));
+      refreshTotal();
+    });
+    btnRow.append(stepBtn, oneBtn, undoBtn);
+    adder.appendChild(btnRow);
+    // custom amount
+    const customRow = document.createElement("div");
+    customRow.className = "tap-adder-custom";
+    const customInput = numInput("", "0");
+    customInput.placeholder = "Custom amount";
+    customInput.value = "";
+    const customBtn = makeBtn("Add", "link", () => {
+      const v = parseFloat(customInput.value);
+      if (isNaN(v) || v === 0) { toast("Enter an amount"); return; }
+      addAmount(v);
+      customInput.value = "";
+    });
+    customRow.append(customInput, customBtn);
+    adder.appendChild(customRow);
+    refreshTotal();
+    s.appendChild(adder);
 
     // --- quick mood check-in (tap once) ---
     addEl(s, "label", "How did today feel?");
@@ -1198,6 +1276,17 @@ function openEndDay(resume) {
 
     s.appendChild(makeBtn("Log day ✓", "primary", () => {
       sync();
+      const hasReflection = draft.mood || Object.values(draft.factors).some(Boolean) ||
+        draft.wins.some((w) => (w || "").trim()) || draft.worries.length;
+      if (taps === 0 && projected() === 0 && !hasReflection) { toast("Add some taps first"); return; }
+      // fold any missed taps you added here into today's live count so commitDay logs them
+      if (draft.extraTimes.length) {
+        today = round2(today + draft.extra);
+        if (today < 0) today = 0;
+        taps += draft.extraTimes.length;
+        tapLog = tapLog.concat(draft.extraTimes);
+        save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+      }
       commitDay(ta.value.replace(/\s*\n\s*/g, " ").trim(), dateInput.value, {
         mood: draft.mood,
         factors: draft.factors,
