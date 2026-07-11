@@ -286,6 +286,17 @@ const GG_MOTIVATIONS = [
   "You're doing better than you think.",
 ];
 const GG_CALM_EMOJI = ["🌤️", "🌱", "🍃", "✨", "☀️", "🌊", "🕊️", "🌙"];
+// gentle reassurance when a "time since" streak is reset — slipping is human
+const SINCE_RESET_MSGS = [
+  "It's okay to fail — what matters is you're back.",
+  "Slipping up is part of it. Begin again.",
+  "One slip isn't the end. You've got this.",
+  "Be kind to yourself — fresh start from now.",
+  "Falling down is human. Getting back up is you.",
+  "It's okay. Tomorrow doesn't care about today.",
+  "Progress isn't a straight line. Keep going.",
+  "You didn't fail — you're still trying. That counts.",
+];
 let gameSpawnT = null, gameTickT = null;
 const GG_DURATION = 12;      // seconds per round
 const GG_SPAWN_MS = 1200;    // gap between faces (slow and calm)
@@ -594,11 +605,11 @@ function click() {
   } catch (e) {}
 }
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms) {
   el.toast.textContent = msg;
   el.toast.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.toast.classList.remove("show"), 2000);
+  toastTimer = setTimeout(() => el.toast.classList.remove("show"), ms || 2000);
 }
 
 // ---- render ----
@@ -2536,7 +2547,8 @@ function openSinceForm(id) {
           existing.resets = (existing.resets || 0) + 1;
           existing.start = new Date().toISOString();
           save(KEY_SINCE, since); renderSince();
-          toast(run >= (existing.best || 0) ? "Reset · new record kept ✓" : "Timer reset");
+          // a kind word — slipping is part of it, and the best run is still kept
+          toast(SINCE_RESET_MSGS[(Math.random() * SINCE_RESET_MSGS.length) | 0], 3600);
         });
       }));
       s.appendChild(makeBtn("Delete tracker", "danger", () => {
