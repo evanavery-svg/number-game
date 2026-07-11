@@ -270,16 +270,33 @@ function hideMoodGate() {
 // ---- daily focus game: tap the smileys, skip the frowns (10 seconds) ----
 const GG_SMILE = ["😀", "😄", "🙂", "😊", "😁", "😃"];
 const GG_FROWN = ["☹️", "🙁", "😞", "😟", "😠", "😫"];
+// a calm little wind-down message shown when the round ends
+const GG_MOTIVATIONS = [
+  "Take it slow — today will be a good day.",
+  "Breathe. You've got this.",
+  "One small step at a time.",
+  "Be gentle with yourself today.",
+  "Slow is smooth. Smooth is fast.",
+  "Today is yours to shape.",
+  "Small steps still move you forward.",
+  "You showed up. That already counts.",
+  "Good things are on their way.",
+  "Make today a little kinder than yesterday.",
+  "Steady wins it. No rush.",
+  "You're doing better than you think.",
+];
+const GG_CALM_EMOJI = ["🌤️", "🌱", "🍃", "✨", "☀️", "🌊", "🕊️", "🌙"];
 let gameSpawnT = null, gameTickT = null;
-const GG_DURATION = 10;      // seconds per round
-const GG_SPAWN_MS = 900;     // gap between faces (slower, calmer)
-const GG_LIFE_MS = 1600;     // how long a face lingers before fading
+const GG_DURATION = 12;      // seconds per round
+const GG_SPAWN_MS = 1200;    // gap between faces (slow and calm)
+const GG_LIFE_MS = 3600;     // each face lingers well over 3 seconds
 function showGameGate() {
   const arena = el.ggArena;
   arena.textContent = "";
-  // just two big cells — faces appear one per empty cell
+  el.gameGate.querySelectorAll(".gg-end").forEach((e) => e.remove());   // clear any prior end screen
+  // fixed 3×3 board — faces appear one per empty cell
   const cells = [];
-  for (let i = 0; i < 2; i++) { const c = document.createElement("div"); c.className = "gg-cell"; arena.appendChild(c); cells.push(c); }
+  for (let i = 0; i < 9; i++) { const c = document.createElement("div"); c.className = "gg-cell"; arena.appendChild(c); cells.push(c); }
   let score = 0, left = GG_DURATION;
   el.ggScore.textContent = "0";
   el.ggTimer.textContent = String(left);
@@ -338,22 +355,19 @@ function endGame(score) {
   const isBest = score > gameBest;
   if (isBest) { gameBest = score; save(KEY_GAME_BEST, gameBest); }
   el.ggArena.textContent = "";
+  // a calm, full-screen wind-down: a gentle emoji + a motivating line
   const end = document.createElement("div");
   end.className = "gg-end";
-  addEl(end, "div", isBest && score > 0 ? "🏆" : "🙂", "gg-end-emoji");
-  addEl(end, "div", `Score ${score}`, "gg-end-big");
-  addEl(end, "div", isBest && score > 0 ? "New best!" : `Best ${gameBest}`, "gg-end-sub");
-  el.ggArena.appendChild(end);
-  buzz([0, 40, 60, 40]);
-  if (score > 0) {
-    const r = el.ggArena.getBoundingClientRect();
-    confettiBurst(r.left + r.width / 2, r.top + r.height / 3, 22);
-  }
-  setTimeout(hideGameGate, reduceMotion() ? 0 : 1500);
+  addEl(end, "div", GG_CALM_EMOJI[(Math.random() * GG_CALM_EMOJI.length) | 0], "gg-end-emoji");
+  addEl(end, "div", GG_MOTIVATIONS[(Math.random() * GG_MOTIVATIONS.length) | 0], "gg-end-msg");
+  addEl(end, "div", isBest && score > 0 ? `New best · ${score}` : `Score ${score} · best ${gameBest}`, "gg-end-sub");
+  el.gameGate.appendChild(end);
+  buzz([0, 25, 45, 25]);
+  setTimeout(hideGameGate, reduceMotion() ? 0 : 3000);   // give a beat to read the message
 }
 function hideGameGate() {
   document.body.style.overflow = "";
-  const done = () => { el.gameGate.style.display = "none"; el.gameGate.classList.remove("out"); };
+  const done = () => { el.gameGate.style.display = "none"; el.gameGate.classList.remove("out"); el.gameGate.querySelectorAll(".gg-end").forEach((e) => e.remove()); };
   if (reduceMotion()) { el.gameGate.classList.remove("show"); done(); return; }
   el.gameGate.classList.remove("show");
   el.gameGate.classList.add("out");

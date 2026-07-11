@@ -885,34 +885,45 @@
     }
     .game-gate.show { opacity: 1; }
     .game-gate.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
-    .gg-inner { display: flex; flex-direction: column; width: 100%; max-width: 460px; }
-    .gg-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px; }
-    .gg-timer { font-size: 27px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+    .gg-inner { display: flex; flex-direction: column; width: 100%; max-width: 460px; height: 100%; }
+    .gg-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
+    .gg-timer { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
     .gg-timer.low { color: var(--over); }
-    .gg-score { font-size: 14px; color: var(--muted); }
-    .gg-score b { color: var(--text); font-size: 21px; font-variant-numeric: tabular-nums; margin-left: 3px; display: inline-block; }
+    .gg-score { font-size: 13px; color: var(--muted); letter-spacing: 0.3px; }
+    .gg-score b { color: var(--text); font-size: 20px; font-variant-numeric: tabular-nums; margin-left: 4px; display: inline-block; }
     .gg-score.bump b { animation: bump 0.22s ease; }
-    .gg-title { text-align: center; font-size: 18px; font-weight: 700; margin: 10px 0 12px; letter-spacing: -0.2px; }
-    .gg-arena { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; grid-template-rows: repeat(2, 1fr); gap: 14px; }
-    .gg-cell { border-radius: 22px; box-shadow: inset 0 0 0 1.5px var(--hair); display: flex; align-items: center; justify-content: center; }
+    /* the playfield is vertically centred so the board sits in the middle */
+    .gg-play { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+    .gg-title { text-align: center; font-size: 16px; font-weight: 600; color: var(--muted); letter-spacing: 0.2px; }
+    .gg-arena { position: relative; width: min(100%, 66vh); aspect-ratio: 1 / 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 10px; }
+    .gg-cell { border-radius: 20px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); display: flex; align-items: center; justify-content: center; }
     .gg-face {
-      width: 100%; height: 100%; border: none; border-radius: 22px;
-      background: transparent; font-size: clamp(120px, 42vw, 260px); line-height: 1; cursor: pointer; padding: 0;
+      width: 100%; height: 100%; border: none; border-radius: 20px;
+      background: transparent; font-size: clamp(44px, 16vw, 88px); line-height: 1; cursor: pointer; padding: 0;
       display: flex; align-items: center; justify-content: center;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-      animation: ggPop 0.28s cubic-bezier(0.34,1.56,0.64,1);
+      animation: ggPop 0.34s cubic-bezier(0.34,1.56,0.64,1);
     }
-    @keyframes ggPop { from { transform: scale(0); } }
-    .gg-face.go   { animation: ggGo 0.24s ease forwards; }
+    @keyframes ggPop { from { opacity: 0; transform: scale(0.2); } }
+    .gg-face.go   { animation: ggGo 0.26s ease forwards; }
     @keyframes ggGo { to { transform: scale(1.7); opacity: 0; } }
-    .gg-face.bad  { animation: ggBad 0.32s ease forwards; }
+    .gg-face.bad  { animation: ggBad 0.34s ease forwards; }
     @keyframes ggBad { 0% { transform: scale(1); } 25% { transform: scale(1.15) rotate(-9deg); } 60% { transform: rotate(9deg); } 100% { transform: scale(0.5); opacity: 0; } }
-    .gg-face.fade { animation: ggFade 0.3s ease forwards; }
-    @keyframes ggFade { to { transform: scale(0.4); opacity: 0; } }
-    .gg-end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; background: var(--surface); animation: itemIn 0.4s cubic-bezier(0.22,1,0.36,1); }
-    .gg-end-emoji { font-size: 54px; line-height: 1; }
-    .gg-end-big { font-size: 34px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; }
-    .gg-end-sub { font-size: 14px; color: var(--muted); font-weight: 600; }
+    .gg-face.fade { animation: ggFade 0.45s ease forwards; }
+    @keyframes ggFade { to { transform: scale(0.55); opacity: 0; } }
+    /* a calm, full-screen wind-down message after the round */
+    .gg-end {
+      position: absolute; inset: 0; z-index: 2;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; text-align: center; padding: 32px;
+      background: radial-gradient(120% 80% at 50% 22%, var(--surface) 0%, var(--bg) 78%);
+      animation: ggEndIn 0.5s ease;
+    }
+    @keyframes ggEndIn { from { opacity: 0; } }
+    .gg-end-emoji { font-size: 62px; line-height: 1; animation: ggEndPop 0.7s cubic-bezier(0.34,1.56,0.64,1); }
+    @keyframes ggEndPop { from { opacity: 0; transform: scale(0.4) translateY(12px); } }
+    .gg-end-msg { font-size: 26px; font-weight: 700; letter-spacing: -0.4px; line-height: 1.32; max-width: 300px; }
+    .gg-end-sub { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: 0.4px; font-variant-numeric: tabular-nums; }
 
     /* ---- shared motion utilities ---- */
     /* staggered entrance for list/grid children — JS sets --stg per child */
@@ -964,7 +975,7 @@
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
-      .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-score.bump b { animation: none; }
+      .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
       .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run, .game-gate { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
@@ -1052,7 +1063,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v6.8 · © Avery LLC</div>
+  <div class="version">v6.9 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1085,8 +1096,10 @@
         <div class="gg-timer" id="ggTimer">10</div>
         <div class="gg-score">Score <b id="ggScore">0</b></div>
       </div>
-      <div class="gg-title">Tap the 🙂 &nbsp;— &nbsp;skip the ☹️</div>
-      <div class="gg-arena" id="ggArena"></div>
+      <div class="gg-play">
+        <div class="gg-title">Tap the 🙂 &nbsp;— &nbsp;skip the ☹️</div>
+        <div class="gg-arena" id="ggArena"></div>
+      </div>
     </div>
   </div>
 
