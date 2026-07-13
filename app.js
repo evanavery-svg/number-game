@@ -2358,18 +2358,23 @@ function mileList(elapsed) {
   }
   return out;
 }
-// Optional per-tracker wellbeing timeline — stages that light up as the run grows.
+// Optional per-tracker wellbeing timeline — stages that light up as the run
+// grows. Timing reflects commonly reported recovery phases (early urges, a
+// mid dip, then steadily building gains). Each has a little indicator icon.
 const RECOVERY_STAGES = [
-  { label: "Day 1",    ms: 0,          text: "The reset begins" },
-  { label: "Day 2",    ms: 1 * DAY,    text: "Your mind starts recalibrating" },
-  { label: "Day 3",    ms: 3 * DAY,    text: "Urges often peak now — ride them out" },
-  { label: "Week 1",   ms: 7 * DAY,    text: "Energy and mood begin to lift" },
-  { label: "Week 2",   ms: 14 * DAY,   text: "Focus sharpens, head feels clearer" },
-  { label: "Month 1",  ms: 30 * DAY,   text: "Confidence and drive climbing" },
-  { label: "Month 2",  ms: 60 * DAY,   text: "Old patterns loosen their grip" },
-  { label: "Month 3",  ms: 90 * DAY,   text: "Deep recovery — a new baseline" },
-  { label: "6 months", ms: 180 * DAY,  text: "Steady, clear, in control" },
-  { label: "1 year",   ms: 365 * DAY,  text: "Transformed — this is who you are now" },
+  { label: "Day 1",    ms: 0,           icon: "🔄", text: "The reset begins — motivation runs high" },
+  { label: "Day 3",    ms: 3 * DAY,     icon: "🌊", text: "Urges tend to peak now — ride them out" },
+  { label: "Day 5",    ms: 5 * DAY,     icon: "🌫️", text: "Brain fog and mood swings are normal" },
+  { label: "Week 1",   ms: 7 * DAY,     icon: "⚡", text: "A first lift — energy starts to return" },
+  { label: "Day 10",   ms: 10 * DAY,    icon: "〰️", text: "A flat, numb dip can set in — it's healing, keep going" },
+  { label: "Week 2",   ms: 14 * DAY,    icon: "🧠", text: "Focus and emotional control sharpen" },
+  { label: "Day 21",   ms: 21 * DAY,    icon: "😌", text: "The dip eases — mood steadies" },
+  { label: "Month 1",  ms: 30 * DAY,    icon: "💪", text: "Clearer head, more control, rising confidence" },
+  { label: "Day 45",   ms: 45 * DAY,    icon: "☀️", text: "Energy and drive keep climbing" },
+  { label: "Month 2",  ms: 60 * DAY,    icon: "🗣️", text: "It feels like your default now — social ease returns" },
+  { label: "Month 3",  ms: 90 * DAY,    icon: "🌟", text: "Deep recovery — a new baseline" },
+  { label: "6 months", ms: 180 * DAY,   icon: "🧭", text: "Steady, clear, in control" },
+  { label: "1 year",   ms: 365 * DAY,   icon: "🏔️", text: "Transformed — this is who you are now" },
 ];
 // Money/units accrued so far at a per-day rate. Symbols prefix, words suffix.
 function savedText(rate, unit, ms) {
@@ -2476,6 +2481,7 @@ function appendRecovery(card, it) {
     const dot = document.createElement("span"); dot.className = "rec-dot";
     const body = document.createElement("div"); body.className = "rec-body";
     const head = document.createElement("div"); head.className = "rec-head";
+    addEl(head, "span", st.icon, "rec-icon");
     addEl(head, "span", st.label, "rec-label");
     if (row.classList.contains("next")) addEl(head, "span", "in " + durLabel(st.ms - elapsed), "rec-when");
     body.appendChild(head);
