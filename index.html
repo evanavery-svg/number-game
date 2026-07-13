@@ -642,6 +642,8 @@
     .since-log-row:first-child { border-top: none; }
     .since-log-date { color: var(--faint); font-size: 12px; flex: none; min-width: 44px; font-variant-numeric: tabular-nums; }
     .since-log-reason { color: var(--muted); overflow-wrap: anywhere; }
+    .since-log-locked { display: block; width: 100%; text-align: left; border: none; cursor: pointer; margin-top: 8px; background: var(--surface-2); color: var(--muted); border-radius: 10px; padding: 12px 14px; font-size: 13px; font-weight: 600; transition: filter 0.12s ease; }
+    .since-log-locked:active { filter: brightness(0.94); }
 
     /* ---- water tracker (separate panel) ---- */
     .water-card { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); padding: 24px 18px 20px; text-align: center; margin-bottom: 14px; }
@@ -1070,7 +1072,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v7.1 · © Avery LLC</div>
+  <div class="version">v7.2 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

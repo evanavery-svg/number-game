@@ -12,6 +12,8 @@ const KEY_SOUND = "count.sound";       // bool
 const KEY_LOCK_PIN = "count.lockPin";  // sha-256 hash of (pin + salt)
 const KEY_LOCK_SALT = "count.lockSalt";
 const KEY_LOCK_BIO = "count.lockBio";  // base64 WebAuthn credential id
+const KEY_JOURNAL_PIN = "count.journalPin";   // separate passcode for the private reset journal
+const KEY_JOURNAL_SALT = "count.journalSalt";
 const KEY_REMIND = "count.remind";          // bool
 const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
 const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
@@ -1905,6 +1907,7 @@ function openSettings() {
     divider.className = "sheet-divider";
     s.appendChild(divider);
     s.appendChild(makeBtn(lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); openLockSettings(); }));
+    s.appendChild(makeBtn(journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { closeSheet(); openJournalPinSettings(); }));
     s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
 
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
@@ -2431,20 +2434,34 @@ function renderSince() {
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     card.appendChild(st);
 
-    // private reset journal — revealed here whenever the tracker page opens
+    // private reset journal — gated behind its own separate passcode
     const reasons = (it.log || []).filter((e) => e && (e.reason || "").trim());
     if (reasons.length) {
       addEl(card, "div", "🔒 Why you reset · private", "since-log-title");
-      const logWrap = document.createElement("div"); logWrap.className = "since-log";
-      reasons.slice(-6).reverse().forEach((e) => {
-        const row = document.createElement("div"); row.className = "since-log-row";
-        addEl(row, "span", new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }), "since-log-date");
-        addEl(row, "span", e.reason, "since-log-reason");
-        logWrap.appendChild(row);
-      });
-      card.appendChild(logWrap);
-      // don't let taps inside the journal open the edit form
-      logWrap.addEventListener("click", (ev) => ev.stopPropagation());
+      if (!journalPinSet()) {
+        // no journal passcode yet — must set one before the entries can be read
+        const setBtn = document.createElement("button");
+        setBtn.className = "since-log-locked";
+        setBtn.textContent = `🔒 Set a passcode to open your journal (${reasons.length})`;
+        setBtn.addEventListener("click", (ev) => { ev.stopPropagation(); promptJournalSetup(); });
+        card.appendChild(setBtn);
+      } else if (!journalUnlocked) {
+        const unlockBtn = document.createElement("button");
+        unlockBtn.className = "since-log-locked";
+        unlockBtn.textContent = `🔒 Locked · tap to unlock (${reasons.length})`;
+        unlockBtn.addEventListener("click", (ev) => { ev.stopPropagation(); promptJournalUnlock(); });
+        card.appendChild(unlockBtn);
+      } else {
+        const logWrap = document.createElement("div"); logWrap.className = "since-log";
+        reasons.slice(-6).reverse().forEach((e) => {
+          const row = document.createElement("div"); row.className = "since-log-row";
+          addEl(row, "span", new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }), "since-log-date");
+          addEl(row, "span", e.reason, "since-log-reason");
+          logWrap.appendChild(row);
+        });
+        card.appendChild(logWrap);
+        logWrap.addEventListener("click", (ev) => ev.stopPropagation());   // don't open the edit form
+      }
     }
 
     card.addEventListener("click", () => openSinceForm(it.id));
@@ -2495,7 +2512,89 @@ function openSince() {
 function closeSince() {
   el.sinceOverlay.classList.remove("show");
   clearInterval(sinceTimer); sinceTimer = null;
+  journalUnlocked = false;   // re-lock the private journal each time the page closes
 }
+// ---- private reset journal, gated by its own separate passcode ----
+// Distinct from the app lock (its own key + salt). Unlock lasts only while the
+// Time Since page is open, then re-locks.
+let journalUnlocked = false;
+function journalPinSet() { return !!load(KEY_JOURNAL_PIN, null); }
+async function setJournalPin(pin) {
+  const salt = randHex(16);
+  save(KEY_JOURNAL_SALT, salt);
+  save(KEY_JOURNAL_PIN, await sha256(pin + salt));
+}
+async function journalPinMatches(pin) {
+  return (await sha256(pin + load(KEY_JOURNAL_SALT, ""))) === load(KEY_JOURNAL_PIN, null);
+}
+function clearJournalPin() {
+  [KEY_JOURNAL_PIN, KEY_JOURNAL_SALT].forEach((k) => localStorage.removeItem(k));
+  journalUnlocked = false;
+}
+function pinField() {
+  const i = document.createElement("input");
+  i.type = "password"; i.inputMode = "numeric"; i.autocomplete = "off";
+  i.setAttribute("pattern", "[0-9]*"); i.maxLength = 12;
+  return i;
+}
+// First-time setup (or change): pick + confirm a separate passcode.
+function promptJournalSetup() {
+  openSheet((s) => {
+    addEl(s, "h3", "Protect your journal");
+    addEl(s, "p", "Set a separate passcode for your private reset journal. It's different from your app lock, and kept only on this device.", "sub");
+    addEl(s, "label", "New passcode (4+ digits)");
+    const p1 = pinField(); s.appendChild(p1);
+    addEl(s, "label", "Confirm passcode");
+    const p2 = pinField(); s.appendChild(p2);
+    s.appendChild(makeBtn("Set passcode", "primary", async () => {
+      const a = p1.value.trim(), b = p2.value.trim();
+      if (a.length < 4) { toast("Use at least 4 digits"); return; }
+      if (a !== b) { toast("Passcodes don't match"); return; }
+      await setJournalPin(a);
+      journalUnlocked = true;
+      closeSheet(); renderSince();
+      toast("Journal protected 🔒");
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => p1.focus(), 50);
+  });
+}
+// Enter the passcode to reveal the journal for this session.
+function promptJournalUnlock() {
+  openSheet((s) => {
+    addEl(s, "h3", "Enter journal passcode");
+    addEl(s, "p", "Unlocks your private reset journal.", "sub");
+    addEl(s, "label", "Passcode");
+    const p = pinField(); s.appendChild(p);
+    const err = addEl(s, "p", "", "sub"); err.style.color = "var(--over)"; err.style.minHeight = "16px";
+    s.appendChild(makeBtn("Unlock", "primary", async () => {
+      if (await journalPinMatches(p.value.trim())) {
+        journalUnlocked = true; closeSheet(); renderSince();
+      } else {
+        err.textContent = "Wrong passcode"; p.value = ""; buzz([0, 40, 60, 40]); p.focus();
+      }
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => p.focus(), 50);
+  });
+}
+// Manage the journal passcode from Settings.
+function openJournalPinSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Journal passcode");
+    addEl(s, "p", "A separate passcode that protects the private “why you reset” journal on your trackers. All of it stays on this device.", "sub");
+    if (journalPinSet()) {
+      s.appendChild(makeBtn("Change passcode", "primary", promptJournalSetup));
+      s.appendChild(makeBtn("Remove passcode", "danger", () => {
+        confirmSheet("Remove journal passcode?", "Your reset journal will no longer be protected.", "Remove", () => { clearJournalPin(); toast("Journal passcode removed"); });
+      }));
+    } else {
+      s.appendChild(makeBtn("Set a passcode", "primary", promptJournalSetup));
+    }
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
+}
+
 // Reset a tracker after a slip — ask (privately) why, log it, keep the record.
 function openResetReason(existing) {
   openSheet((s) => {
