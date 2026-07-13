@@ -293,6 +293,7 @@ const GG_CALM_EMOJI = ["🌤️", "🌱", "🍃", "✨", "☀️", "🌊", "🕊
 // common relapse triggers — one-tap tags on a reset, correlated over time
 const TRIGGERS = [
   { key: "stress", label: "Stress", emoji: "😰" },
+  { key: "alone", label: "Alone", emoji: "🧍" },
   { key: "social", label: "Social", emoji: "👥" },
   { key: "bored", label: "Bored", emoji: "🥱" },
   { key: "tired", label: "Tired", emoji: "😴" },
