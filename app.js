@@ -2430,6 +2430,23 @@ function renderSince() {
     const st = document.createElement("div"); st.className = "since-start";
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     card.appendChild(st);
+
+    // private reset journal — revealed here whenever the tracker page opens
+    const reasons = (it.log || []).filter((e) => e && (e.reason || "").trim());
+    if (reasons.length) {
+      addEl(card, "div", "🔒 Why you reset · private", "since-log-title");
+      const logWrap = document.createElement("div"); logWrap.className = "since-log";
+      reasons.slice(-6).reverse().forEach((e) => {
+        const row = document.createElement("div"); row.className = "since-log-row";
+        addEl(row, "span", new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }), "since-log-date");
+        addEl(row, "span", e.reason, "since-log-reason");
+        logWrap.appendChild(row);
+      });
+      card.appendChild(logWrap);
+      // don't let taps inside the journal open the edit form
+      logWrap.addEventListener("click", (ev) => ev.stopPropagation());
+    }
+
     card.addEventListener("click", () => openSinceForm(it.id));
     list.appendChild(card);
   });
@@ -2478,6 +2495,33 @@ function openSince() {
 function closeSince() {
   el.sinceOverlay.classList.remove("show");
   clearInterval(sinceTimer); sinceTimer = null;
+}
+// Reset a tracker after a slip — ask (privately) why, log it, keep the record.
+function openResetReason(existing) {
+  openSheet((s) => {
+    addEl(s, "h3", "Reset timer");
+    addEl(s, "p", "Starts counting from now. Your longest run is kept as your record.", "sub");
+    addEl(s, "label", "Why did you reset? (optional)");
+    const ta = document.createElement("textarea");
+    ta.rows = 3; ta.maxLength = 280;
+    ta.placeholder = "What happened? What led to it?";
+    s.appendChild(ta);
+    addEl(s, "p", "🔒 Private — kept only on this device, just for you.", "sub");
+    s.appendChild(makeBtn("Reset", "primary", () => {
+      const reason = ta.value.replace(/\s*\n\s*/g, " ").trim();
+      const run = Date.now() - new Date(existing.start).getTime();
+      if (run > (existing.best || 0)) existing.best = run;
+      existing.resets = (existing.resets || 0) + 1;
+      existing.log = existing.log || [];
+      existing.log.push({ at: new Date().toISOString(), reason: reason, ran: run });
+      existing.start = new Date().toISOString();
+      save(KEY_SINCE, since); closeSheet(); renderSince();
+      // a kind word — slipping is part of it, and the best run is still kept
+      toast(SINCE_RESET_MSGS[(Math.random() * SINCE_RESET_MSGS.length) | 0], 3600);
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => ta.focus(), 50);
+  });
 }
 function openSinceForm(id) {
   const existing = id != null ? since.find((x) => x.id === id) : null;
@@ -2540,17 +2584,7 @@ function openSinceForm(id) {
       s.appendChild(moveRow);
     }
     if (existing) {
-      s.appendChild(makeBtn("Reset to now", "", () => {
-        confirmSheet("Reset timer?", "Starts counting from now. Your longest run is kept as your record.", "Reset", () => {
-          const run = Date.now() - new Date(existing.start).getTime();
-          if (run > (existing.best || 0)) existing.best = run;
-          existing.resets = (existing.resets || 0) + 1;
-          existing.start = new Date().toISOString();
-          save(KEY_SINCE, since); renderSince();
-          // a kind word — slipping is part of it, and the best run is still kept
-          toast(SINCE_RESET_MSGS[(Math.random() * SINCE_RESET_MSGS.length) | 0], 3600);
-        });
-      }));
+      s.appendChild(makeBtn("Reset to now", "", () => openResetReason(existing)));
       s.appendChild(makeBtn("Delete tracker", "danger", () => {
         confirmSheet("Delete tracker?", `"${existing.name}" will be removed.`, "Delete", () => {
           since = since.filter((x) => x.id !== existing.id); save(KEY_SINCE, since); renderSince();
