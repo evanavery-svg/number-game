@@ -2643,7 +2643,7 @@ function renderSinceStrip() {
     const name = document.createElement("span"); name.className = "ss-name"; name.textContent = it.name;
     const val = document.createElement("span"); val.className = "ss-val"; val.textContent = durLabel(elapsed);
     chip.append(name, val);
-    chip.addEventListener("click", openSince);
+    chip.addEventListener("click", requestSince);
     strip.appendChild(chip);
   });
   if (!sinceStripAnimated) { sinceStripAnimated = true; staggerIn(strip, 60, 6); }
@@ -2657,6 +2657,13 @@ function tickSinceStrip() {
     const val = chips[i].querySelector(".ss-val");
     if (val) val.textContent = durLabel(elapsed);
   });
+}
+// The Time Since page requires the passcode every time it's opened. If none is
+// set yet, prompt to create one first (so it becomes locked going forward).
+function requestSince() {
+  if (journalUnlocked) { openSince(); return; }
+  if (!journalPinSet()) { promptJournalSetup(openSince); return; }
+  promptJournalUnlock(openSince);
 }
 function openSince() {
   renderSince();
@@ -2717,10 +2724,10 @@ function pinField() {
   return i;
 }
 // First-time setup (or change): pick + confirm a separate passcode.
-function promptJournalSetup() {
+function promptJournalSetup(onSuccess) {
   openSheet((s) => {
-    addEl(s, "h3", "Protect your journal");
-    addEl(s, "p", "Set a separate passcode for your private reset journal. It's different from your app lock, and kept only on this device.", "sub");
+    addEl(s, "h3", "Set a passcode");
+    addEl(s, "p", "This passcode locks your Time Since trackers and their private journals. It's separate from your app lock, and kept only on this device.", "sub");
     addEl(s, "label", "New passcode (4+ digits)");
     const p1 = pinField(); s.appendChild(p1);
     addEl(s, "label", "Confirm passcode");
@@ -2736,31 +2743,30 @@ function promptJournalSetup() {
         try { await journalBioRegister(); } catch (e) { toast("Face ID setup skipped"); }
       }
       journalUnlocked = true;
-      closeSheet(); renderSince();
-      toast("Journal protected 🔒");
+      closeSheet(); (onSuccess || renderSince)();
+      toast("Passcode set 🔒");
     }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
     setTimeout(() => p1.focus(), 50);
   });
 }
-// Enter the passcode (or Face ID) to reveal the journal for this session.
-function promptJournalUnlock() {
+// Enter the passcode (or Face ID) to unlock. onSuccess defaults to re-rendering
+// the (already-open) panel; the timer gate passes openSince to open it.
+function promptJournalUnlock(onSuccess) {
+  const done = () => { journalUnlocked = true; closeSheet(); (onSuccess || renderSince)(); };
   openSheet((s) => {
-    addEl(s, "h3", "Enter journal passcode");
-    addEl(s, "p", "Unlocks your private reset journal.", "sub");
+    addEl(s, "h3", "Enter passcode");
+    addEl(s, "p", "Unlocks your Time Since trackers.", "sub");
     addEl(s, "label", "Passcode");
     const p = pinField(); s.appendChild(p);
     const err = addEl(s, "p", "", "sub"); err.style.color = "var(--over)"; err.style.minHeight = "16px";
     s.appendChild(makeBtn("Unlock", "primary", async () => {
-      if (await journalPinMatches(p.value.trim())) {
-        journalUnlocked = true; closeSheet(); renderSince();
-      } else {
-        err.textContent = "Wrong passcode"; p.value = ""; buzz([0, 40, 60, 40]); p.focus();
-      }
+      if (await journalPinMatches(p.value.trim())) done();
+      else { err.textContent = "Wrong passcode"; p.value = ""; buzz([0, 40, 60, 40]); p.focus(); }
     }));
     if (journalBioSet()) {
       s.appendChild(makeBtn("Unlock with Face ID", "", async () => {
-        try { await journalBioUnlock(); journalUnlocked = true; closeSheet(); renderSince(); }
+        try { await journalBioUnlock(); done(); }
         catch (e) { err.textContent = "Face ID didn't match"; buzz([0, 40, 60, 40]); }
       }));
     }
@@ -3266,7 +3272,7 @@ function closeTree() { el.treeOverlay.classList.remove("show"); }
 function openMore() {
   openSheet((s) => {
     addEl(s, "h3", "More");
-    s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); openSince(); }));
+    s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); requestSince(); }));
     s.appendChild(makeBtn("💧   Water", "", () => { closeSheet(); openWater(); }));
     s.appendChild(makeBtn("🌳   Your Tree", "", () => { closeSheet(); openTree(); }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
