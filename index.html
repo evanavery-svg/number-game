@@ -642,6 +642,18 @@
     .since-log-row:first-child { border-top: none; }
     .since-log-date { color: var(--faint); font-size: 12px; flex: none; min-width: 44px; font-variant-numeric: tabular-nums; }
     .since-log-reason { color: var(--muted); overflow-wrap: anywhere; }
+    /* don't-break-the-chain clean-days grid */
+    .chain-title { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); margin-top: 15px; }
+    .chain-grid { display: grid; grid-template-columns: repeat(13, 1fr); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 3px; margin-top: 8px; }
+    .chain-cell { width: 100%; aspect-ratio: 1 / 1; border-radius: 3px; background: var(--surface-2); }
+    .chain-cell.clean { background: var(--safe); }
+    .chain-cell.slip { background: var(--over); }
+    .chain-cell.pre { background: var(--surface-2); opacity: 0.35; }
+    .chain-cell.future { background: transparent; box-shadow: inset 0 0 0 1px var(--hair); }
+    .chain-cell.today { box-shadow: inset 0 0 0 1.5px var(--accent); }
+    .chain-cap { font-size: 12px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .chain-cap b { color: var(--text); font-weight: 700; }
+
     .since-log-locked { display: block; width: 100%; text-align: left; border: none; cursor: pointer; margin-top: 8px; background: var(--surface-2); color: var(--muted); border-radius: 10px; padding: 12px 14px; font-size: 13px; font-weight: 600; transition: filter 0.12s ease; }
     .since-log-locked:active { filter: brightness(0.94); }
     .since-log-body { display: flex; flex-direction: column; gap: 3px; }
@@ -1094,7 +1106,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v7.3 · © Avery LLC</div>
+  <div class="version">v7.4 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

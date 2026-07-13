@@ -2446,6 +2446,44 @@ function checkRiskyTimes() {
   }
 }
 
+// "Don't break the chain": a contribution-style grid of clean days (green) vs
+// slip days (red) since the tracker began, so the streak is something you see.
+const CHAIN_WEEKS = 13;
+function appendChain(card, it) {
+  const DAYMS = 86400e3;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // origin = the earliest day this tracker has existed (first run start)
+  const stamps = [new Date(it.start).getTime()];
+  (it.log || []).forEach((e) => { const t = new Date(e.at).getTime(); if (!isNaN(t)) { stamps.push(t); if (e.ran > 0) stamps.push(t - e.ran); } });
+  const origin = new Date(Math.min(...stamps)); origin.setHours(0, 0, 0, 0);
+  const slip = new Set();
+  (it.log || []).forEach((e) => { const d = new Date(e.at); if (!isNaN(d.getTime())) slip.add(isoLocal(d)); });
+
+  addEl(card, "div", "Don't break the chain", "chain-title");
+  const grid = document.createElement("div"); grid.className = "chain-grid";
+  const startCell = new Date(today);
+  startCell.setDate(startCell.getDate() - startCell.getDay() - (CHAIN_WEEKS - 1) * 7);   // Sunday, N-1 weeks back
+  for (let i = 0; i < CHAIN_WEEKS * 7; i++) {
+    const d = new Date(startCell); d.setDate(startCell.getDate() + i); d.setHours(0, 0, 0, 0);
+    const cell = document.createElement("span"); cell.className = "chain-cell";
+    const tt = d.getTime();
+    if (tt > today.getTime()) cell.classList.add("future");
+    else if (tt < origin.getTime()) cell.classList.add("pre");
+    else if (slip.has(isoLocal(d))) cell.classList.add("slip");
+    else cell.classList.add("clean");
+    if (tt === today.getTime()) cell.classList.add("today");
+    cell.title = d.toLocaleDateString();
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+  const totalDays = Math.floor((today.getTime() - origin.getTime()) / DAYMS) + 1;
+  const slips = slip.size;
+  const clean = Math.max(0, totalDays - slips);
+  const cap = document.createElement("div"); cap.className = "chain-cap";
+  cap.innerHTML = `<b>${clean}</b> clean day${clean === 1 ? "" : "s"} · ${slips} slip${slips === 1 ? "" : "s"}`;
+  card.appendChild(cap);
+}
+
 function renderSince() {
   const list = el.sinceList;
   list.textContent = "";
@@ -2526,6 +2564,9 @@ function renderSince() {
     const st = document.createElement("div"); st.className = "since-start";
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     card.appendChild(st);
+
+    // don't-break-the-chain calendar of clean vs slip days
+    appendChain(card, it);
 
     // private reset journal — gated behind its own separate passcode
     const entries = (it.log || []).filter((e) => e && ((e.reason || "").trim() || (e.tags && e.tags.length) || (e.cope || "").trim()));
