@@ -644,6 +644,28 @@
     .since-log-reason { color: var(--muted); overflow-wrap: anywhere; }
     .since-log-locked { display: block; width: 100%; text-align: left; border: none; cursor: pointer; margin-top: 8px; background: var(--surface-2); color: var(--muted); border-radius: 10px; padding: 12px 14px; font-size: 13px; font-weight: 600; transition: filter 0.12s ease; }
     .since-log-locked:active { filter: brightness(0.94); }
+    .since-log-body { display: flex; flex-direction: column; gap: 3px; }
+    .since-log-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .since-log-tag { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--surface-2); border-radius: 999px; padding: 2px 8px; }
+    .since-log-cope { color: var(--faint); font-size: 12px; font-style: italic; }
+    /* slip patterns */
+    .pat { margin-top: 10px; background: var(--surface-2); border-radius: 12px; padding: 11px 13px; }
+    .pat-line { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .pat-line.good { color: var(--safe); font-weight: 700; }
+    /* pause-before-reset card */
+    .pause-card { background: var(--bg); border-radius: 16px; padding: 16px; box-shadow: inset 0 0 0 1px var(--surface-2); margin: 4px 0 6px; text-align: center; }
+    .pause-name { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+    .pause-run { font-size: 30px; font-weight: 300; letter-spacing: -1px; color: var(--accent); margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+    .pause-line { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .pause-why { background: var(--bg); border-radius: 12px; padding: 12px 14px; box-shadow: inset 0 0 0 1px var(--surface-2); margin-top: 10px; }
+    .pause-why-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+    .pause-why-text { font-size: 14px; color: var(--text); line-height: 1.45; }
+    /* breathing orb */
+    .breath-wrap { display: flex; align-items: center; justify-content: center; height: 210px; margin: 6px 0 2px; }
+    .breath-orb { width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle at 50% 38%, var(--accent-2), var(--accent)); transform: scale(0.55); transition: transform 4s ease-in-out; box-shadow: 0 0 46px 6px var(--btn-glow, rgba(255,149,0,0.35)); }
+    .breath-orb.in   { transform: scale(1);    transition-duration: 4s; }
+    .breath-orb.hold { transform: scale(1);    transition-duration: 4s; }
+    .breath-orb.out  { transform: scale(0.55); transition-duration: 6s; }
 
     /* ---- water tracker (separate panel) ---- */
     .water-card { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); padding: 24px 18px 20px; text-align: center; margin-bottom: 14px; }
@@ -985,7 +1007,7 @@
       .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run, .game-gate { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run, .game-gate, .breath-orb { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -1072,7 +1094,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v7.2 · © Avery LLC</div>
+  <div class="version">v7.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

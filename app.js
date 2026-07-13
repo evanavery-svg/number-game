@@ -14,6 +14,8 @@ const KEY_LOCK_SALT = "count.lockSalt";
 const KEY_LOCK_BIO = "count.lockBio";  // base64 WebAuthn credential id
 const KEY_JOURNAL_PIN = "count.journalPin";   // separate passcode for the private reset journal
 const KEY_JOURNAL_SALT = "count.journalSalt";
+const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id for journal Face ID
+const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
 const KEY_REMIND = "count.remind";          // bool
 const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
 const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
@@ -288,6 +290,20 @@ const GG_MOTIVATIONS = [
   "You're doing better than you think.",
 ];
 const GG_CALM_EMOJI = ["🌤️", "🌱", "🍃", "✨", "☀️", "🌊", "🕊️", "🌙"];
+// common relapse triggers — one-tap tags on a reset, correlated over time
+const TRIGGERS = [
+  { key: "stress", label: "Stress", emoji: "😰" },
+  { key: "social", label: "Social", emoji: "👥" },
+  { key: "bored", label: "Bored", emoji: "🥱" },
+  { key: "tired", label: "Tired", emoji: "😴" },
+  { key: "craving", label: "Craving", emoji: "🌊" },
+  { key: "celebrating", label: "Celebrating", emoji: "🎉" },
+  { key: "lonely", label: "Lonely", emoji: "💭" },
+  { key: "angry", label: "Angry", emoji: "😤" },
+  { key: "hungry", label: "Hungry", emoji: "🍽️" },
+  { key: "autopilot", label: "Autopilot", emoji: "🔁" },
+];
+function triggerOf(k) { return TRIGGERS.find((t) => t.key === k); }
 // gentle reassurance when a "time since" streak is reset — slipping is human
 const SINCE_RESET_MSGS = [
   "It's okay to fail — what matters is you're back.",
@@ -2353,6 +2369,83 @@ function toLocalInput(d) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// Patterns across a tracker's slips: top trigger, when they cluster, and
+// whether runs are trending longer over time.
+function resetPatterns(item) {
+  const log = item.log || [];
+  if (log.length < 2) return null;
+  const tagCount = {};
+  log.forEach((e) => (e.tags || []).forEach((t) => { tagCount[t] = (tagCount[t] || 0) + 1; }));
+  let topTag = null, topN = 0;
+  Object.keys(tagCount).forEach((k) => { if (tagCount[k] > topN) { topN = tagCount[k]; topTag = k; } });
+  const hours = new Array(24).fill(0), wdays = new Array(7).fill(0);
+  log.forEach((e) => { const d = new Date(e.at); if (!isNaN(d.getTime())) { hours[d.getHours()]++; wdays[d.getDay()]++; } });
+  let peakH = 0, peakHN = 0; hours.forEach((c, h) => { if (c > peakHN) { peakHN = c; peakH = h; } });
+  let peakW = 0, peakWN = 0; wdays.forEach((c, w) => { if (c > peakWN) { peakWN = c; peakW = w; } });
+  const runs = log.map((e) => e.ran || 0).filter((x) => x > 0);
+  let trend = null;
+  if (runs.length >= 4) {
+    const mid = Math.floor(runs.length / 2);
+    const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+    const a = mean(runs.slice(0, mid)), b = mean(runs.slice(mid));
+    if (b > a * 1.15) trend = "up"; else if (b < a * 0.85) trend = "down";
+  }
+  return { topTag, topN, peakH, peakHN, peakW, peakWN, trend, count: log.length };
+}
+
+// ---- milestone celebrations + risky-time heads-up ----
+// True while a full-screen gate/lock is covering the app — defer surprises.
+function gatesUp() {
+  return (el.lock && el.lock.style.display === "flex") || el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show");
+}
+function highestMile(elapsed) {
+  let m = 0;
+  MILES.forEach((x) => { if (x.ms <= elapsed) m = x.ms; });
+  if (elapsed >= YR) m = Math.floor(elapsed / YR) * YR;
+  return m;
+}
+function mileLabelFor(ms) {
+  const found = MILES.find((x) => x.ms === ms);
+  if (found) return found.label;
+  if (ms >= YR) { const y = Math.round(ms / YR); return y + (y === 1 ? " year" : " years"); }
+  return "a milestone";
+}
+// Celebrate when a run crosses a new milestone. First sight of a tracker just
+// records where it is (so old milestones aren't re-announced).
+function checkMilestones() {
+  if (gatesUp()) return;
+  let changed = false;
+  since.forEach((it) => {
+    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
+    const cur = highestMile(elapsed);
+    if (it.seenMile == null) { it.seenMile = cur; changed = true; return; }
+    if (cur > it.seenMile) {
+      it.seenMile = cur; changed = true;
+      buzz([0, 40, 60, 40, 60, 90]);
+      toast(`🎉 ${it.name} · ${mileLabelFor(cur)}!`, 3600);
+      const cx = window.innerWidth / 2, cy = window.innerHeight / 3;
+      confettiBurst(cx, cy, 26);
+    }
+  });
+  if (changed) save(KEY_SINCE, since);
+}
+// A gentle heads-up if right now is an hour you've slipped in before.
+function checkRiskyTimes() {
+  if (!since.length || gatesUp()) return;
+  const now = new Date();
+  const key = isoLocal(now) + "-" + now.getHours();
+  if (load(KEY_RISKY_LAST, "") === key) return;   // at most once per clock-hour
+  const hr = now.getHours();
+  for (const it of since) {
+    const n = (it.log || []).filter((e) => { const d = new Date(e.at); return !isNaN(d.getTime()) && d.getHours() === hr; }).length;
+    if (n >= 2) {
+      save(KEY_RISKY_LAST, key);
+      toast(`🫶 Around now is when "${it.name}" has tripped you up before. You've got this.`, 4600);
+      return;
+    }
+  }
+}
+
 function renderSince() {
   const list = el.sinceList;
   list.textContent = "";
@@ -2435,28 +2528,52 @@ function renderSince() {
     card.appendChild(st);
 
     // private reset journal — gated behind its own separate passcode
-    const reasons = (it.log || []).filter((e) => e && (e.reason || "").trim());
-    if (reasons.length) {
+    const entries = (it.log || []).filter((e) => e && ((e.reason || "").trim() || (e.tags && e.tags.length) || (e.cope || "").trim()));
+    if (entries.length) {
       addEl(card, "div", "🔒 Why you reset · private", "since-log-title");
       if (!journalPinSet()) {
-        // no journal passcode yet — must set one before the entries can be read
         const setBtn = document.createElement("button");
         setBtn.className = "since-log-locked";
-        setBtn.textContent = `🔒 Set a passcode to open your journal (${reasons.length})`;
+        setBtn.textContent = `🔒 Set a passcode to open your journal (${entries.length})`;
         setBtn.addEventListener("click", (ev) => { ev.stopPropagation(); promptJournalSetup(); });
         card.appendChild(setBtn);
       } else if (!journalUnlocked) {
         const unlockBtn = document.createElement("button");
         unlockBtn.className = "since-log-locked";
-        unlockBtn.textContent = `🔒 Locked · tap to unlock (${reasons.length})`;
+        unlockBtn.textContent = `🔒 Locked · tap to unlock (${entries.length})`;
         unlockBtn.addEventListener("click", (ev) => { ev.stopPropagation(); promptJournalUnlock(); });
         card.appendChild(unlockBtn);
       } else {
+        // patterns from the slips — triggers, timing, and a hopeful trend
+        const pat = resetPatterns(it);
+        if (pat) {
+          const pw = document.createElement("div"); pw.className = "pat";
+          if (pat.topTag) {
+            const t = triggerOf(pat.topTag);
+            if (t) addEl(pw, "div", `Most common trigger: ${t.emoji} ${t.label} · ${pat.topN}×`, "pat-line");
+          }
+          if (pat.peakWN >= 2 || pat.peakHN >= 2) {
+            const bits = [];
+            if (pat.peakWN >= 2) bits.push("on " + WK_NAME[pat.peakW]);
+            if (pat.peakHN >= 2) bits.push("around " + hourLabel(pat.peakH));
+            addEl(pw, "div", "Slips cluster " + bits.join(", "), "pat-line");
+          }
+          if (pat.trend === "up") addEl(pw, "div", "📈 Your runs are getting longer — keep it up", "pat-line good");
+          if (pw.childNodes.length) card.appendChild(pw);
+        }
         const logWrap = document.createElement("div"); logWrap.className = "since-log";
-        reasons.slice(-6).reverse().forEach((e) => {
+        entries.slice(-6).reverse().forEach((e) => {
           const row = document.createElement("div"); row.className = "since-log-row";
           addEl(row, "span", new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }), "since-log-date");
-          addEl(row, "span", e.reason, "since-log-reason");
+          const body = document.createElement("div"); body.className = "since-log-body";
+          if (e.tags && e.tags.length) {
+            const tg = document.createElement("div"); tg.className = "since-log-tags";
+            e.tags.forEach((k) => { const t = triggerOf(k); if (t) { const c = document.createElement("span"); c.className = "since-log-tag"; c.textContent = `${t.emoji} ${t.label}`; tg.appendChild(c); } });
+            body.appendChild(tg);
+          }
+          if ((e.reason || "").trim()) addEl(body, "div", e.reason, "since-log-reason");
+          if ((e.cope || "").trim()) addEl(body, "div", "→ " + e.cope, "since-log-cope");
+          row.appendChild(body);
           logWrap.appendChild(row);
         });
         card.appendChild(logWrap);
@@ -2528,8 +2645,28 @@ async function journalPinMatches(pin) {
   return (await sha256(pin + load(KEY_JOURNAL_SALT, ""))) === load(KEY_JOURNAL_PIN, null);
 }
 function clearJournalPin() {
-  [KEY_JOURNAL_PIN, KEY_JOURNAL_SALT].forEach((k) => localStorage.removeItem(k));
+  [KEY_JOURNAL_PIN, KEY_JOURNAL_SALT, KEY_JOURNAL_BIO].forEach((k) => localStorage.removeItem(k));
   journalUnlocked = false;
+}
+// Face ID / Touch ID for the journal, via a separate WebAuthn credential.
+function journalBioSet() { return !!load(KEY_JOURNAL_BIO, null); }
+async function journalBioRegister() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: "Tracker", id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: "journal", displayName: "journal" },
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+    timeout: 60000,
+  } });
+  save(KEY_JOURNAL_BIO, b64(cred.rawId));
+}
+async function journalBioUnlock() {
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [{ type: "public-key", id: unb64(load(KEY_JOURNAL_BIO, null)) }],
+    userVerification: "required", timeout: 60000,
+  } });
 }
 function pinField() {
   const i = document.createElement("input");
@@ -2546,11 +2683,16 @@ function promptJournalSetup() {
     const p1 = pinField(); s.appendChild(p1);
     addEl(s, "label", "Confirm passcode");
     const p2 = pinField(); s.appendChild(p2);
+    let bioToggle = null;
+    if (BIO_AVAIL) bioToggle = makeToggle(s, "Also unlock with Face ID", false);
     s.appendChild(makeBtn("Set passcode", "primary", async () => {
       const a = p1.value.trim(), b = p2.value.trim();
       if (a.length < 4) { toast("Use at least 4 digits"); return; }
       if (a !== b) { toast("Passcodes don't match"); return; }
       await setJournalPin(a);
+      if (bioToggle && bioToggle.checked) {
+        try { await journalBioRegister(); } catch (e) { toast("Face ID setup skipped"); }
+      }
       journalUnlocked = true;
       closeSheet(); renderSince();
       toast("Journal protected 🔒");
@@ -2559,7 +2701,7 @@ function promptJournalSetup() {
     setTimeout(() => p1.focus(), 50);
   });
 }
-// Enter the passcode to reveal the journal for this session.
+// Enter the passcode (or Face ID) to reveal the journal for this session.
 function promptJournalUnlock() {
   openSheet((s) => {
     addEl(s, "h3", "Enter journal passcode");
@@ -2574,6 +2716,12 @@ function promptJournalUnlock() {
         err.textContent = "Wrong passcode"; p.value = ""; buzz([0, 40, 60, 40]); p.focus();
       }
     }));
+    if (journalBioSet()) {
+      s.appendChild(makeBtn("Unlock with Face ID", "", async () => {
+        try { await journalBioUnlock(); journalUnlocked = true; closeSheet(); renderSince(); }
+        catch (e) { err.textContent = "Face ID didn't match"; buzz([0, 40, 60, 40]); }
+      }));
+    }
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
     setTimeout(() => p.focus(), 50);
   });
@@ -2584,6 +2732,13 @@ function openJournalPinSettings() {
     addEl(s, "h3", "Journal passcode");
     addEl(s, "p", "A separate passcode that protects the private “why you reset” journal on your trackers. All of it stays on this device.", "sub");
     if (journalPinSet()) {
+      if (BIO_AVAIL) {
+        const bt = makeToggle(s, "Unlock with Face ID", journalBioSet());
+        bt.addEventListener("change", async () => {
+          if (bt.checked) { try { await journalBioRegister(); toast("Face ID on"); } catch (e) { bt.checked = false; toast("Couldn't set up Face ID"); } }
+          else { localStorage.removeItem(KEY_JOURNAL_BIO); toast("Face ID off"); }
+        });
+      }
       s.appendChild(makeBtn("Change passcode", "primary", promptJournalSetup));
       s.appendChild(makeBtn("Remove passcode", "danger", () => {
         confirmSheet("Remove journal passcode?", "Your reset journal will no longer be protected.", "Remove", () => { clearJournalPin(); toast("Journal passcode removed"); });
@@ -2595,31 +2750,124 @@ function openJournalPinSettings() {
   });
 }
 
-// Reset a tracker after a slip — ask (privately) why, log it, keep the record.
+// A gentle speed-bump BEFORE resetting — your why, your run vs record, what
+// you've saved, and a breath — so the choice to reset is a considered one.
+function openResetPause(existing) {
+  openSheet((s) => {
+    addEl(s, "h3", "Hang on a sec");
+    addEl(s, "p", "You're in the middle of a run. Take a breath before you decide.", "sub");
+
+    const run = Date.now() - new Date(existing.start).getTime();
+    const best = existing.best || 0;
+
+    const card = document.createElement("div");
+    card.className = "pause-card";
+    addEl(card, "div", existing.name, "pause-name");
+    addEl(card, "div", durLabel(run) + " strong", "pause-run");
+    if (best > 0 && run < best) {
+      addEl(card, "div", `Only ${durLabel(best - run)} to beat your record of ${durLabel(best)} 🔥`, "pause-line");
+    } else if (best > 0 && run >= best) {
+      addEl(card, "div", "You're in record territory right now 🏆", "pause-line");
+    }
+    if (existing.rate > 0) addEl(card, "div", `${savedText(existing.rate, existing.unit, run)} saved so far`, "pause-line");
+    s.appendChild(card);
+
+    if (existing.note) {
+      const why = document.createElement("div"); why.className = "pause-why";
+      addEl(why, "div", "Remember your why", "pause-why-tag");
+      addEl(why, "div", existing.note, "pause-why-text");
+      s.appendChild(why);
+    }
+
+    // any coping notes you left before, resurfaced when it counts
+    const copes = (existing.log || []).map((e) => (e.cope || "").trim()).filter(Boolean);
+    if (copes.length) {
+      const box = document.createElement("div"); box.className = "pause-why";
+      addEl(box, "div", "What's helped before", "pause-why-tag");
+      copes.slice(-2).reverse().forEach((c) => addEl(box, "div", "• " + c, "pause-why-text"));
+      s.appendChild(box);
+    }
+
+    s.appendChild(makeBtn("Keep going 💪", "primary", closeSheet));
+    s.appendChild(makeBtn("Take a breath", "", () => openBreath(existing)));
+    s.appendChild(makeBtn("Reset anyway", "ghost", () => openResetReason(existing)));
+  });
+}
+
+// A simple guided breath — in, hold, out — loops until you're ready.
+function openBreath(existing) {
+  openSheet((s) => {
+    addEl(s, "h3", "Breathe");
+    const stage = addEl(s, "p", "Follow the circle.", "sub");
+    const wrap = document.createElement("div"); wrap.className = "breath-wrap";
+    const orb = document.createElement("div"); orb.className = "breath-orb";
+    wrap.appendChild(orb); s.appendChild(wrap);
+    // 4s in · 4s hold · 6s out, looping
+    const phases = [["Breathe in", 4000, "in"], ["Hold", 4000, "hold"], ["Breathe out", 6000, "out"]];
+    let i = 0, timer = null;
+    const step = () => {
+      const [label, ms, cls] = phases[i];
+      stage.textContent = label;
+      orb.className = "breath-orb " + cls;   // set atomically so it eases between phases
+      buzz(12);
+      i = (i + 1) % phases.length;
+      timer = setTimeout(step, ms);
+    };
+    step();
+    const stop = () => { if (timer) clearTimeout(timer); };
+    const back = makeBtn("I'm okay — back", "primary", () => { stop(); openResetPause(existing); });
+    s.appendChild(back);
+    // stop the loop if the sheet is dismissed another way
+    const obs = new MutationObserver(() => { if (!el.overlay.classList.contains("show")) { stop(); obs.disconnect(); } });
+    obs.observe(el.overlay, { attributes: true, attributeFilter: ["class"] });
+  });
+}
+
+// Reset a tracker after a slip — capture triggers, a private note, and a plan.
 function openResetReason(existing) {
   openSheet((s) => {
     addEl(s, "h3", "Reset timer");
     addEl(s, "p", "Starts counting from now. Your longest run is kept as your record.", "sub");
+
+    addEl(s, "label", "What triggered it? (tap any)");
+    const picked = {};
+    const chipRow = document.createElement("div"); chipRow.className = "chip-row";
+    TRIGGERS.forEach((t) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip";
+      const em = document.createElement("span"); em.className = "chip-emoji"; em.textContent = t.emoji;
+      b.append(em, document.createTextNode(t.label));
+      b.addEventListener("click", () => { picked[t.key] = !picked[t.key]; b.classList.toggle("on", !!picked[t.key]); buzz(10); });
+      chipRow.appendChild(b);
+    });
+    s.appendChild(chipRow);
+
     addEl(s, "label", "Why did you reset? (optional)");
     const ta = document.createElement("textarea");
-    ta.rows = 3; ta.maxLength = 280;
-    ta.placeholder = "What happened? What led to it?";
+    ta.rows = 3; ta.maxLength = 280; ta.placeholder = "What happened? What led to it?";
     s.appendChild(ta);
+
+    addEl(s, "label", "What might help next time? (optional)");
+    const cope = document.createElement("textarea");
+    cope.rows = 2; cope.maxLength = 280; cope.placeholder = "A plan for the next craving…";
+    s.appendChild(cope);
+
     addEl(s, "p", "🔒 Private — kept only on this device, just for you.", "sub");
     s.appendChild(makeBtn("Reset", "primary", () => {
       const reason = ta.value.replace(/\s*\n\s*/g, " ").trim();
+      const plan = cope.value.replace(/\s*\n\s*/g, " ").trim();
+      const tags = TRIGGERS.map((t) => t.key).filter((k) => picked[k]);
       const run = Date.now() - new Date(existing.start).getTime();
       if (run > (existing.best || 0)) existing.best = run;
       existing.resets = (existing.resets || 0) + 1;
       existing.log = existing.log || [];
-      existing.log.push({ at: new Date().toISOString(), reason: reason, ran: run });
+      existing.log.push({ at: new Date().toISOString(), reason: reason, ran: run, tags: tags, cope: plan });
       existing.start = new Date().toISOString();
+      existing.seenMile = 0;   // fresh run — milestones can be celebrated again
       save(KEY_SINCE, since); closeSheet(); renderSince();
       // a kind word — slipping is part of it, and the best run is still kept
       toast(SINCE_RESET_MSGS[(Math.random() * SINCE_RESET_MSGS.length) | 0], 3600);
     }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
-    setTimeout(() => ta.focus(), 50);
   });
 }
 function openSinceForm(id) {
@@ -2683,7 +2931,7 @@ function openSinceForm(id) {
       s.appendChild(moveRow);
     }
     if (existing) {
-      s.appendChild(makeBtn("Reset to now", "", () => openResetReason(existing)));
+      s.appendChild(makeBtn("Reset to now", "", () => openResetPause(existing)));
       s.appendChild(makeBtn("Delete tracker", "danger", () => {
         confirmSheet("Delete tracker?", `"${existing.name}" will be removed.`, "Delete", () => {
           since = since.filter((x) => x.id !== existing.id); save(KEY_SINCE, since); renderSince();
@@ -3008,11 +3256,15 @@ if (!reduceMotion() && today > 0) {
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
 runDailyGates();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
+checkMilestones();
+checkRiskyTimes();
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
   runDailyGates();
   checkReminder();
+  checkMilestones();
+  checkRiskyTimes();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
 
@@ -3024,8 +3276,8 @@ setInterval(() => {
   if (lockSet() && el.lock.style.display !== "flex" && !document.hidden) save(KEY_UNLOCK_AT, Date.now());
 }, 60000);
 
-// keep the main-page "time since" strip ticking
-setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1000);
+// keep the main-page "time since" strip ticking + watch for milestone crossings
+setInterval(() => { if (!document.hidden && since.length) { tickSinceStrip(); checkMilestones(); } }, 1000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
