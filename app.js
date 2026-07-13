@@ -2358,6 +2358,19 @@ function mileList(elapsed) {
   }
   return out;
 }
+// Optional per-tracker wellbeing timeline — stages that light up as the run grows.
+const RECOVERY_STAGES = [
+  { label: "Day 1",    ms: 0,          text: "The reset begins" },
+  { label: "Day 2",    ms: 1 * DAY,    text: "Your mind starts recalibrating" },
+  { label: "Day 3",    ms: 3 * DAY,    text: "Urges often peak now — ride them out" },
+  { label: "Week 1",   ms: 7 * DAY,    text: "Energy and mood begin to lift" },
+  { label: "Week 2",   ms: 14 * DAY,   text: "Focus sharpens, head feels clearer" },
+  { label: "Month 1",  ms: 30 * DAY,   text: "Confidence and drive climbing" },
+  { label: "Month 2",  ms: 60 * DAY,   text: "Old patterns loosen their grip" },
+  { label: "Month 3",  ms: 90 * DAY,   text: "Deep recovery — a new baseline" },
+  { label: "6 months", ms: 180 * DAY,  text: "Steady, clear, in control" },
+  { label: "1 year",   ms: 365 * DAY,  text: "Transformed — this is who you are now" },
+];
 // Money/units accrued so far at a per-day rate. Symbols prefix, words suffix.
 function savedText(rate, unit, ms) {
   const total = round2(rate * (ms / DAY));
@@ -2445,6 +2458,32 @@ function checkRiskyTimes() {
       return;
     }
   }
+}
+
+// Opt-in timeline of how you're doing as the run grows — stages fill in as you
+// reach them, with the next one showing how far off it is.
+function appendRecovery(card, it) {
+  const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
+  addEl(card, "div", "Recovery timeline", "rec-title");
+  const wrap = document.createElement("div"); wrap.className = "rec";
+  let nextMarked = false;
+  RECOVERY_STAGES.forEach((st) => {
+    const row = document.createElement("div"); row.className = "rec-row";
+    const reached = elapsed >= st.ms;
+    if (reached) row.classList.add("reached");
+    else if (!nextMarked) { row.classList.add("next"); nextMarked = true; }
+    else row.classList.add("future");
+    const dot = document.createElement("span"); dot.className = "rec-dot";
+    const body = document.createElement("div"); body.className = "rec-body";
+    const head = document.createElement("div"); head.className = "rec-head";
+    addEl(head, "span", st.label, "rec-label");
+    if (row.classList.contains("next")) addEl(head, "span", "in " + durLabel(st.ms - elapsed), "rec-when");
+    body.appendChild(head);
+    addEl(body, "div", st.text, "rec-text");
+    row.append(dot, body);
+    wrap.appendChild(row);
+  });
+  card.appendChild(wrap);
 }
 
 // "Don't break the chain": a contribution-style grid of clean days (green) vs
@@ -2565,6 +2604,9 @@ function renderSince() {
     const st = document.createElement("div"); st.className = "since-start";
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     card.appendChild(st);
+
+    // optional wellbeing timeline
+    if (it.timeline) appendRecovery(card, it);
 
     // don't-break-the-chain calendar of clean vs slip days
     appendChain(card, it);
@@ -2949,6 +2991,9 @@ function openSinceForm(id) {
     unitInput.value = existing ? (existing.unit || "$") : "$";
     s.appendChild(unitInput);
 
+    const timelineToggle = makeToggle(s, "Show recovery timeline", existing ? !!existing.timeline : false);
+    addEl(s, "p", "A timeline of how you tend to feel better the longer you keep it up.", "sub");
+
     s.appendChild(makeBtn("Save", "primary", () => {
       const nm = name.value.trim();
       if (!nm) { toast("Add a name"); return; }
@@ -2957,11 +3002,12 @@ function openSinceForm(id) {
       const note = noteTa.value.replace(/\s*\n\s*/g, " ").trim();
       const rate = Math.max(0, parseFloat(rateInput.value) || 0);
       const unit = unitInput.value.trim() || "$";
+      const timeline = timelineToggle.checked;
       if (existing) {
         existing.name = nm; existing.start = st.toISOString();
-        existing.note = note; existing.rate = rate; existing.unit = unit;
+        existing.note = note; existing.rate = rate; existing.unit = unit; existing.timeline = timeline;
       } else {
-        since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0, note, rate, unit });
+        since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0, note, rate, unit, timeline });
       }
       save(KEY_SINCE, since); closeSheet(); renderSince();
     }));

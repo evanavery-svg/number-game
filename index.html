@@ -642,6 +642,23 @@
     .since-log-row:first-child { border-top: none; }
     .since-log-date { color: var(--faint); font-size: 12px; flex: none; min-width: 44px; font-variant-numeric: tabular-nums; }
     .since-log-reason { color: var(--muted); overflow-wrap: anywhere; }
+    /* recovery timeline */
+    .rec-title { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); margin-top: 15px; }
+    .rec { position: relative; margin-top: 10px; }
+    .rec::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 12px; width: 2px; background: var(--hair); }
+    .rec-row { display: flex; gap: 13px; padding: 5px 0; align-items: flex-start; position: relative; }
+    .rec-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-2); flex: none; margin-top: 3px; box-shadow: 0 0 0 3px var(--surface); z-index: 1; }
+    .rec-row.reached .rec-dot { background: var(--safe); }
+    .rec-row.next .rec-dot { background: var(--bg); box-shadow: inset 0 0 0 2.5px var(--accent), 0 0 0 3px var(--surface); }
+    .rec-body { flex: 1; min-width: 0; }
+    .rec-head { display: flex; align-items: baseline; gap: 8px; }
+    .rec-label { font-size: 13px; font-weight: 700; color: var(--text); }
+    .rec-when { font-size: 11px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .rec-text { font-size: 13px; color: var(--muted); line-height: 1.4; margin-top: 1px; }
+    .rec-row.future .rec-label { color: var(--faint); }
+    .rec-row.future .rec-text { color: var(--faint); }
+    .rec-row.next .rec-label { color: var(--accent); }
+
     /* don't-break-the-chain clean-days grid */
     .chain-title { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); margin-top: 15px; }
     .chain-grid { display: grid; grid-template-columns: repeat(13, 1fr); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 3px; margin-top: 8px; }
@@ -1106,7 +1123,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v7.7 · © Avery LLC</div>
+  <div class="version">v7.8 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
