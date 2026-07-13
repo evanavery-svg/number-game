@@ -2973,6 +2973,21 @@ function openSinceForm(id) {
     }
     if (existing) {
       s.appendChild(makeBtn("Reset to now", "", () => openResetPause(existing)));
+      // wipe the tallies (reset count, chain calendar, journal) back to zero
+      // without touching the running timer
+      if ((existing.resets || 0) > 0 || (existing.log || []).length || (existing.best || 0) > 0) {
+        s.appendChild(makeBtn("Clear reset history", "", () => {
+          confirmSheet("Start the count over?", "Sets resets back to 0 and clears the clean-days calendar, best run and private journal for this tracker. Your current timer keeps running. This can't be undone.", "Clear", () => {
+            existing.resets = 0;
+            existing.best = 0;
+            existing.log = [];
+            const elapsed = Math.max(0, Date.now() - new Date(existing.start).getTime());
+            existing.seenMile = highestMile(elapsed);   // don't re-announce old milestones
+            save(KEY_SINCE, since); closeSheet(); renderSince();
+            toast("Cleared — fresh start ✓");
+          }, true);
+        }));
+      }
       s.appendChild(makeBtn("Delete tracker", "danger", () => {
         confirmSheet("Delete tracker?", `"${existing.name}" will be removed.`, "Delete", () => {
           since = since.filter((x) => x.id !== existing.id); save(KEY_SINCE, since); renderSince();
