@@ -16,6 +16,7 @@ const KEY_JOURNAL_PIN = "count.journalPin";   // separate passcode for the priva
 const KEY_JOURNAL_SALT = "count.journalSalt";
 const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id for journal Face ID
 const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
+const KEY_TL = "count.tl";                    // hidden flag for the optional tracker timeline
 const KEY_REMIND = "count.remind";          // bool
 const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
 const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
@@ -130,6 +131,7 @@ let moodDaily = load(KEY_MOOD_DAILY, {});   // once-a-day mood pulse, keyed by d
 let gameOn = load(KEY_GAME_ON, true);       // daily focus game (toggle in Settings)
 let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
 let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
+let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
@@ -2611,8 +2613,8 @@ function renderSince() {
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     card.appendChild(st);
 
-    // optional wellbeing timeline
-    if (it.timeline) appendRecovery(card, it);
+    // optional wellbeing timeline (hidden flag / legacy per-tracker)
+    if (timelineOn || it.timeline) appendRecovery(card, it);
 
     // don't-break-the-chain calendar of clean vs slip days
     appendChain(card, it);
@@ -2997,9 +2999,6 @@ function openSinceForm(id) {
     unitInput.value = existing ? (existing.unit || "$") : "$";
     s.appendChild(unitInput);
 
-    const timelineToggle = makeToggle(s, "Show recovery timeline", existing ? !!existing.timeline : false);
-    addEl(s, "p", "A timeline of how you tend to feel better the longer you keep it up.", "sub");
-
     s.appendChild(makeBtn("Save", "primary", () => {
       const nm = name.value.trim();
       if (!nm) { toast("Add a name"); return; }
@@ -3008,12 +3007,11 @@ function openSinceForm(id) {
       const note = noteTa.value.replace(/\s*\n\s*/g, " ").trim();
       const rate = Math.max(0, parseFloat(rateInput.value) || 0);
       const unit = unitInput.value.trim() || "$";
-      const timeline = timelineToggle.checked;
       if (existing) {
         existing.name = nm; existing.start = st.toISOString();
-        existing.note = note; existing.rate = rate; existing.unit = unit; existing.timeline = timeline;
+        existing.note = note; existing.rate = rate; existing.unit = unit;
       } else {
-        since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0, note, rate, unit, timeline });
+        since.push({ id: sid(), name: nm, start: st.toISOString(), best: 0, resets: 0, note, rate, unit });
       }
       save(KEY_SINCE, since); closeSheet(); renderSince();
     }));
@@ -3338,6 +3336,26 @@ el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
 el.moreBtn.addEventListener("click", openMore);
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
+
+// Hidden gesture: tap the date 5×, then the footer 5×, to flip the flag.
+(() => {
+  const footer = document.querySelector(".version");
+  if (!el.date || !footer) return;
+  let a = 0, b = 0, t = null;
+  const arm = () => { clearTimeout(t); t = setTimeout(() => { a = 0; b = 0; }, 4000); };
+  el.date.addEventListener("click", () => { if (a < 5) { a++; b = 0; arm(); } });
+  footer.addEventListener("click", () => {
+    if (a < 5) return;
+    b++; arm();
+    if (b >= 5) {
+      clearTimeout(t); a = 0; b = 0;
+      timelineOn = !timelineOn; save(KEY_TL, timelineOn);
+      buzz([0, 30, 50, 30]);
+      toast(timelineOn ? "On" : "Off");
+      if (el.sinceOverlay.classList.contains("show")) renderSince();
+    }
+  });
+})();
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 el.statsBtn.addEventListener("click", openInsights);
 el.insightsClose.addEventListener("click", closeInsights);
