@@ -642,6 +642,22 @@
     .since-log-row:first-child { border-top: none; }
     .since-log-date { color: var(--faint); font-size: 12px; flex: none; min-width: 44px; font-variant-numeric: tabular-nums; }
     .since-log-reason { color: var(--muted); overflow-wrap: anywhere; }
+    /* urge-resisted + ride-it-out */
+    .urge-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .urge-count { font-size: 13px; font-weight: 700; color: var(--muted); }
+    .urge-btn { border: none; cursor: pointer; background: var(--surface-2); color: var(--accent); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 8px 15px; transition: transform 0.08s ease; }
+    .urge-btn:active { transform: scale(0.96); }
+    .craving-clock { font-size: 52px; font-weight: 300; letter-spacing: -2px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: 8px 0 2px; }
+    .craving-line { text-align: center; font-size: 14px; color: var(--muted); min-height: 20px; }
+    /* weekly recap */
+    .recap { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
+    .recap-row { display: flex; align-items: center; gap: 13px; padding: 11px 2px; border-top: 1px solid var(--hair); }
+    .recap-row:first-child { border-top: none; }
+    .recap-ico { font-size: 22px; flex: none; width: 26px; text-align: center; }
+    .recap-body { flex: 1; min-width: 0; }
+    .recap-val { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .recap-lbl { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
     /* recovery timeline */
     .rec-title { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); margin-top: 15px; }
     .rec { position: relative; margin-top: 10px; }
@@ -1125,7 +1141,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.0 · © Avery LLC</div>
+  <div class="version">v8.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

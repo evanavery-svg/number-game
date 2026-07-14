@@ -16,7 +16,8 @@ const KEY_JOURNAL_PIN = "count.journalPin";   // separate passcode for the priva
 const KEY_JOURNAL_SALT = "count.journalSalt";
 const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id for journal Face ID
 const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
-const KEY_TL = "count.tl";                    // hidden flag for the optional tracker timeline
+const KEY_TL = "count.tl";                    // hidden flag for the optional tracker extras
+const KEY_RECAP_LAST = "count.recapLast";     // week key of the last recap shown
 const KEY_REMIND = "count.remind";          // bool
 const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
 const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
@@ -1786,7 +1787,7 @@ function openSheet(builder) {
   el.overlay.classList.add("show");
   staggerIn(el.sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
 }
-function closeSheet() { clearWorryTimer(); el.overlay.classList.remove("show"); }
+function closeSheet() { clearWorryTimer(); if (cravingTimer) { clearInterval(cravingTimer); cravingTimer = null; } el.overlay.classList.remove("show"); }
 function addEl(parent, tag, text, cls) {
   const e = document.createElement(tag);
   if (text != null) e.textContent = text;
@@ -2532,6 +2533,106 @@ function appendChain(card, it) {
   card.appendChild(cap);
 }
 
+// Ride out a craving — a timed pause that logs a win when you make it through.
+let cravingTimer = null;
+const CRAVE_SECONDS = 300;
+const CRAVE_LINES = [
+  "You're stronger than the urge.",
+  "This feeling is temporary — let it pass.",
+  "Breathe. You don't have to act on it.",
+  "Every second here is a win.",
+  "The wave rises, then it falls.",
+  "Almost there — stay with it.",
+];
+function logUrgeWin(it) {
+  it.urges = it.urges || [];
+  it.urges.push(new Date().toISOString());
+  save(KEY_SINCE, since);
+}
+function openCravingTimer(it) {
+  if (cravingTimer) { clearInterval(cravingTimer); cravingTimer = null; }
+  openSheet((s) => {
+    addEl(s, "h3", "Ride it out");
+    addEl(s, "p", "Cravings peak and pass, usually within a few minutes. Sit with it — you don't have to act.", "sub");
+    const clock = document.createElement("div"); clock.className = "craving-clock"; s.appendChild(clock);
+    const wrap = document.createElement("div"); wrap.className = "breath-wrap";
+    const orb = document.createElement("div"); orb.className = "breath-orb in"; wrap.appendChild(orb); s.appendChild(wrap);
+    const line = addEl(s, "p", CRAVE_LINES[0], "craving-line");
+    let left = CRAVE_SECONDS, phase = 0;
+    const paint = () => { const m = Math.floor(left / 60), sec = left % 60; clock.textContent = `${m}:${String(sec).padStart(2, "0")}`; };
+    paint();
+    // gently pulse the orb in/out on a slow loop for something to breathe with
+    const phases = ["in", "out"];
+    cravingTimer = setInterval(() => {
+      left -= 1; paint();
+      if (left % 5 === 0) { phase = (phase + 1) % 2; orb.className = "breath-orb " + phases[phase]; }
+      if (left % 30 === 0) line.textContent = CRAVE_LINES[(Math.random() * CRAVE_LINES.length) | 0];
+      if (left <= 0) {
+        clearInterval(cravingTimer); cravingTimer = null;
+        logUrgeWin(it);
+        buzz([0, 40, 60, 40, 60, 90]);
+        confettiBurst(window.innerWidth / 2, window.innerHeight / 2, 22);
+        toast("You rode it out 🌊 — that's a win", 3600);
+        closeSheet(); renderSince();
+      }
+    }, 1000);
+    s.appendChild(makeBtn("I made it 💪", "primary", () => {
+      clearInterval(cravingTimer); cravingTimer = null;
+      logUrgeWin(it);
+      buzz([0, 30, 50, 30]);
+      confettiBurst(window.innerWidth / 2, window.innerHeight / 2, 18);
+      toast("Urge beaten 🛡️ — that's a win", 3000);
+      closeSheet(); renderSince();
+    }));
+    s.appendChild(makeBtn("Back", "ghost", () => { clearInterval(cravingTimer); cravingTimer = null; closeSheet(); }));
+  });
+}
+
+// A gentle weekly recap — shown once a week when the combo is active.
+function weekKey() {
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay());
+  return isoLocal(d);
+}
+function maybeWeeklyRecap() {
+  if (!timelineOn || gatesUp()) return;
+  const wk = weekKey();
+  const last = load(KEY_RECAP_LAST, null);
+  if (last == null) { save(KEY_RECAP_LAST, wk); return; }   // first sight — arm, don't show
+  if (last === wk) return;
+  save(KEY_RECAP_LAST, wk);
+  openWeeklyRecap();
+}
+function openWeeklyRecap() {
+  const weekAgo = Date.now() - 7 * DAY;
+  const wkHist = history.filter((d) => new Date(d.endedAt || d.date).getTime() >= weekAgo);
+  const total = wkHist.reduce((sum, d) => sum + d.total, 0);
+  const moods = Object.keys(moodDaily).filter((k) => new Date(k).getTime() >= weekAgo).map((k) => moodDaily[k]);
+  const avgMood = moods.length ? moods.reduce((a, b) => a + b, 0) / moods.length : null;
+  const wins = wkHist.reduce((sum, d) => sum + ((d.wins && d.wins.length) || 0), 0);
+  openSheet((s) => {
+    addEl(s, "h3", "Your week");
+    addEl(s, "p", "A quick look back at the last 7 days.", "sub");
+    const list = document.createElement("div"); list.className = "recap"; s.appendChild(list);
+    const row = (icon, label, value) => {
+      const r = document.createElement("div"); r.className = "recap-row";
+      addEl(r, "span", icon, "recap-ico");
+      const b = document.createElement("div"); b.className = "recap-body";
+      addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
+      r.appendChild(b); list.appendChild(r);
+    };
+    row("📊", wkHist.length + (wkHist.length === 1 ? " day logged" : " days logged"), fmt(round2(total)) + " tracked");
+    if (avgMood != null) row("🙂", "average mood", `${moodEmoji(avgMood)} ${avgMood.toFixed(1)}`);
+    if (wins > 0) row("✓", wins === 1 ? "tiny win" : "tiny wins", String(wins));
+    since.forEach((it) => {
+      const runMs = Math.max(0, Date.now() - new Date(it.start).getTime());
+      const wonWeek = (it.urges || []).filter((t) => new Date(t).getTime() >= weekAgo).length;
+      row("🔥", it.name + (wonWeek ? ` · ${wonWeek} urge${wonWeek === 1 ? "" : "s"} resisted` : ""), durLabel(runMs) + " strong");
+    });
+    addEl(s, "p", "Small steps, every day. Keep going.", "sub");
+    s.appendChild(makeBtn("Nice", "primary", closeSheet));
+  });
+}
+
 function renderSince() {
   const list = el.sinceList;
   list.textContent = "";
@@ -2612,6 +2713,18 @@ function renderSince() {
     const st = document.createElement("div"); st.className = "since-start";
     st.textContent = "since " + new Date(it.start).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     card.appendChild(st);
+
+    // urge-resisted tally + ride-it-out button (only when the combo is active)
+    if (timelineOn) {
+      const won = (it.urges || []).length;
+      const urge = document.createElement("div"); urge.className = "urge-row";
+      addEl(urge, "div", `🛡️ ${won} urge${won === 1 ? "" : "s"} resisted`, "urge-count");
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "urge-btn";
+      btn.textContent = "Craving? Ride it out";
+      btn.addEventListener("click", (ev) => { ev.stopPropagation(); openCravingTimer(it); });
+      urge.appendChild(btn);
+      card.appendChild(urge);
+    }
 
     // optional wellbeing timeline (hidden flag / legacy per-tracker)
     if (timelineOn || it.timeline) appendRecovery(card, it);
@@ -3391,6 +3504,7 @@ maybeLock();
 runDailyGates();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
 checkMilestones();
 checkRiskyTimes();
+maybeWeeklyRecap();
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
@@ -3398,6 +3512,7 @@ document.addEventListener("visibilitychange", () => {
   checkReminder();
   checkMilestones();
   checkRiskyTimes();
+  maybeWeeklyRecap();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
 
