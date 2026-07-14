@@ -85,6 +85,7 @@ const el = {
   weekdayCard: document.getElementById("weekdayCard"),
   timeCard: document.getElementById("timeCard"),
   moodCard: document.getElementById("moodCard"),
+  connCard: document.getElementById("connCard"),
   winsCard: document.getElementById("winsCard"),
   tapLogCard: document.getElementById("tapLogCard"),
   sinceStrip: document.getElementById("sinceStrip"),
@@ -396,7 +397,9 @@ function endGame(score) {
   addEl(end, "div", isBest && score > 0 ? `New best · ${score}` : `Score ${score} · best ${gameBest}`, "gg-end-sub");
   el.gameGate.appendChild(end);
   buzz([0, 25, 45, 25]);
-  setTimeout(hideGameGate, reduceMotion() ? 0 : 3000);   // give a beat to read the message
+  // linger so the message can be read, but a tap dismisses right away
+  const t = setTimeout(hideGameGate, reduceMotion() ? 0 : 3000);
+  end.addEventListener("click", () => { clearTimeout(t); hideGameGate(); }, { once: true });
 }
 function hideGameGate() {
   document.body.style.overflow = "";
@@ -445,9 +448,7 @@ function monthDayIndex(d) {
 }
 
 // ---- helpers ----
-function round2(n) { return Math.round(n * 100) / 100; }
-function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros: 12.5, 13, 0.25
-function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+// round2 / fmt / dayLabel live in core.js
 function reduceMotion() { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
 
 // ---- shared motion helpers ----
@@ -684,7 +685,58 @@ function renderInsights() {
   renderWeekday();
   renderTimeOfDay();
   renderMood();
+  renderConnections();
   renderWins();
+}
+
+// Connections — cross-links the count against the end-day check-ins: how much
+// more (or less) you log on days a factor was present, and on low-mood days.
+// For a limit, logging less is the good direction.
+function renderConnections() {
+  const card = el.connCard;
+  const days = history.filter((d) => typeof d.total === "number");
+  const lines = [];
+
+  const avg = (arr) => arr.reduce((s, d) => s + d.total, 0) / arr.length;
+  FACTORS.forEach((f) => {
+    // compare only among days that actually recorded factors
+    const on = days.filter((d) => (d.factors || []).includes(f.key));
+    const offR = days.filter((d) => Array.isArray(d.factors) && !d.factors.includes(f.key));
+    if (on.length < 2 || offR.length < 2) return;
+    const aOn = avg(on), aOff = avg(offR);
+    if (aOff <= 0) return;
+    const pct = Math.round(((aOn - aOff) / aOff) * 100);
+    if (Math.abs(pct) < 20) return;
+    lines.push({ mag: Math.abs(pct), html: pct < 0
+      ? `You log <span class="mc-up">${Math.abs(pct)}% less</span> on days you <b>${f.phrase}</b>`
+      : `You log <span class="mc-down">${pct}% more</span> on days you <b>${f.phrase}</b>` });
+  });
+
+  // low-mood vs good-mood days (from end-day check-ins)
+  const lows = days.filter((d) => d.mood != null && d.mood <= 2);
+  const highs = days.filter((d) => d.mood != null && d.mood >= 4);
+  if (lows.length >= 2 && highs.length >= 2) {
+    const aLow = avg(lows), aHigh = avg(highs);
+    if (aHigh > 0) {
+      const pct = Math.round(((aLow - aHigh) / aHigh) * 100);
+      if (Math.abs(pct) >= 20) {
+        lines.push({ mag: Math.abs(pct), html: pct > 0
+          ? `You log <span class="mc-down">${pct}% more</span> on <b>rough-mood days</b>`
+          : `You log <span class="mc-up">${Math.abs(pct)}% less</span> on <b>rough-mood days</b>` });
+      }
+    }
+  }
+
+  if (!lines.length) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+  addEl(card, "div", "Connections", "section-title");
+  lines.sort((a, b) => b.mag - a.mag).slice(0, 3).forEach((l) => {
+    const p = document.createElement("div");
+    p.className = "mood-corr";
+    p.innerHTML = l.html;
+    card.appendChild(p);
+  });
 }
 
 // Mood & patterns — average check-in, a recent sparkline, and factor
@@ -1001,12 +1053,6 @@ function renderWeekday() {
   }
 }
 
-function hourLabel(h) {
-  const ampm = h < 12 ? "AM" : "PM";
-  let hr = h % 12; if (hr === 0) hr = 12;
-  return `${hr} ${ampm}`;
-}
-
 // When you typically tap — every recorded tap time (history + today) bucketed
 // by hour of day, so you can see the rhythm of the habit.
 function renderTimeOfDay() {
@@ -1055,20 +1101,7 @@ function renderTimeOfDay() {
   card.appendChild(callout);
 }
 
-function isoLocal(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-// Taps made in the wee hours still belong to the day before, the way a late
-// night out "counts" as last night even after midnight. Anything tapped
-// before this hour rolls back to the previous calendar day for the purposes
-// of KEY_ACT_DATE / End Day's date default.
-const DAY_CUTOFF_HOUR = 4;
-function sessionDate(d) {
-  d = d || new Date();
-  const shifted = new Date(d);
-  if (shifted.getHours() < DAY_CUTOFF_HOUR) shifted.setDate(shifted.getDate() - 1);
-  return isoLocal(shifted);
-}
+// isoLocal / sessionDate (4am cutoff) live in core.js
 
 function statTile(value, label, opts) {
   opts = opts || {};
@@ -1929,6 +1962,8 @@ function openSettings() {
     s.appendChild(makeBtn(lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); openLockSettings(); }));
     s.appendChild(makeBtn(journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { closeSheet(); openJournalPinSettings(); }));
     s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
+    s.appendChild(makeBtn("Full backup (everything)", "link", () => { closeSheet(); startFullBackup(); }));
+    s.appendChild(makeBtn("Restore from backup", "link", () => { closeSheet(); startRestore(); }));
 
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
@@ -2046,11 +2081,7 @@ function numInput(value, min) {
   return i;
 }
 
-// ---- backup export (notes quoted so commas are safe) ----
-function csvField(v) {
-  v = String(v == null ? "" : v);
-  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
-}
+// ---- backup export (csvField in core.js quotes the notes) ----
 function exportCsv() {
   const rows = [["date", "ended_at", "total", "taps", "note"]];
   history.forEach((d) => rows.push([d.date, d.endedAt, fmt(d.total), d.taps, d.note || ""]));
@@ -2063,6 +2094,118 @@ function exportCsv() {
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   toast("Backup downloaded");
+}
+
+// ---- full backup & restore ----
+// Everything lives only in this browser's storage — if the device is lost or
+// the browser clears site data, it's gone. A full backup is one JSON file of
+// every key; when a journal passcode is set the file is AES-GCM encrypted with
+// it, so the private journal never leaves the device readable.
+function downloadFile(name, text, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime || "application/json" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+async function backupKey(pass, saltHex) {
+  const salt = Uint8Array.from(saltHex.match(/../g).map((h) => parseInt(h, 16)));
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 150000, hash: "SHA-256" }, base,
+    { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+function gatherAll() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith("count.")) data[k] = localStorage.getItem(k);
+  }
+  return data;
+}
+async function writeBackup(pass) {
+  const payload = JSON.stringify(gatherAll());
+  let file;
+  if (pass) {
+    const salt = randHex(16), ivHex = randHex(12);
+    const iv = Uint8Array.from(ivHex.match(/../g).map((h) => parseInt(h, 16)));
+    const key = await backupKey(pass, salt);
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(payload));
+    file = { app: "tracker-backup", v: 1, enc: true, at: new Date().toISOString(), salt, iv: ivHex, ct: b64(ct) };
+  } else {
+    file = { app: "tracker-backup", v: 1, enc: false, at: new Date().toISOString(), data: gatherAll() };
+  }
+  downloadFile(`tracker-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(file));
+  toast("Full backup downloaded ✓");
+}
+function startFullBackup() {
+  if (journalPinSet()) {
+    // encrypt with the journal passcode (and confirm the owner is asking)
+    openSheet((s) => {
+      addEl(s, "h3", "Full backup");
+      addEl(s, "p", "The file will be encrypted with your journal passcode — you'll need it to restore.", "sub");
+      addEl(s, "label", "Journal passcode");
+      const p = pinField(); s.appendChild(p);
+      const err = addEl(s, "p", "", "sub"); err.style.color = "var(--over)"; err.style.minHeight = "16px";
+      s.appendChild(makeBtn("Download backup", "primary", async () => {
+        if (!(await journalPinMatches(p.value.trim()))) { err.textContent = "Wrong passcode"; p.value = ""; buzz([0, 40, 60, 40]); return; }
+        const pass = p.value.trim();
+        closeSheet();
+        await writeBackup(pass);
+      }));
+      s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+      setTimeout(() => p.focus(), 50);
+    });
+  } else {
+    confirmSheet("Full backup", "Downloads one file with everything in the app, unencrypted (no journal passcode is set). Keep it somewhere safe.", "Download", () => writeBackup(null));
+  }
+}
+function applyBackup(data) {
+  // replace this device's data with the backup's
+  Object.keys(gatherAll()).forEach((k) => localStorage.removeItem(k));
+  Object.keys(data).forEach((k) => { if (k.startsWith("count.")) localStorage.setItem(k, data[k]); });
+  toast("Restored — reloading…");
+  setTimeout(() => location.reload(), 700);
+}
+function startRestore() {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = ".json,application/json";
+  input.addEventListener("change", () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let file;
+      try { file = JSON.parse(reader.result); } catch (e) { toast("That's not a backup file"); return; }
+      if (!file || file.app !== "tracker-backup" || !file.v) { toast("That's not a backup file"); return; }
+      const when = file.at ? new Date(file.at).toLocaleDateString() : "unknown date";
+      if (!file.enc) {
+        confirmSheet("Restore backup?", `From ${when}. This replaces everything currently in the app on this device.`, "Restore", () => applyBackup(file.data || {}), true);
+        return;
+      }
+      // encrypted — ask for the passcode it was made with
+      openSheet((s) => {
+        addEl(s, "h3", "Restore backup");
+        addEl(s, "p", `Encrypted backup from ${when}. Enter the journal passcode it was made with. This replaces everything on this device.`, "sub");
+        addEl(s, "label", "Passcode");
+        const p = pinField(); s.appendChild(p);
+        const err = addEl(s, "p", "", "sub"); err.style.color = "var(--over)"; err.style.minHeight = "16px";
+        s.appendChild(makeBtn("Restore", "danger", async () => {
+          try {
+            const key = await backupKey(p.value.trim(), file.salt);
+            const iv = Uint8Array.from(file.iv.match(/../g).map((h) => parseInt(h, 16)));
+            const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, unb64(file.ct));
+            applyBackup(JSON.parse(new TextDecoder().decode(pt)));
+          } catch (e) {
+            err.textContent = "Wrong passcode for this backup"; p.value = ""; buzz([0, 40, 60, 40]);
+          }
+        }));
+        s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+        setTimeout(() => p.focus(), 50);
+      });
+    };
+    reader.readAsText(f);
+  });
+  input.click();
 }
 
 // ---- app lock (passcode + optional Face ID via WebAuthn) ----
@@ -2311,56 +2454,8 @@ function notifyOnce(todayStr) {
 let sinceTimer = null;
 
 function sid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-function partsMs(ms) {
-  if (ms < 0) ms = 0;
-  const t = Math.floor(ms / 1000);
-  return { d: Math.floor(t / 86400), h: Math.floor((t % 86400) / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
-}
+// durations & milestone math live in core.js
 function sinceParts(start) { return partsMs(Date.now() - new Date(start).getTime()); }
-function bigSince(p) {
-  if (p.d > 0) return { n: p.d, u: p.d === 1 ? "day" : "days" };
-  if (p.h > 0) return { n: p.h, u: p.h === 1 ? "hour" : "hours" };
-  if (p.m > 0) return { n: p.m, u: p.m === 1 ? "minute" : "minutes" };
-  return { n: p.s, u: p.s === 1 ? "second" : "seconds" };
-}
-// A short label for a duration in ms, e.g. "12d 4h", "5h 12m", "2m".
-function durLabel(ms) {
-  const p = partsMs(ms);
-  if (p.d > 0) return `${p.d}d ${p.h}h`;
-  if (p.h > 0) return `${p.h}h ${p.m}m`;
-  if (p.m > 0) return `${p.m}m ${p.s}s`;
-  return `${p.s}s`;
-}
-// Milestones a "time since" run can reach. Past a year we roll over to whole years.
-const HR = 3600e3, DAY = 86400e3, YR = 365 * DAY;
-const MILES = [
-  { ms: HR, label: "1 hour", short: "1h" }, { ms: 12 * HR, label: "12 hours", short: "12h" },
-  { ms: DAY, label: "1 day", short: "1d" }, { ms: 3 * DAY, label: "3 days", short: "3d" },
-  { ms: 7 * DAY, label: "1 week", short: "1w" }, { ms: 14 * DAY, label: "2 weeks", short: "2w" },
-  { ms: 30 * DAY, label: "1 month", short: "1mo" }, { ms: 90 * DAY, label: "3 months", short: "3mo" },
-  { ms: 180 * DAY, label: "6 months", short: "6mo" }, { ms: YR, label: "1 year", short: "1y" },
-];
-// The next milestone above the elapsed time, and the previous one reached.
-function nextMile(ms) {
-  for (const m of MILES) if (m.ms > ms) return m;
-  const years = Math.floor(ms / YR) + 1;
-  return { ms: years * YR, label: years + " years" };
-}
-function prevMileMs(ms) {
-  let p = 0;
-  for (const m of MILES) { if (m.ms <= ms) p = m.ms; else return p; }
-  if (ms >= YR) p = Math.floor(ms / YR) * YR;
-  return p;
-}
-// The milestones to show as chips — the fixed set, plus whole years once past one.
-function mileList(elapsed) {
-  const out = MILES.map((m) => ({ ms: m.ms, short: m.short }));
-  if (elapsed >= YR) {
-    const years = Math.floor(elapsed / YR) + 1;
-    for (let y = 2; y <= years; y++) out.push({ ms: y * YR, short: y + "y" });
-  }
-  return out;
-}
 // Optional per-tracker wellbeing timeline — stages that light up as the run
 // grows. Timing reflects commonly reported recovery phases (early urges, a
 // mid dip, then steadily building gains). Each has a little indicator icon.
@@ -2379,58 +2474,17 @@ const RECOVERY_STAGES = [
   { label: "6 months", ms: 180 * DAY,   icon: "🧭", text: "Steady, clear, in control" },
   { label: "1 year",   ms: 365 * DAY,   icon: "🏔️", text: "Transformed — this is who you are now" },
 ];
-// Money/units accrued so far at a per-day rate. Symbols prefix, words suffix.
-function savedText(rate, unit, ms) {
-  const total = round2(rate * (ms / DAY));
-  const u = (unit || "$").trim();
-  const sym = u.length <= 1 || ["$", "£", "€", "¥", "₹"].includes(u);
-  return sym ? `${u}${fmt(total)}` : `${fmt(total)} ${u}`;
-}
 function toLocalInput(d) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// Patterns across a tracker's slips: top trigger, when they cluster, and
-// whether runs are trending longer over time.
-function resetPatterns(item) {
-  const log = item.log || [];
-  if (log.length < 2) return null;
-  const tagCount = {};
-  log.forEach((e) => (e.tags || []).forEach((t) => { tagCount[t] = (tagCount[t] || 0) + 1; }));
-  let topTag = null, topN = 0;
-  Object.keys(tagCount).forEach((k) => { if (tagCount[k] > topN) { topN = tagCount[k]; topTag = k; } });
-  const hours = new Array(24).fill(0), wdays = new Array(7).fill(0);
-  log.forEach((e) => { const d = new Date(e.at); if (!isNaN(d.getTime())) { hours[d.getHours()]++; wdays[d.getDay()]++; } });
-  let peakH = 0, peakHN = 0; hours.forEach((c, h) => { if (c > peakHN) { peakHN = c; peakH = h; } });
-  let peakW = 0, peakWN = 0; wdays.forEach((c, w) => { if (c > peakWN) { peakWN = c; peakW = w; } });
-  const runs = log.map((e) => e.ran || 0).filter((x) => x > 0);
-  let trend = null;
-  if (runs.length >= 4) {
-    const mid = Math.floor(runs.length / 2);
-    const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
-    const a = mean(runs.slice(0, mid)), b = mean(runs.slice(mid));
-    if (b > a * 1.15) trend = "up"; else if (b < a * 0.85) trend = "down";
-  }
-  return { topTag, topN, peakH, peakHN, peakW, peakWN, trend, count: log.length };
-}
+// resetPatterns (slip triggers/timing/trend/mood-link) lives in core.js
 
 // ---- milestone celebrations + risky-time heads-up ----
 // True while a full-screen gate/lock is covering the app — defer surprises.
 function gatesUp() {
   return (el.lock && el.lock.style.display === "flex") || el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show");
-}
-function highestMile(elapsed) {
-  let m = 0;
-  MILES.forEach((x) => { if (x.ms <= elapsed) m = x.ms; });
-  if (elapsed >= YR) m = Math.floor(elapsed / YR) * YR;
-  return m;
-}
-function mileLabelFor(ms) {
-  const found = MILES.find((x) => x.ms === ms);
-  if (found) return found.label;
-  if (ms >= YR) { const y = Math.round(ms / YR); return y + (y === 1 ? " year" : " years"); }
-  return "a milestone";
 }
 // Celebrate when a run crosses a new milestone. First sight of a tracker just
 // records where it is (so old milestones aren't re-announced).
@@ -2576,23 +2630,22 @@ function openCravingTimer(it) {
         closeSheet(); renderSince();
       }
     }, 1000);
-    s.appendChild(makeBtn("I made it 💪", "primary", () => {
+    const madeIt = makeBtn("I made it 💪", "primary", () => {
       clearInterval(cravingTimer); cravingTimer = null;
       logUrgeWin(it);
       buzz([0, 30, 50, 30]);
-      confettiBurst(window.innerWidth / 2, window.innerHeight / 2, 18);
+      const r = madeIt.getBoundingClientRect();   // burst from the button itself
+      confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 18);
       toast("Urge beaten 🛡️ — that's a win", 3000);
       closeSheet(); renderSince();
-    }));
+    });
+    s.appendChild(madeIt);
     s.appendChild(makeBtn("Back", "ghost", () => { clearInterval(cravingTimer); cravingTimer = null; closeSheet(); }));
   });
 }
 
-// A gentle weekly recap — shown once a week when the combo is active.
-function weekKey() {
-  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay());
-  return isoLocal(d);
-}
+// A gentle weekly recap — mentioned once a week when the combo is active.
+// (weekKey lives in core.js)
 function maybeWeeklyRecap() {
   if (!timelineOn || gatesUp()) return;
   const wk = weekKey();
@@ -2600,7 +2653,8 @@ function maybeWeeklyRecap() {
   if (last == null) { save(KEY_RECAP_LAST, wk); return; }   // first sight — arm, don't show
   if (last === wk) return;
   save(KEY_RECAP_LAST, wk);
-  openWeeklyRecap();
+  // don't interrupt — just mention it; the recap lives in the ⋯ menu
+  toast("📊 Your weekly recap is ready — it's in ⋯", 4200);
 }
 function openWeeklyRecap() {
   const weekAgo = Date.now() - 7 * DAY;
@@ -2749,8 +2803,8 @@ function renderSince() {
         unlockBtn.addEventListener("click", (ev) => { ev.stopPropagation(); promptJournalUnlock(); });
         card.appendChild(unlockBtn);
       } else {
-        // patterns from the slips — triggers, timing, and a hopeful trend
-        const pat = resetPatterns(it);
+        // patterns from the slips — triggers, timing, mood link, and a hopeful trend
+        const pat = resetPatterns(it, moodDaily);
         if (pat) {
           const pw = document.createElement("div"); pw.className = "pat";
           if (pat.topTag) {
@@ -2763,6 +2817,7 @@ function renderSince() {
             if (pat.peakHN >= 2) bits.push("around " + hourLabel(pat.peakH));
             addEl(pw, "div", "Slips cluster " + bits.join(", "), "pat-line");
           }
+          if (pat.moodGap === "low") addEl(pw, "div", "Slips tend to land on lower-mood days — extra care when you're low", "pat-line");
           if (pat.trend === "up") addEl(pw, "div", "📈 Your runs are getting longer — keep it up", "pat-line good");
           if (pw.childNodes.length) card.appendChild(pw);
         }
@@ -2919,7 +2974,7 @@ function promptJournalUnlock(onSuccess) {
   const done = () => { journalUnlocked = true; closeSheet(); (onSuccess || renderSince)(); };
   openSheet((s) => {
     addEl(s, "h3", "Enter passcode");
-    addEl(s, "p", "Unlocks your Time Since trackers.", "sub");
+    addEl(s, "p", "Unlocks your Time Since trackers — they lock again when you close the page.", "sub");
     addEl(s, "label", "Passcode");
     const p = pinField(); s.appendChild(p);
     const err = addEl(s, "p", "", "sub"); err.style.color = "var(--over)"; err.style.minHeight = "16px";
@@ -3438,6 +3493,7 @@ function openMore() {
     s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); requestSince(); }));
     s.appendChild(makeBtn("💧   Water", "", () => { closeSheet(); openWater(); }));
     s.appendChild(makeBtn("🌳   Your Tree", "", () => { closeSheet(); openTree(); }));
+    if (timelineOn) s.appendChild(makeBtn("📊   Your week", "", () => { closeSheet(); openWeeklyRecap(); }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
 }
@@ -3503,7 +3559,8 @@ if (!reduceMotion() && today > 0) {
 maybeLock();
 runDailyGates();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
 checkMilestones();
-checkRiskyTimes();
+// the heads-up waits a beat so it never lands on top of the lock/daily gates
+setTimeout(checkRiskyTimes, 2500);
 maybeWeeklyRecap();
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
@@ -3511,7 +3568,7 @@ document.addEventListener("visibilitychange", () => {
   runDailyGates();
   checkReminder();
   checkMilestones();
-  checkRiskyTimes();
+  setTimeout(checkRiskyTimes, 2500);
   maybeWeeklyRecap();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
@@ -3524,8 +3581,10 @@ setInterval(() => {
   if (lockSet() && el.lock.style.display !== "flex" && !document.hidden) save(KEY_UNLOCK_AT, Date.now());
 }, 60000);
 
-// keep the main-page "time since" strip ticking + watch for milestone crossings
-setInterval(() => { if (!document.hidden && since.length) { tickSinceStrip(); checkMilestones(); } }, 1000);
+// keep the main-page "time since" strip ticking every second; milestone
+// crossings only need a coarser watch (a few seconds late is fine)
+setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1000);
+setInterval(() => { if (!document.hidden && since.length) checkMilestones(); }, 10000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint
 const themeMeta = document.querySelector('meta[name="theme-color"]');
