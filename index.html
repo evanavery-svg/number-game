@@ -481,6 +481,29 @@
     .panel-close { background: none; border: none; color: var(--accent); font-size: 16px; font-weight: 700; cursor: pointer; padding: 6px 4px; }
     .panel-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); }
     .panel-body .history { max-height: none; }
+    /* range switcher */
+    .range-row { display: flex; gap: 7px; margin-bottom: 12px; }
+    .range-chip { flex: 1; border: none; cursor: pointer; background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 8px 0; box-shadow: var(--card-shadow); transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease; }
+    .range-chip:active { transform: scale(0.96); }
+    .range-chip.on { background: var(--accent); color: var(--btn-text); box-shadow: none; }
+    /* on-pace line */
+    .pace-line { font-size: 13px; color: var(--muted); text-align: center; margin: -4px 0 14px; line-height: 1.4; }
+    .pace-line b { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+    .pace-line b.good { color: var(--safe); }
+    .pace-line b.bad { color: var(--over); }
+    /* trend line */
+    .trend-svg { width: 100%; height: 84px; display: block; margin: 12px 0 2px; overflow: visible; }
+    .trend-poly { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    .trend-goal { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: 0.7; }
+    /* year heatmap */
+    .year-grid { display: grid; grid-template-columns: repeat(53, 1fr); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 2px; margin-top: 8px; }
+    .year-cell { width: 100%; aspect-ratio: 1 / 1; border-radius: 2px; background: var(--surface-2); }
+    .year-cell.under { background: var(--safe); }
+    .year-cell.over { background: var(--over); }
+    .year-cell.logged { background: var(--accent-dim); }
+    .year-cell.empty { background: var(--surface-2); opacity: 0.5; }
+    .year-cell.future { background: transparent; }
+    .year-cell.today { box-shadow: inset 0 0 0 1.5px var(--accent); }
     .insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     .tile { background: var(--surface); border-radius: 16px; padding: 15px 14px; box-shadow: var(--card-shadow); }
     .tile-val { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -853,8 +876,9 @@
     .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
     .wk { display: flex; align-items: flex-end; gap: 6px; height: 60px; }
-    .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+    .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; cursor: pointer; transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     .wk-bar.peak { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
+    .wk-bar.sel { outline: 2px solid var(--text); outline-offset: 1px; }
     .wk-labels { display: flex; gap: 6px; margin-top: 7px; }
     .wk-labels span { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
     .wk-callout { font-size: 13px; color: var(--muted); margin-top: 12px; }
@@ -862,7 +886,8 @@
 
     /* ---- time-of-day chart (insights) ---- */
     .tod { display: flex; align-items: flex-end; gap: 2px; height: 64px; }
-    .tod-bar { flex: 1; background: var(--surface-2); border-radius: 3px 3px 1px 1px; min-height: 2px; transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+    .tod-bar { flex: 1; background: var(--surface-2); border-radius: 3px 3px 1px 1px; min-height: 2px; cursor: pointer; transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+    .tod-bar.sel { outline: 2px solid var(--text); outline-offset: 1px; }
     .tod-bar.peak { background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
     .tod-labels { display: flex; justify-content: space-between; margin-top: 7px; }
     .tod-labels span { font-size: 10px; font-weight: 600; color: var(--faint); }
@@ -1148,7 +1173,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.3 · © Avery LLC</div>
+  <div class="version">v8.4 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1202,10 +1227,15 @@
         <button class="panel-close" id="insightsClose">Done</button>
       </div>
       <div class="panel-body">
+        <div class="range-row" id="rangeRow"></div>
         <div class="insights-grid" id="insightsGrid"></div>
+        <div class="pace-line" id="paceLine" style="display:none"></div>
 
+        <div class="chart-card" id="recordsCard" style="display:none"></div>
         <div class="chart-card" id="tapLogCard" style="display:none"></div>
+        <div class="chart-card" id="trendCard" style="display:none"></div>
         <div class="chart-card" id="calCard" style="display:none"></div>
+        <div class="chart-card" id="yearCard" style="display:none"></div>
         <div class="chart-card" id="weekdayCard" style="display:none"></div>
         <div class="chart-card" id="timeCard" style="display:none"></div>
         <div class="chart-card" id="moodCard" style="display:none"></div>

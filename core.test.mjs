@@ -76,6 +76,16 @@ test("resetPatterns finds top tag, cluster and trend", () => {
   assert.equal(core.resetPatterns({ log: [{ at: "x" }] }), null); // too few
 });
 
+test("rollingAverage smooths over a trailing window, ignoring gaps", () => {
+  assert.deepEqual(core.rollingAverage([1, 2, 3], 3), [1, 1.5, 2]);
+  // nulls are skipped; window looks back 3
+  assert.deepEqual(core.rollingAverage([2, null, 4], 3), [2, 2, 3]);
+  // all-null window yields null
+  assert.deepEqual(core.rollingAverage([null, null], 2), [null, null]);
+  // window of 2 on a longer series
+  assert.deepEqual(core.rollingAverage([4, 6, 8, 10], 2), [4, 5, 7, 9]);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

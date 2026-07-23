@@ -144,11 +144,22 @@ function resetPatterns(item, moods) {
   return { topTag, topN, peakH, peakHN, peakW, peakWN, trend, moodGap, count: log.length };
 }
 
+// Trailing-window average over a chronological array (nulls = no data that
+// day). Returns an array the same length; each point is the mean of the
+// available values in the trailing `window`, or null if none.
+function rollingAverage(values, window) {
+  return values.map((_, i) => {
+    const start = Math.max(0, i - window + 1);
+    const slice = values.slice(start, i + 1).filter((v) => v != null);
+    return slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : null;
+  });
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
-    highestMile, mileLabelFor, savedText, csvField, resetPatterns,
+    highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
   };
 }

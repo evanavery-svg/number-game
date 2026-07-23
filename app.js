@@ -81,6 +81,11 @@ const el = {
   reminder: document.getElementById("reminderBanner"),
   reminderText: document.getElementById("reminderText"),
   reminderDismiss: document.getElementById("reminderDismiss"),
+  rangeRow: document.getElementById("rangeRow"),
+  paceLine: document.getElementById("paceLine"),
+  recordsCard: document.getElementById("recordsCard"),
+  trendCard: document.getElementById("trendCard"),
+  yearCard: document.getElementById("yearCard"),
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
   timeCard: document.getElementById("timeCard"),
@@ -139,6 +144,7 @@ let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
 let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
+let insightRange = 30;               // Insights stat window in days (Infinity = all time)
 // Theme keys must match the CSS blocks + the head inline script's `order`.
 const THEMES = [
   { key: "default", name: "Classic",    accent: "#ff9500", bg: "#000000" },
@@ -647,46 +653,211 @@ function render() {
   renderSinceStrip();
 }
 
+// History entries within the last `days` (Infinity = all time).
+function histInRange(days) {
+  if (!isFinite(days)) return history.slice();
+  const cutoff = Date.now() - days * 864e5;
+  return history.filter((d) => new Date(d.endedAt || d.date).getTime() >= cutoff);
+}
+function rangeLabel(days) {
+  return days === 7 ? "Last 7 days" : days === 30 ? "Last 30 days" : days === 90 ? "Last 90 days" : "All time";
+}
+const RANGES = [{ n: 7, t: "7d" }, { n: 30, t: "30d" }, { n: 90, t: "90d" }, { n: Infinity, t: "All" }];
+function renderRangeRow() {
+  const row = el.rangeRow;
+  row.textContent = "";
+  RANGES.forEach((r) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "range-chip" + (insightRange === r.n ? " on" : "");
+    b.textContent = r.t;
+    b.addEventListener("click", () => { insightRange = r.n; renderInsights(); });
+    row.appendChild(b);
+  });
+}
+
 // Insights panel: a grid of headline stats above the chart and history.
 function renderInsights() {
+  renderRangeRow();
   const g = el.insightsGrid;
   g.textContent = "";
-  const logged = history.length;
-  const allAvg = logged ? history.reduce((s, d) => s + d.total, 0) / logged : 0;
+  const inRange = histInRange(insightRange);
+  const n = inRange.length;
+  const rangeAvg = n ? inRange.reduce((s, d) => s + d.total, 0) / n : 0;
+  const rangeTotal = round2(inRange.reduce((s, d) => s + d.total, 0) + (today > 0 ? today : 0));
 
   if (goal > 0) {
     const cur = underStreak();
     g.appendChild(statTile(String(cur), "Current streak", { good: cur > 0 }));
     g.appendChild(statTile(String(bestStreak()), "Best streak"));
-    const under = history.filter((d) => d.total <= goal).length;
-    g.appendChild(statTile(logged ? Math.round((under / logged) * 100) + "%" : "—", "Days under goal", { good: logged > 0 }));
-    g.appendChild(statTile(fmt(round2(allAvg)), "Daily average"));
+    const under = inRange.filter((d) => d.total <= goal).length;
+    g.appendChild(statTile(n ? Math.round((under / n) * 100) + "%" : "—", "Under goal", { good: n > 0 }));
+    g.appendChild(statTile(n ? fmt(round2(rangeAvg)) : "—", "Avg / day"));
+    g.appendChild(statTile(fmt(rangeTotal), rangeLabel(insightRange)));
+    g.appendChild(statTile(String(n), "Days logged"));
   } else {
-    g.appendChild(statTile(fmt(weekTotal()), "This week"));
-    g.appendChild(statTile(fmt(round2(allAvg)), "Daily average"));
-    g.appendChild(statTile(logged ? fmt(Math.max(...history.map((d) => d.total))) : "—", "Highest day"));
-    g.appendChild(statTile(String(logged), "Days logged"));
+    g.appendChild(statTile(fmt(rangeTotal), rangeLabel(insightRange)));
+    g.appendChild(statTile(n ? fmt(round2(rangeAvg)) : "—", "Avg / day"));
+    g.appendChild(statTile(n ? fmt(Math.max(...inRange.map((d) => d.total))) : "—", "Highest day"));
+    g.appendChild(statTile(String(n), "Days logged"));
   }
 
-  // this month, with a down-is-good delta against last month
-  const tm = monthSum(0), lm = monthSum(1);
-  let delta = null;
-  if (lm > 0) {
-    const pct = Math.round(((tm - lm) / lm) * 100);
-    if (pct < 0) delta = { cls: "down", text: `▼ ${Math.abs(pct)}% vs last month` };
-    else if (pct > 0) delta = { cls: "up", text: `▲ ${pct}% vs last month` };
-    else delta = { cls: "flat", text: "same as last month" };
-  }
-  g.appendChild(statTile(fmt(round2(tm)), "This month", { delta }));
-  if (goal > 0) g.appendChild(statTile(String(logged), "Days logged"));
-
+  renderPace();
+  renderRecords();
   renderTapLog();
+  renderTrend();
   renderCalendar();
+  renderYear();
   renderWeekday();
   renderTimeOfDay();
   renderMood();
   renderConnections();
   renderWins();
+}
+
+// On-pace projection for the current calendar month.
+function renderPace() {
+  const line = el.paceLine;
+  const now = new Date();
+  const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const monthDays = history.filter((d) => { const dt = new Date(d.endedAt || d.date); return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth(); });
+  const loggedCount = monthDays.length + (today > 0 ? 1 : 0);
+  if (loggedCount < 2) { line.style.display = "none"; return; }
+  const sumSoFar = monthDays.reduce((s, d) => s + d.total, 0) + (today > 0 ? today : 0);
+  const avgPerDay = sumSoFar / loggedCount;
+  line.style.display = "block";
+  line.textContent = "";
+  const b = document.createElement("b");
+  if (goal > 0) {
+    const cls = avgPerDay <= goal ? "good" : "bad";
+    b.textContent = fmt(round2(avgPerDay)) + "/day";
+    b.className = cls;
+    line.appendChild(document.createTextNode("Averaging "));
+    line.appendChild(b);
+    line.appendChild(document.createTextNode(avgPerDay <= goal ? ` this month — under your ${fmt(goal)} goal ✓` : ` this month — over your ${fmt(goal)} goal`));
+  } else {
+    const projected = round2(avgPerDay * dim);
+    b.textContent = "~" + fmt(projected);
+    line.appendChild(document.createTextNode("On pace for "));
+    line.appendChild(b);
+    line.appendChild(document.createTextNode(` this month (${dayOfMonth}/${dim} days in)`));
+  }
+}
+
+// All-time highlights.
+function renderRecords() {
+  const card = el.recordsCard;
+  if (history.length < 3) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+  addEl(card, "div", "Records", "section-title");
+  const list = document.createElement("div"); list.className = "recap"; card.appendChild(list);
+  const row = (icon, label, value) => {
+    const r = document.createElement("div"); r.className = "recap-row";
+    addEl(r, "span", icon, "recap-ico");
+    const b = document.createElement("div"); b.className = "recap-body";
+    addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
+    r.appendChild(b); list.appendChild(r);
+  };
+  if (goal > 0) row("🏆", "Best streak under goal", bestStreak() + (bestStreak() === 1 ? " day" : " days"));
+  const totals = history.map((d) => d.total);
+  if (goal > 0) row("📉", "Lowest day", fmt(Math.min(...totals)));
+  else row("📈", "Highest day", fmt(Math.max(...totals)));
+  // best (lowest for a limit / highest otherwise) calendar week
+  const weeks = {};
+  history.forEach((d) => { const k = weekKey(new Date(d.endedAt || d.date)); weeks[k] = (weeks[k] || 0) + d.total; });
+  const keys = Object.keys(weeks);
+  if (keys.length >= 2) {
+    const pick = keys.reduce((best, k) => (goal > 0 ? weeks[k] < weeks[best] : weeks[k] > weeks[best]) ? k : best, keys[0]);
+    const wLabel = new Date(pick + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    row("📆", (goal > 0 ? "Lightest week" : "Biggest week") + " (of " + wLabel + ")", fmt(round2(weeks[pick])));
+  }
+  row("Σ", "All-time total", fmt(round2(totals.reduce((a, b) => a + b, 0))));
+}
+
+// Trend — a 7-day rolling average line over the last ~12 weeks, so a real
+// direction shows through the daily noise.
+const TREND_DAYS = 84, TREND_WIN = 7;
+function renderTrend() {
+  const card = el.trendCard;
+  if (history.length < 10) { card.style.display = "none"; return; }
+  const byDate = {};
+  history.forEach((d) => { byDate[d.date] = d.total; });
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const values = [];
+  for (let i = TREND_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today0); d.setDate(today0.getDate() - i);
+    const v = byDate[isoLocal(d)];
+    values.push(v == null ? null : v);
+  }
+  const roll = rollingAverage(values, TREND_WIN);
+  const pts = [];
+  roll.forEach((v, i) => { if (v != null) pts.push([i, v]); });
+  if (pts.length < 3) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+  addEl(card, "div", "Trend · 7-day average", "section-title");
+
+  const maxY = (Math.max(goal || 0, ...pts.map((p) => p[1])) * 1.12) || 1;
+  const W = 100, H = 46;
+  const X = (i) => (i / (TREND_DAYS - 1)) * W;
+  const Y = (v) => H - (v / maxY) * H;
+  const poly = pts.map((p) => `${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`).join(" ");
+  const gLine = goal > 0 ? `<line x1="0" y1="${Y(goal).toFixed(2)}" x2="${W}" y2="${Y(goal).toFixed(2)}" class="trend-goal"/>` : "";
+  card.insertAdjacentHTML("beforeend",
+    `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${gLine}<polyline points="${poly}" class="trend-poly"/></svg>`);
+
+  const first = pts[0][1], last = pts[pts.length - 1][1];
+  const pct = first > 0 ? Math.round(((last - first) / first) * 100) : 0;
+  const cap = document.createElement("div"); cap.className = "wk-callout";
+  const weeks = Math.round(TREND_DAYS / 7);
+  if (Math.abs(pct) < 5) {
+    cap.innerHTML = `Holding steady — about <b>${fmt(round2(last))}</b>/day`;
+  } else if (goal > 0) {
+    const cls = pct < 0 ? "mc-up" : "mc-down";   // down is good for a limit
+    cap.innerHTML = `<span class="${cls}">${pct < 0 ? "▼" : "▲"} ${Math.abs(pct)}%</span> over ${weeks} weeks — now ~<b>${fmt(round2(last))}</b>/day`;
+  } else {
+    cap.innerHTML = `${pct < 0 ? "▼" : "▲"} ${Math.abs(pct)}% over ${weeks} weeks — now ~<b>${fmt(round2(last))}</b>/day`;
+  }
+  card.appendChild(cap);
+}
+
+// A GitHub-style heatmap of the past year — the whole streak at a glance.
+function renderYear() {
+  const card = el.yearCard;
+  if (history.length < 14) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+  addEl(card, "div", "Past year", "section-title");
+  const totals = {};
+  history.forEach((d) => { totals[d.date] = d.total; });
+  const todayStr = isoLocal(new Date());
+  if (today > 0 && !(todayStr in totals)) totals[todayStr] = today;
+
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const start = new Date(today0); start.setDate(today0.getDate() - today0.getDay() - 52 * 7);
+  const grid = document.createElement("div"); grid.className = "year-grid";
+  for (let i = 0; i < 53 * 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const cell = document.createElement("span"); cell.className = "year-cell";
+    const ds = isoLocal(d), tt = d.getTime();
+    if (tt > today0.getTime()) cell.classList.add("future");
+    else if (ds in totals) {
+      if (goal > 0) cell.classList.add(totals[ds] <= goal ? "under" : "over");
+      else cell.classList.add("logged");
+      cell.title = `${ds}: ${fmt(totals[ds])}`;
+    } else cell.classList.add("empty");
+    if (ds === todayStr) cell.classList.add("today");
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+  if (goal > 0) {
+    const lg = document.createElement("div");
+    lg.className = "cal-legend";
+    lg.innerHTML = `<span><i style="background:var(--safe)"></i>under</span><span><i style="background:var(--over)"></i>over</span>`;
+    card.appendChild(lg);
+  }
 }
 
 // Connections — cross-links the count against the end-day check-ins: how much
@@ -1065,6 +1236,10 @@ function renderWeekday() {
   title.textContent = "By weekday";
   card.appendChild(title);
 
+  const callout = document.createElement("div");
+  callout.className = "wk-callout";
+  callout.innerHTML = peak >= 0 ? `Highest on <b>${WK_NAME[peak]}</b> — avg ${fmt(round2(peakVal))}` : "Tap a bar for the detail";
+
   const wk = document.createElement("div");
   wk.className = "wk";
   avgs.forEach((a, i) => {
@@ -1072,6 +1247,14 @@ function renderWeekday() {
     bar.className = "wk-bar" + (i === peak ? " peak" : "");
     bar.style.height = Math.max(3, (a / max) * 100) + "%";
     bar.title = counts[i] ? `${WK_NAME[i]}: avg ${fmt(round2(a))}` : WK_NAME[i];
+    bar.addEventListener("click", () => {
+      wk.querySelectorAll(".wk-bar.sel").forEach((x) => x.classList.remove("sel"));
+      bar.classList.add("sel");
+      callout.innerHTML = counts[i]
+        ? `<b>${WK_NAME[i]}</b> — avg ${fmt(round2(avgs[i]))} over ${counts[i]} day${counts[i] === 1 ? "" : "s"}`
+        : `<b>${WK_NAME[i]}</b> — nothing logged yet`;
+      buzz(6);
+    });
     wk.appendChild(bar);
   });
   card.appendChild(wk);
@@ -1080,13 +1263,7 @@ function renderWeekday() {
   labels.className = "wk-labels";
   WK_INIT.forEach((w) => { const s = document.createElement("span"); s.textContent = w; labels.appendChild(s); });
   card.appendChild(labels);
-
-  if (peak >= 0) {
-    const callout = document.createElement("div");
-    callout.className = "wk-callout";
-    callout.innerHTML = `Highest on <b>${WK_NAME[peak]}</b> — avg ${fmt(round2(peakVal))}`;
-    card.appendChild(callout);
-  }
+  card.appendChild(callout);
 }
 
 // When you typically tap — every recorded tap time (history + today) bucketed
@@ -1114,6 +1291,11 @@ function renderTimeOfDay() {
 
   addEl(card, "div", "By time of day", "section-title");
 
+  const callout = document.createElement("div");
+  callout.className = "wk-callout";
+  const share = Math.round((hours[peak] / count) * 100);
+  callout.innerHTML = `You usually tap around <b>${hourLabel(peak)}</b> — ${share}% of taps`;
+
   const chart = document.createElement("div");
   chart.className = "tod";
   hours.forEach((c, h) => {
@@ -1121,6 +1303,13 @@ function renderTimeOfDay() {
     bar.className = "tod-bar" + (h === peak ? " peak" : "");
     bar.style.height = Math.max(2, (c / max) * 100) + "%";
     bar.title = `${hourLabel(h)}: ${c} tap${c === 1 ? "" : "s"}`;
+    bar.addEventListener("click", () => {
+      chart.querySelectorAll(".tod-bar.sel").forEach((x) => x.classList.remove("sel"));
+      bar.classList.add("sel");
+      const sh = Math.round((c / count) * 100);
+      callout.innerHTML = `<b>${hourLabel(h)}</b> — ${c} tap${c === 1 ? "" : "s"} (${sh}% of all)`;
+      buzz(6);
+    });
     chart.appendChild(bar);
   });
   card.appendChild(chart);
@@ -1129,11 +1318,6 @@ function renderTimeOfDay() {
   labels.className = "tod-labels";
   ["12 AM", "6 AM", "12 PM", "6 PM", "12 AM"].forEach((t) => addEl(labels, "span", t));
   card.appendChild(labels);
-
-  const callout = document.createElement("div");
-  callout.className = "wk-callout";
-  const share = Math.round((hours[peak] / count) * 100);
-  callout.innerHTML = `You usually tap around <b>${hourLabel(peak)}</b> — ${share}% of taps`;
   card.appendChild(callout);
 }
 
