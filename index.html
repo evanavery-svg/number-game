@@ -842,6 +842,13 @@
     .cal-day.under { background: var(--safe); color: #04210d; }
     .cal-day.over { background: var(--over); color: #2b0707; }
     .cal-day.today { box-shadow: inset 0 0 0 2px var(--accent); }
+    .cal-day:not(.blank) { cursor: pointer; transition: transform 0.08s ease; }
+    .cal-day:not(.blank):active { transform: scale(0.9); }
+    .cal-day.sel { box-shadow: inset 0 0 0 2px var(--text); }
+    .cal-day.today.sel { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 2px var(--text); }
+    .cal-detail { font-size: 13px; color: var(--muted); margin-top: 12px; min-height: 18px; text-align: center; }
+    .cal-detail b { color: var(--text); font-weight: 700; }
+    .cal-note { font-size: 12px; color: var(--faint); font-style: italic; margin-top: 3px; }
     .cal-legend { display: flex; gap: 14px; margin-top: 12px; font-size: 11px; color: var(--muted); }
     .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
@@ -1141,7 +1148,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.2 · © Avery LLC</div>
+  <div class="version">v8.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

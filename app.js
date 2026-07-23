@@ -985,6 +985,12 @@ function renderCalendar() {
   grid.className = "cal";
   WK_INIT.forEach((w) => { const h = document.createElement("div"); h.className = "cal-head"; h.textContent = w; grid.appendChild(h); });
   for (let i = 0; i < lead; i++) { const b = document.createElement("div"); b.className = "cal-day blank"; grid.appendChild(b); }
+
+  // tapping a day fills in this readout with that day's total
+  const detail = document.createElement("div");
+  detail.className = "cal-detail";
+  detail.textContent = "Tap a day to see that day's total.";
+
   for (let day = 1; day <= daysInMonth; day++) {
     const ds = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const cell = document.createElement("div");
@@ -998,9 +1004,11 @@ function renderCalendar() {
       cell.classList.add("empty");
     }
     if (ds === todayStr) cell.classList.add("today");
+    cell.addEventListener("click", () => selectCalDay(ds, cell, detail, todayStr));
     grid.appendChild(cell);
   }
   card.appendChild(grid);
+  card.appendChild(detail);
 
   if (goal > 0) {
     const lg = document.createElement("div");
@@ -1008,6 +1016,34 @@ function renderCalendar() {
     lg.innerHTML = `<span><i style="background:var(--safe)"></i>under goal</span><span><i style="background:var(--over)"></i>over goal</span>`;
     card.appendChild(lg);
   }
+}
+
+// Show a tapped day's total (and taps / note / goal status) below the calendar.
+function selectCalDay(ds, cell, detail, todayStr) {
+  const grid = cell.parentElement;
+  grid.querySelectorAll(".cal-day.sel").forEach((c) => c.classList.remove("sel"));
+  cell.classList.add("sel");
+  const nice = new Date(ds + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const h = history.find((d) => d.date === ds);
+  detail.textContent = "";
+  const line = document.createElement("div");
+  const b = document.createElement("b");
+  let main, note = null;
+  if (h) {
+    const bits = [fmt(h.total)];
+    if (h.taps) bits.push(`${h.taps} tap${h.taps === 1 ? "" : "s"}`);
+    if (goal > 0) bits.push(h.total <= goal ? "under goal ✓" : `${fmt(round2(h.total - goal))} over`);
+    b.textContent = nice; main = " — " + bits.join(" · ");
+    if ((h.note || "").trim()) note = h.note;
+  } else if (ds === todayStr && today > 0) {
+    b.textContent = "Today"; main = ` — ${fmt(today)} so far`;
+  } else {
+    b.textContent = nice; main = " — nothing logged";
+  }
+  line.appendChild(b); line.appendChild(document.createTextNode(main));
+  detail.appendChild(line);
+  if (note) { const n = document.createElement("div"); n.className = "cal-note"; n.textContent = note; detail.appendChild(n); }
+  buzz(6);
 }
 
 // Average by weekday — the highest (worst, for a limit) is flagged.
