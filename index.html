@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
@@ -441,6 +441,12 @@
     .sheet-btn.ghost { background: transparent; color: var(--muted); }
     .sheet-btn.link { background: transparent; color: var(--accent); margin-top: 6px; }
     .sheet-divider { height: 1px; background: var(--hair); margin: 18px 0 2px; border: none; }
+    /* settings section header */
+    .settings-section { font-size: 11px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase; color: var(--accent); margin: 24px 0 4px; padding-top: 6px; border-top: 1px solid var(--hair); }
+    .settings-section:first-of-type { border-top: none; padding-top: 0; margin-top: 14px; }
+    /* accessibility: stop double-tap zoom on controls, keep pinch-zoom; visible focus */
+    button, .ring-wrap, .range-chip, .cal-day, .wk-bar, .tod-bar, .mg-face, .gg-face, .chip, .mood-btn { touch-action: manipulation; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
     /* theme picker (settings) */
     .theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 6px; margin-top: 8px; }
@@ -1109,7 +1115,7 @@
 <body>
   <header>
     <div class="header-title">
-      <div class="eyebrow">Today</div>
+      <div class="eyebrow" id="eyebrow">Today</div>
       <div class="date" id="dateLabel"></div>
     </div>
     <div class="header-actions">
@@ -1132,7 +1138,7 @@
   <div class="since-strip" id="sinceStrip" style="display:none"></div>
 
   <div class="total" id="totalWrap">
-    <div class="ring-wrap" id="ringWrap">
+    <div class="ring-wrap" id="ringWrap" role="button" tabindex="0" aria-label="Adjust goal">
       <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
         <defs>
           <linearGradient id="gradAccent" x1="0" y1="0" x2="1" y2="1">
@@ -1163,7 +1169,7 @@
 
   <div class="quote" id="quote"></div>
 
-  <button class="add-btn" id="addBtn">
+  <button class="add-btn" id="addBtn" aria-label="Add one">
     <span class="add-label">+ 0.50</span>
     <small>tap to add</small>
   </button>
@@ -1173,7 +1179,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.4 · © Avery LLC</div>
+  <div class="version">v8.5 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

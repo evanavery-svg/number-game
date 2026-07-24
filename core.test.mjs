@@ -76,6 +76,19 @@ test("resetPatterns finds top tag, cluster and trend", () => {
   assert.equal(core.resetPatterns({ log: [{ at: "x" }] }), null); // too few
 });
 
+test("hourLabel formats 12-hour clock", () => {
+  assert.equal(core.hourLabel(0), "12 AM");
+  assert.equal(core.hourLabel(9), "9 AM");
+  assert.equal(core.hourLabel(12), "12 PM");
+  assert.equal(core.hourLabel(21), "9 PM");
+});
+
+test("bigSince picks the largest meaningful unit", () => {
+  assert.deepEqual(core.bigSince({ d: 3, h: 5, m: 0, s: 0 }), { n: 3, u: "days" });
+  assert.deepEqual(core.bigSince({ d: 0, h: 1, m: 2, s: 0 }), { n: 1, u: "hour" });
+  assert.deepEqual(core.bigSince({ d: 0, h: 0, m: 0, s: 1 }), { n: 1, u: "second" });
+});
+
 test("rollingAverage smooths over a trailing window, ignoring gaps", () => {
   assert.deepEqual(core.rollingAverage([1, 2, 3], 3), [1, 1.5, 2]);
   // nulls are skipped; window looks back 3

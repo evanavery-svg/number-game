@@ -34,6 +34,11 @@ const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hy
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
 const KEY_WATER_PRESETS = "count.waterPresets"; // [oz, …] quick glass-size buttons
+const KEY_FEATURES = "count.features";    // { mood, water, tree, since } — which extras are on
+const KEY_BACKUP_AT = "count.backupAt";   // timestamp of the last full backup
+const KEY_BACKUP_NUDGE = "count.backupNudge"; // YYYY-MM-DD of the last backup nudge
+const KEY_ONBOARDED = "count.onboarded";  // bool — first-run intro completed
+const KEY_LABEL = "count.label";          // what you're counting (optional)
 const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandatory once-a-day mood pulse
 const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game enabled
 const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
@@ -44,6 +49,7 @@ const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 i
 
 const el = {
   date: document.getElementById("dateLabel"),
+  eyebrow: document.getElementById("eyebrow"),
   total: document.getElementById("total"),
   totalWrap: document.getElementById("totalWrap"),
   ringWrap: document.getElementById("ringWrap"),
@@ -139,6 +145,8 @@ let gameOn = load(KEY_GAME_ON, true);       // daily focus game (toggle in Setti
 let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
 let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
+let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
+let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
@@ -212,10 +220,66 @@ let moodGateTimer = null;
 function moodGateKey() { return sessionDate(); }
 // Run the once-a-day gates in order: mood check-in first, then the focus game
 // (if enabled). Each gate chains into the next when it finishes.
+// A gentle periodic reminder to export a backup — data lives only on this
+// device and iOS can evict PWA storage that goes unused.
+const BACKUP_STALE_MS = 30 * 864e5;
+function maybeBackupNudge() {
+  if (history.length < 5) return;                 // nothing much to lose yet
+  if (el.overlay.classList.contains("show")) return;
+  const today = isoLocal(new Date());
+  if (load(KEY_BACKUP_NUDGE, "") === today) return;   // at most once a day
+  const last = load(KEY_BACKUP_AT, 0) || 0;
+  if (last && Date.now() - last < BACKUP_STALE_MS) return;
+  save(KEY_BACKUP_NUDGE, today);
+  const days = last ? Math.floor((Date.now() - last) / 864e5) : null;
+  toast(days ? `💾 Last backup was ${days} days ago — back up in ⚙ Settings` : "💾 Back up your data — it only lives on this device (⚙ Settings)", 5000);
+}
+
+// First-run intro — returns true if it took over (so the caller skips the
+// daily gates until setup is done). Existing users are marked done silently.
+function maybeOnboard() {
+  if (load(KEY_ONBOARDED, false)) return false;
+  if (history.length > 0 || goal > 0 || today > 0 || since.length) { save(KEY_ONBOARDED, true); return false; }
+  openOnboarding(1);
+  return true;
+}
+function openOnboarding(step) {
+  openSheet((s) => {
+    if (step === 1) {
+      addEl(s, "h3", "Welcome 👋");
+      addEl(s, "p", "A simple counter for anything you want to keep an eye on — one tap at a time. Everything stays private, on this device.", "sub");
+      s.appendChild(makeBtn("Get started", "primary", () => openOnboarding(2)));
+    } else if (step === 2) {
+      addEl(s, "h3", "What are you counting?");
+      addEl(s, "p", "Optional — e.g. coffees, cigarettes, glasses of water, push-ups.", "sub");
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.maxLength = 24; inp.placeholder = "Name it (optional)"; inp.value = countLabel;
+      s.appendChild(inp);
+      s.appendChild(makeBtn("Next", "primary", () => { countLabel = inp.value.trim(); save(KEY_LABEL, countLabel); openOnboarding(3); }));
+      s.appendChild(makeBtn("Skip", "ghost", () => openOnboarding(3)));
+      setTimeout(() => inp.focus(), 50);
+    } else {
+      addEl(s, "h3", "Set a daily goal");
+      addEl(s, "p", "Optional — a daily limit or target. You'll see how close you are and build streaks for staying under it.", "sub");
+      addEl(s, "label", "Daily goal (blank for none)");
+      const gi = numInput(goal > 0 ? fmt(goal) : "", "0"); s.appendChild(gi);
+      addEl(s, "label", "Amount added per tap");
+      const si = numInput(fmt(step), "0.01"); s.appendChild(si);
+      s.appendChild(makeBtn("Start tracking ✓", "primary", () => {
+        const ng = parseFloat(gi.value); goal = isNaN(ng) || ng <= 0 ? 0 : round2(ng);
+        const ns = parseFloat(si.value); if (!isNaN(ns) && ns > 0) step = round2(ns);
+        save(KEY_GOAL, goal); save(KEY_STEP, step); save(KEY_ONBOARDED, true);
+        closeSheet(); render();
+        setTimeout(runDailyGates, 300);
+      }));
+    }
+  });
+}
+
 function runDailyGates() {
   if (el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show")) return;
   if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
-  if (moodDaily[moodGateKey()] == null) { showMoodGate(); return; }
+  if (features.mood && moodDaily[moodGateKey()] == null) { showMoodGate(); return; }
   if (gameOn && gamePlayed !== moodGateKey()) { showGameGate(); return; }
 }
 function showMoodGate() {
@@ -645,6 +709,7 @@ function toast(msg, ms) {
 // Full render: header + today + the insights panel (chart/history/stats).
 function render() {
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  if (el.eyebrow) el.eyebrow.textContent = countLabel || "Today";
   el.quote.textContent = quoteOfTheDay();
   renderTop();
   renderInsights();
@@ -2081,22 +2146,49 @@ function confirmSheet(title, sub, confirmLabel, onYes, danger) {
   });
 }
 
-// Feature 1 + 7 + 5: settings (step, goal, toggles) + undo End Day.
+function settingsSection(s, title) { addEl(s, "div", title, "settings-section"); }
+
+// Settings, grouped into sections. Some controls save on change (theme,
+// features); the rest are committed by the Save button.
 function openSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Settings");
 
+    settingsSection(s, "Tracking");
+    addEl(s, "label", "What are you counting? (optional)");
+    const labelInput = document.createElement("input");
+    labelInput.type = "text"; labelInput.maxLength = 24; labelInput.placeholder = "e.g. coffees, cigarettes"; labelInput.value = countLabel;
+    s.appendChild(labelInput);
     addEl(s, "label", "Amount added per tap");
     const stepInput = numInput(fmt(step), "0.01");
     s.appendChild(stepInput);
-
     addEl(s, "label", "Daily goal (blank or 0 for none)");
     const goalInput = numInput(goal > 0 ? fmt(goal) : "", "0");
     s.appendChild(goalInput);
 
+    settingsSection(s, "Feedback");
     const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
     const soundToggle = makeToggle(s, "Sound on tap", sound);
 
+    // Features — turn the extras on or off to keep things lean
+    settingsSection(s, "Features");
+    const moodFeat = makeToggle(s, "Daily mood check-in", features.mood);
+    moodFeat.addEventListener("change", () => { features.mood = moodFeat.checked; save(KEY_FEATURES, features); buzz(8); });
+    const gameToggle = makeToggle(s, "Daily focus game (10s)", gameOn);
+    gameToggle.addEventListener("change", () => {
+      gameOn = gameToggle.checked; save(KEY_GAME_ON, gameOn); buzz(8);
+      if (gameOn && gamePlayed !== moodGateKey()) { closeSheet(); setTimeout(runDailyGates, 380); }
+    });
+    s.appendChild(makeBtn("▶ Play now (test)", "link", () => { closeSheet(); setTimeout(showGameGate, 380); }));
+    const sinceFeat = makeToggle(s, "Time Since trackers", features.since);
+    sinceFeat.addEventListener("change", () => { features.since = sinceFeat.checked; save(KEY_FEATURES, features); renderSinceStrip(); buzz(8); });
+    const waterFeat = makeToggle(s, "Water counter", features.water);
+    waterFeat.addEventListener("change", () => { features.water = waterFeat.checked; save(KEY_FEATURES, features); buzz(8); });
+    const treeFeat = makeToggle(s, "Growth tree", features.tree);
+    treeFeat.addEventListener("change", () => { features.tree = treeFeat.checked; save(KEY_FEATURES, features); buzz(8); });
+    addEl(s, "p", "Switch off anything you don't use — it disappears from the ⋯ menu and daily flow.", "sub");
+
+    settingsSection(s, "Appearance");
     // Theme picker — swatches apply live; daily auto-rotate is a toggle.
     addEl(s, "label", "Theme");
     const themeGrid = document.createElement("div");
@@ -2133,6 +2225,7 @@ function openSettings() {
     });
     addEl(s, "p", "Rotates through all themes — a new one each day.", "sub");
 
+    settingsSection(s, "Reminders");
     const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
     addEl(s, "label", "Reminder time");
     const timeInput = document.createElement("input");
@@ -2140,30 +2233,19 @@ function openSettings() {
     s.appendChild(timeInput);
     addEl(s, "p", "A nudge if you haven't tracked by this time. On iPhone, reminders show while the app is open — add it to your Home Screen for the best chance of a notification.", "sub");
 
-    const gameToggle = makeToggle(s, "Daily focus game (10s)", gameOn);
-    addEl(s, "p", `A quick once-a-day warm-up: tap the smileys, skip the frowns.${gameBest > 0 ? ` Best: ${gameBest}.` : ""}`, "sub");
-    gameToggle.addEventListener("change", () => {
-      gameOn = gameToggle.checked;
-      save(KEY_GAME_ON, gameOn);
-      buzz(8);
-      // turned on and not yet played today → show it right away
-      if (gameOn && gamePlayed !== moodGateKey()) { closeSheet(); setTimeout(runDailyGates, 380); }
-    });
-    // test it any time, even after today's round is already done
-    s.appendChild(makeBtn("▶ Play now (test)", "link", () => { closeSheet(); setTimeout(showGameGate, 380); }));
-
     s.appendChild(makeBtn("Save", "primary", () => {
       const ns = parseFloat(stepInput.value);
       if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }
       step = round2(ns);
       const ng = parseFloat(goalInput.value);
       goal = isNaN(ng) || ng <= 0 ? 0 : round2(ng);
+      countLabel = labelInput.value.trim();
       haptic = hapticToggle.checked;
       sound = soundToggle.checked;
       const wasOff = !reminderOn;
       reminderOn = remindToggle.checked;
       reminderTime = timeInput.value || "20:00";
-      save(KEY_STEP, step); save(KEY_GOAL, goal);
+      save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
       save(KEY_HAPTIC, haptic); save(KEY_SOUND, sound);
       save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
       if (reminderOn && wasOff && "Notification" in window && Notification.permission === "default") {
@@ -2176,14 +2258,16 @@ function openSettings() {
       s.appendChild(makeBtn(`↶ Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
     }
 
-    const divider = document.createElement("hr");
-    divider.className = "sheet-divider";
-    s.appendChild(divider);
+    settingsSection(s, "Privacy");
     s.appendChild(makeBtn(lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); openLockSettings(); }));
     s.appendChild(makeBtn(journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { closeSheet(); openJournalPinSettings(); }));
-    s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
+
+    settingsSection(s, "Data");
+    const lastBk = load(KEY_BACKUP_AT, 0) || 0;
+    addEl(s, "p", lastBk ? `Last full backup: ${Math.floor((Date.now() - lastBk) / 864e5)} days ago.` : "No full backup yet — your data lives only on this device.", "sub");
     s.appendChild(makeBtn("Full backup (everything)", "link", () => { closeSheet(); startFullBackup(); }));
     s.appendChild(makeBtn("Restore from backup", "link", () => { closeSheet(); startRestore(); }));
+    s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
 
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
@@ -2355,6 +2439,7 @@ async function writeBackup(pass) {
     file = { app: "tracker-backup", v: 1, enc: false, at: new Date().toISOString(), data: gatherAll() };
   }
   downloadFile(`tracker-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(file));
+  save(KEY_BACKUP_AT, Date.now());
   toast("Full backup downloaded ✓");
 }
 function startFullBackup() {
@@ -3071,7 +3156,7 @@ const SS_CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 let sinceStripAnimated = false;   // chips slide in once per app open, not on every re-render
 function renderSinceStrip() {
   const strip = el.sinceStrip;
-  if (!since.length) { strip.style.display = "none"; strip.textContent = ""; return; }
+  if (!since.length || !features.since) { strip.style.display = "none"; strip.textContent = ""; return; }
   strip.style.display = "flex";
   strip.textContent = "";
   since.forEach((it) => {
@@ -3710,10 +3795,11 @@ function closeTree() { el.treeOverlay.classList.remove("show"); }
 function openMore() {
   openSheet((s) => {
     addEl(s, "h3", "More");
-    s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); requestSince(); }));
-    s.appendChild(makeBtn("💧   Water", "", () => { closeSheet(); openWater(); }));
-    s.appendChild(makeBtn("🌳   Your Tree", "", () => { closeSheet(); openTree(); }));
+    if (features.since) s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); requestSince(); }));
+    if (features.water) s.appendChild(makeBtn("💧   Water", "", () => { closeSheet(); openWater(); }));
+    if (features.tree) s.appendChild(makeBtn("🌳   Your Tree", "", () => { closeSheet(); openTree(); }));
     if (timelineOn) s.appendChild(makeBtn("📊   Your week", "", () => { closeSheet(); openWeeklyRecap(); }));
+    if (!features.since && !features.water && !features.tree && !timelineOn) addEl(s, "p", "All extras are off — turn them on in Settings → Features.", "sub");
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
 }
@@ -3725,6 +3811,7 @@ el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
 el.moreBtn.addEventListener("click", openMore);
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
+el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSettings(); } });
 
 // Hidden gesture: tap the date 5×, then the footer 5×, to flip the flag.
 (() => {
@@ -3777,11 +3864,12 @@ if (!reduceMotion() && today > 0) {
 // Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
-runDailyGates();   // mandatory daily check-in (skips itself if the lock is up — hideLock re-checks)
+if (!maybeOnboard()) runDailyGates();   // first-run intro takes priority over the daily gates
 checkMilestones();
 // the heads-up waits a beat so it never lands on top of the lock/daily gates
 setTimeout(checkRiskyTimes, 2500);
 maybeWeeklyRecap();
+setTimeout(maybeBackupNudge, 3200);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
