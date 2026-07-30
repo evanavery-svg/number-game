@@ -155,11 +155,61 @@ function rollingAverage(values, window) {
   });
 }
 
+// ---- tapering to zero ----
+// The app exists to walk a daily limit down to 0, so these helpers judge when a
+// step down has been *earned* and where the ladder is heading.
+
+// How a set of day entries performed against a goal over the trailing `days`.
+function goalPerformance(entries, goal, days, now) {
+  const cutoff = (now == null ? Date.now() : now) - days * DAY;
+  const recent = entries.filter((d) => new Date(d.endedAt || d.date).getTime() >= cutoff);
+  const n = recent.length;
+  if (!n) return { n: 0, under: 0, underPct: 0, avg: 0 };
+  const under = recent.filter((d) => d.total <= goal).length;
+  const avg = recent.reduce((s, d) => s + d.total, 0) / n;
+  return { n, under, underPct: under / n, avg };
+}
+// A step down is offered only once it's clearly earned: enough logged days,
+// mostly under the goal, and an average with real headroom below it. Never
+// suggested while struggling — that just makes people quit the app.
+function taperReady(perf, goal, step) {
+  if (goal <= 0 || step <= 0) return false;
+  if (perf.n < 14) return false;              // not enough recent data
+  if (perf.underPct < 0.8) return false;      // must be holding the current limit
+  return perf.avg <= goal - step * 0.5;       // and already living below the next rung
+}
+// Extrapolate the goal ladder to zero from its recent descent.
+// Returns { date, perDay } or null when it isn't descending.
+function projectZero(goalLog, now) {
+  const t = now == null ? Date.now() : now;
+  const pts = (goalLog || [])
+    .map((g) => ({ at: new Date(g.at).getTime(), goal: g.goal }))
+    .filter((g) => !isNaN(g.at) && typeof g.goal === "number")
+    .sort((a, b) => a.at - b.at);
+  if (pts.length < 2) return null;
+  const first = pts[0], last = pts[pts.length - 1];
+  if (last.goal <= 0) return { date: new Date(last.at), perDay: 0, done: true };
+  const spanDays = (last.at - first.at) / DAY;
+  const dropped = first.goal - last.goal;
+  if (spanDays < 1 || dropped <= 0) return null;   // flat or going up — no ETA
+  const perDay = dropped / spanDays;
+  return { date: new Date(t + (last.goal / perDay) * DAY), perDay, done: false };
+}
+// Consecutive zero days counted back from the end of a chronological list.
+function zeroStreak(totals) {
+  let n = 0;
+  for (let i = totals.length - 1; i >= 0; i--) {
+    if (totals[i] === 0) n++; else break;
+  }
+  return n;
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
+    goalPerformance, taperReady, projectZero, zeroStreak,
   };
 }

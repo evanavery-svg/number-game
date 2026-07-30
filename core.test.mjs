@@ -99,6 +99,58 @@ test("rollingAverage smooths over a trailing window, ignoring gaps", () => {
   assert.deepEqual(core.rollingAverage([4, 6, 8, 10], 2), [4, 5, 7, 9]);
 });
 
+test("goalPerformance measures the trailing window only", () => {
+  const now = new Date(2026, 6, 30, 12).getTime();
+  const mk = (daysAgo, total) => ({ endedAt: new Date(now - daysAgo * core.DAY).toISOString(), total });
+  const entries = [mk(60, 9), mk(5, 2), mk(4, 3), mk(3, 6), mk(2, 2)];   // 60d one is outside
+  const p = core.goalPerformance(entries, 4, 30, now);
+  assert.equal(p.n, 4);
+  assert.equal(p.under, 3);           // 2, 3, 2 are <= 4; 6 is not
+  assert.equal(p.underPct, 0.75);
+  assert.equal(core.round2(p.avg), 3.25);
+});
+
+test("taperReady only when the drop is earned", () => {
+  // holding the limit with real headroom → ready
+  assert.equal(core.taperReady({ n: 20, underPct: 0.9, avg: 2.4 }, 4, 1), true);
+  // too few days logged
+  assert.equal(core.taperReady({ n: 8, underPct: 1, avg: 1 }, 4, 1), false);
+  // going over the current limit too often
+  assert.equal(core.taperReady({ n: 20, underPct: 0.6, avg: 2 }, 4, 1), false);
+  // riding right at the limit — no headroom for the next rung
+  assert.equal(core.taperReady({ n: 20, underPct: 0.9, avg: 3.9 }, 4, 1), false);
+  // no goal / no step
+  assert.equal(core.taperReady({ n: 30, underPct: 1, avg: 0 }, 0, 1), false);
+  assert.equal(core.taperReady({ n: 30, underPct: 1, avg: 0 }, 4, 0), false);
+});
+
+test("projectZero extrapolates the ladder's descent", () => {
+  const now = new Date(2026, 6, 30).getTime();
+  // 8 → 4 over 100 days = 0.04/day; 4 left ⇒ ~100 more days
+  const log = [
+    { at: new Date(now - 100 * core.DAY).toISOString(), goal: 8 },
+    { at: new Date(now).toISOString(), goal: 4 },
+  ];
+  const p = core.projectZero(log, now);
+  assert.equal(core.round2(p.perDay), 0.04);
+  const daysOut = Math.round((p.date.getTime() - now) / core.DAY);
+  assert.equal(daysOut, 100);
+  assert.equal(p.done, false);
+  // already at zero
+  assert.equal(core.projectZero([{ at: new Date(now - core.DAY).toISOString(), goal: 2 }, { at: new Date(now).toISOString(), goal: 0 }], now).done, true);
+  // flat or rising → no estimate
+  assert.equal(core.projectZero([{ at: new Date(now - 10 * core.DAY).toISOString(), goal: 4 }, { at: new Date(now).toISOString(), goal: 4 }], now), null);
+  assert.equal(core.projectZero([{ at: new Date(now - 10 * core.DAY).toISOString(), goal: 2 }, { at: new Date(now).toISOString(), goal: 5 }], now), null);
+  assert.equal(core.projectZero([], now), null);
+});
+
+test("zeroStreak counts trailing zeros", () => {
+  assert.equal(core.zeroStreak([3, 1, 0, 0, 0]), 3);
+  assert.equal(core.zeroStreak([0, 0, 1]), 0);
+  assert.equal(core.zeroStreak([]), 0);
+  assert.equal(core.zeroStreak([0]), 1);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

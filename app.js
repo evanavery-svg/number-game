@@ -39,6 +39,14 @@ const KEY_BACKUP_AT = "count.backupAt";   // timestamp of the last full backup
 const KEY_BACKUP_NUDGE = "count.backupNudge"; // YYYY-MM-DD of the last backup nudge
 const KEY_ONBOARDED = "count.onboarded";  // bool — first-run intro completed
 const KEY_LABEL = "count.label";          // what you're counting (optional)
+// ---- tapering to zero ----
+// The app exists to work a daily limit down to 0, so 0 is a real, celebrated
+// goal — distinct from having no goal at all (that's KEY_GOAL_ON).
+const KEY_GOAL_ON = "count.goalOn";       // bool — is a daily goal active (0 is valid)
+const KEY_GOAL_LOG = "count.goalLog";     // [{ at, goal }] every goal change, for the ladder
+const KEY_TAPER = "count.taper";          // { on, step, everyDays } step-down plan
+const KEY_TAPER_ASK = "count.taperAsk";   // ISO date a step down was last offered
+const KEY_ZERO_ASK = "count.zeroAsk";     // bool — already offered the Time Since handoff
 const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandatory once-a-day mood pulse
 const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game enabled
 const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
@@ -89,6 +97,7 @@ const el = {
   reminderDismiss: document.getElementById("reminderDismiss"),
   rangeRow: document.getElementById("rangeRow"),
   paceLine: document.getElementById("paceLine"),
+  ladderCard: document.getElementById("ladderCard"),
   recordsCard: document.getElementById("recordsCard"),
   trendCard: document.getElementById("trendCard"),
   yearCard: document.getElementById("yearCard"),
@@ -147,6 +156,22 @@ let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
+// A goal of 0 is the destination, not "off" — so track "is there a goal" apart
+// from its value. Older installs stored 0 to mean "none": migrate on first run.
+let goalOn = load(KEY_GOAL_ON, null);
+if (goalOn === null) { goalOn = goal > 0; save(KEY_GOAL_ON, goalOn); }
+let goalLog = load(KEY_GOAL_LOG, []);       // the taper ladder: every goal change
+if (!goalLog.length && goalOn) { goalLog = [{ at: new Date().toISOString(), goal: goal }]; save(KEY_GOAL_LOG, goalLog); }
+let taper = Object.assign({ on: false, step: 1, everyDays: 30 }, load(KEY_TAPER, {}));
+// Is a daily goal active? (0 counts — it's the finish line.)
+function hasGoal() { return !!goalOn; }
+// Record a goal change so the ladder and the zero projection can see it.
+function noteGoalChange(v) {
+  const last = goalLog.length ? goalLog[goalLog.length - 1] : null;
+  if (last && last.goal === v) return;
+  goalLog.push({ at: new Date().toISOString(), goal: v });
+  save(KEY_GOAL_LOG, goalLog);
+}
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
@@ -239,7 +264,7 @@ function maybeBackupNudge() {
 // daily gates until setup is done). Existing users are marked done silently.
 function maybeOnboard() {
   if (load(KEY_ONBOARDED, false)) return false;
-  if (history.length > 0 || goal > 0 || today > 0 || since.length) { save(KEY_ONBOARDED, true); return false; }
+  if (history.length > 0 || hasGoal() || today > 0 || since.length) { save(KEY_ONBOARDED, true); return false; }
   openOnboarding(1);
   return true;
 }
@@ -260,20 +285,80 @@ function openOnboarding(step) {
       setTimeout(() => inp.focus(), 50);
     } else {
       addEl(s, "h3", "Set a daily goal");
-      addEl(s, "p", "Optional — a daily limit or target. You'll see how close you are and build streaks for staying under it.", "sub");
+      addEl(s, "p", "Start where you actually are today — the app will help you walk this number down over time, all the way to zero if you want.", "sub");
       addEl(s, "label", "Daily goal (blank for none)");
-      const gi = numInput(goal > 0 ? fmt(goal) : "", "0"); s.appendChild(gi);
+      const gi = numInput(hasGoal() ? fmt(goal) : "", "0"); s.appendChild(gi);
       addEl(s, "label", "Amount added per tap");
       const si = numInput(fmt(step), "0.01"); s.appendChild(si);
+      const tp = makeToggle(s, "Suggest step-downs over time", true);
       s.appendChild(makeBtn("Start tracking ✓", "primary", () => {
-        const ng = parseFloat(gi.value); goal = isNaN(ng) || ng <= 0 ? 0 : round2(ng);
+        const ng = parseFloat(gi.value);
+        if (gi.value.trim() === "" || isNaN(ng) || ng < 0) { goalOn = false; goal = 0; }
+        else { goalOn = true; goal = round2(ng); }
         const ns = parseFloat(si.value); if (!isNaN(ns) && ns > 0) step = round2(ns);
-        save(KEY_GOAL, goal); save(KEY_STEP, step); save(KEY_ONBOARDED, true);
+        taper.on = tp.checked && goalOn;
+        save(KEY_GOAL, goal); save(KEY_GOAL_ON, goalOn); save(KEY_STEP, step);
+        save(KEY_TAPER, taper); save(KEY_ONBOARDED, true);
+        if (goalOn) noteGoalChange(goal);
         closeSheet(); render();
         setTimeout(runDailyGates, 300);
       }));
     }
   });
+}
+
+// ---- taper: offer the next rung down once it's been earned ----
+function maybeTaperOffer() {
+  if (!taper.on || !hasGoal() || goal <= 0) return;
+  if (gatesUp() || el.overlay.classList.contains("show")) return;
+  const last = load(KEY_TAPER_ASK, null);
+  if (last && Date.now() - new Date(last).getTime() < taper.everyDays * 864e5) return;
+  const perf = goalPerformance(history, goal, 30);
+  if (!taperReady(perf, goal, taper.step)) return;
+  save(KEY_TAPER_ASK, new Date().toISOString());
+  openTaperOffer(perf);
+}
+function openTaperOffer(perf) {
+  const next = Math.max(0, round2(goal - taper.step));
+  openSheet((s) => {
+    addEl(s, "h3", next === 0 ? "Ready for zero?" : "Ready to drop your goal?");
+    addEl(s, "p", `You've been under ${fmt(goal)} on ${perf.under} of the last ${perf.n} days, averaging ${fmt(round2(perf.avg))}. You've outgrown this limit.`, "sub");
+    const card = document.createElement("div"); card.className = "taper-card";
+    addEl(card, "div", fmt(goal), "taper-from");
+    addEl(card, "div", "→", "taper-arrow");
+    addEl(card, "div", fmt(next), "taper-to");
+    s.appendChild(card);
+    if (next === 0) addEl(s, "p", "That's the finish line — a daily goal of zero.", "sub");
+    s.appendChild(makeBtn(next === 0 ? "Go to zero ✓" : `Make it ${fmt(next)} ✓`, "primary", () => {
+      goal = next; goalOn = true;
+      save(KEY_GOAL, goal); save(KEY_GOAL_ON, true); noteGoalChange(goal);
+      closeSheet(); render();
+      buzz([0, 40, 60, 40, 60, 90]);
+      const r = el.ringWrap.getBoundingClientRect();
+      confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 26);
+      toast(next === 0 ? "Goal is now zero 🎯" : `New goal: ${fmt(next)} — nicely done`, 3600);
+    }));
+    s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
+  });
+}
+// Once the goal is zero and you're stacking zero days, offer to hand off to a
+// Time Since tracker — tapering is done, this is abstaining now.
+function maybeZeroHandoff() {
+  if (!features.since || !hasGoal() || goal !== 0) return;
+  if (load(KEY_ZERO_ASK, false)) return;
+  if (gatesUp() || el.overlay.classList.contains("show")) return;
+  const streak = zeroStreak(history.map((d) => d.total));
+  if (streak < 3) return;
+  save(KEY_ZERO_ASK, true);
+  const name = countLabel || "this";
+  confirmSheet(`${streak} days at zero 🎯`,
+    `You've reached the goal you set out for. Want a Time Since tracker counting how long you've been clear of ${name}?`,
+    "Start tracking it", () => {
+      since.push({ id: sid(), name: countLabel || "Clear", start: new Date().toISOString(), best: 0, resets: 0, note: "", rate: 0, unit: "$", seenMile: 0 });
+      save(KEY_SINCE, since);
+      renderSinceStrip();
+      toast("Tracker started ⏱");
+    });
 }
 
 function runDailyGates() {
@@ -594,9 +679,10 @@ function refreshColorStops() {
   ];
 }
 function numberColor() {
-  if (goal <= 0) return "";               // no goal → default text colour
+  if (!hasGoal()) return "";               // no goal → default text colour
   if (!COLOR_STOPS) refreshColorStops();
-  const f = today / goal;
+  // at a goal of 0 (the finish line) anything above 0 is already over
+  const f = goal > 0 ? today / goal : (today > 0 ? 1 : 0);
   if (f <= 0) return "";                   // at the start → default (white)
   const s = COLOR_STOPS;
   if (f >= 1) return `rgb(${s[3].c.join(",")})`;   // at or over goal → red
@@ -631,7 +717,7 @@ function setValue(target, animate) {
 
 // Goal is a ceiling: streak = consecutive recent days that stayed at or under it.
 function underStreak() {
-  if (goal <= 0) return 0;
+  if (!hasGoal()) return 0;
   let s = 0;
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].total <= goal) s++; else break;
@@ -642,9 +728,9 @@ function underStreak() {
 
 // Which colour zone today sits in relative to the goal.
 function zoneOf() {
-  if (goal <= 0) return "none";
+  if (!hasGoal()) return "none";
   if (today > goal) return "over";
-  if (today / goal >= 0.8) return "warn";
+  if (goal > 0 && today / goal >= 0.8) return "warn";
   return "safe";
 }
 
@@ -662,7 +748,7 @@ function weekTotal() {
 // ---- insights ----
 // Longest run of consecutive logged days that stayed at or under the goal.
 function bestStreak() {
-  if (goal <= 0) return 0;
+  if (!hasGoal()) return 0;
   let best = 0, run = 0;
   history.forEach((d) => { if (d.total <= goal) { run++; if (run > best) best = run; } else run = 0; });
   return Math.max(best, underStreak());   // current in-progress run can be the best
@@ -751,7 +837,7 @@ function renderInsights() {
   const rangeAvg = n ? inRange.reduce((s, d) => s + d.total, 0) / n : 0;
   const rangeTotal = round2(inRange.reduce((s, d) => s + d.total, 0) + (today > 0 ? today : 0));
 
-  if (goal > 0) {
+  if (hasGoal()) {
     const cur = underStreak();
     g.appendChild(statTile(String(cur), "Current streak", { good: cur > 0 }));
     g.appendChild(statTile(String(bestStreak()), "Best streak"));
@@ -760,6 +846,13 @@ function renderInsights() {
     g.appendChild(statTile(n ? fmt(round2(rangeAvg)) : "—", "Avg / day"));
     g.appendChild(statTile(fmt(rangeTotal), rangeLabel(insightRange)));
     g.appendChild(statTile(String(n), "Days logged"));
+    // once you're near/at the finish line, days at zero is the number that counts
+    const zs = zeroStreak(history.map((d) => d.total));
+    const zeroDays = history.filter((d) => d.total === 0).length;
+    if (goal === 0 || zeroDays > 0) {
+      g.appendChild(statTile(String(zs), "Days at zero", { good: zs > 0 }));
+      g.appendChild(statTile(String(zeroDays), "Zero days total", { good: zeroDays > 0 }));
+    }
   } else {
     g.appendChild(statTile(fmt(rangeTotal), rangeLabel(insightRange)));
     g.appendChild(statTile(n ? fmt(round2(rangeAvg)) : "—", "Avg / day"));
@@ -768,6 +861,7 @@ function renderInsights() {
   }
 
   renderPace();
+  renderLadder();
   renderRecords();
   renderTapLog();
   renderTrend();
@@ -794,7 +888,7 @@ function renderPace() {
   line.style.display = "block";
   line.textContent = "";
   const b = document.createElement("b");
-  if (goal > 0) {
+  if (hasGoal()) {
     const cls = avgPerDay <= goal ? "good" : "bad";
     b.textContent = fmt(round2(avgPerDay)) + "/day";
     b.className = cls;
@@ -807,6 +901,54 @@ function renderPace() {
     line.appendChild(document.createTextNode("On pace for "));
     line.appendChild(b);
     line.appendChild(document.createTextNode(` this month (${dayOfMonth}/${dim} days in)`));
+  }
+}
+
+// The taper ladder — your goal over time as a descending staircase, plus where
+// it's heading. This is the story of the whole journey in one card.
+function renderLadder() {
+  const card = el.ladderCard;
+  if (goalLog.length < 2) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.textContent = "";
+  addEl(card, "div", "Taper ladder", "section-title");
+
+  const pts = goalLog.map((g) => ({ at: new Date(g.at).getTime(), goal: g.goal })).filter((g) => !isNaN(g.at)).sort((a, b) => a.at - b.at);
+  const t0 = pts[0].at, tN = Date.now();
+  const span = Math.max(1, tN - t0);
+  const maxG = Math.max(...pts.map((p) => p.goal), 1);
+  const W = 100, H = 40;
+  const X = (t) => ((t - t0) / span) * W;
+  const Y = (v) => H - (v / maxG) * (H - 3);
+  // a step path: hold each goal until the next change
+  let d = `M ${X(pts[0].at).toFixed(2)} ${Y(pts[0].goal).toFixed(2)}`;
+  for (let i = 1; i < pts.length; i++) {
+    d += ` L ${X(pts[i].at).toFixed(2)} ${Y(pts[i - 1].goal).toFixed(2)} L ${X(pts[i].at).toFixed(2)} ${Y(pts[i].goal).toFixed(2)}`;
+  }
+  d += ` L ${W} ${Y(pts[pts.length - 1].goal).toFixed(2)}`;
+  card.insertAdjacentHTML("beforeend",
+    `<svg class="ladder-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<line x1="0" y1="${Y(0).toFixed(2)}" x2="${W}" y2="${Y(0).toFixed(2)}" class="ladder-zero"/>` +
+    `<path d="${d}" class="ladder-path"/></svg>`);
+
+  const first = pts[0].goal, cur = pts[pts.length - 1].goal;
+  const rungs = pts.filter((p, i) => i > 0 && p.goal < pts[i - 1].goal).length;
+  const line = document.createElement("div"); line.className = "wk-callout";
+  if (cur === 0) {
+    line.innerHTML = `<b>You made it to zero.</b> From ${fmt(first)} down, ${rungs} step${rungs === 1 ? "" : "s"}.`;
+  } else if (cur < first) {
+    line.innerHTML = `<b>${fmt(first)} → ${fmt(cur)}</b> · ${rungs} step${rungs === 1 ? "" : "s"} down`;
+  } else {
+    line.innerHTML = `Currently <b>${fmt(cur)}</b>`;
+  }
+  card.appendChild(line);
+
+  const zp = projectZero(goalLog);
+  if (zp && !zp.done) {
+    const eta = document.createElement("div"); eta.className = "mood-corr";
+    const days = Math.max(1, Math.round((zp.date.getTime() - Date.now()) / 864e5));
+    eta.innerHTML = `🎯 On pace to reach <b>zero</b> around <b>${zp.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</b> — about ${days} day${days === 1 ? "" : "s"} away`;
+    card.appendChild(eta);
   }
 }
 
@@ -825,18 +967,18 @@ function renderRecords() {
     addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
     r.appendChild(b); list.appendChild(r);
   };
-  if (goal > 0) row("🏆", "Best streak under goal", bestStreak() + (bestStreak() === 1 ? " day" : " days"));
+  if (hasGoal()) row("🏆", "Best streak under goal", bestStreak() + (bestStreak() === 1 ? " day" : " days"));
   const totals = history.map((d) => d.total);
-  if (goal > 0) row("📉", "Lowest day", fmt(Math.min(...totals)));
+  if (hasGoal()) row("📉", "Lowest day", fmt(Math.min(...totals)));
   else row("📈", "Highest day", fmt(Math.max(...totals)));
   // best (lowest for a limit / highest otherwise) calendar week
   const weeks = {};
   history.forEach((d) => { const k = weekKey(new Date(d.endedAt || d.date)); weeks[k] = (weeks[k] || 0) + d.total; });
   const keys = Object.keys(weeks);
   if (keys.length >= 2) {
-    const pick = keys.reduce((best, k) => (goal > 0 ? weeks[k] < weeks[best] : weeks[k] > weeks[best]) ? k : best, keys[0]);
+    const pick = keys.reduce((best, k) => (hasGoal() ? weeks[k] < weeks[best] : weeks[k] > weeks[best]) ? k : best, keys[0]);
     const wLabel = new Date(pick + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    row("📆", (goal > 0 ? "Lightest week" : "Biggest week") + " (of " + wLabel + ")", fmt(round2(weeks[pick])));
+    row("📆", (hasGoal() ? "Lightest week" : "Biggest week") + " (of " + wLabel + ")", fmt(round2(weeks[pick])));
   }
   row("Σ", "All-time total", fmt(round2(totals.reduce((a, b) => a + b, 0))));
 }
@@ -869,7 +1011,7 @@ function renderTrend() {
   const X = (i) => (i / (TREND_DAYS - 1)) * W;
   const Y = (v) => H - (v / maxY) * H;
   const poly = pts.map((p) => `${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`).join(" ");
-  const gLine = goal > 0 ? `<line x1="0" y1="${Y(goal).toFixed(2)}" x2="${W}" y2="${Y(goal).toFixed(2)}" class="trend-goal"/>` : "";
+  const gLine = hasGoal() ? `<line x1="0" y1="${Y(goal).toFixed(2)}" x2="${W}" y2="${Y(goal).toFixed(2)}" class="trend-goal"/>` : "";
   card.insertAdjacentHTML("beforeend",
     `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${gLine}<polyline points="${poly}" class="trend-poly"/></svg>`);
 
@@ -879,7 +1021,7 @@ function renderTrend() {
   const weeks = Math.round(TREND_DAYS / 7);
   if (Math.abs(pct) < 5) {
     cap.innerHTML = `Holding steady — about <b>${fmt(round2(last))}</b>/day`;
-  } else if (goal > 0) {
+  } else if (hasGoal()) {
     const cls = pct < 0 ? "mc-up" : "mc-down";   // down is good for a limit
     cap.innerHTML = `<span class="${cls}">${pct < 0 ? "▼" : "▲"} ${Math.abs(pct)}%</span> over ${weeks} weeks — now ~<b>${fmt(round2(last))}</b>/day`;
   } else {
@@ -909,7 +1051,7 @@ function renderYear() {
     const ds = isoLocal(d), tt = d.getTime();
     if (tt > today0.getTime()) cell.classList.add("future");
     else if (ds in totals) {
-      if (goal > 0) cell.classList.add(totals[ds] <= goal ? "under" : "over");
+      if (hasGoal()) cell.classList.add(totals[ds] <= goal ? "under" : "over");
       else cell.classList.add("logged");
       cell.title = `${ds}: ${fmt(totals[ds])}`;
     } else cell.classList.add("empty");
@@ -917,7 +1059,7 @@ function renderYear() {
     grid.appendChild(cell);
   }
   card.appendChild(grid);
-  if (goal > 0) {
+  if (hasGoal()) {
     const lg = document.createElement("div");
     lg.className = "cal-legend";
     lg.innerHTML = `<span><i style="background:var(--safe)"></i>under</span><span><i style="background:var(--over)"></i>over</span>`;
@@ -1233,7 +1375,7 @@ function renderCalendar() {
     cell.className = "cal-day";
     cell.textContent = String(day);
     if (ds in totals) {
-      if (goal > 0) cell.classList.add(totals[ds] <= goal ? "under" : "over");
+      if (hasGoal()) cell.classList.add(totals[ds] <= goal ? "under" : "over");
       else cell.classList.add("logged");
       cell.title = `${ds}: ${fmt(totals[ds])}`;
     } else {
@@ -1246,7 +1388,7 @@ function renderCalendar() {
   card.appendChild(grid);
   card.appendChild(detail);
 
-  if (goal > 0) {
+  if (hasGoal()) {
     const lg = document.createElement("div");
     lg.className = "cal-legend";
     lg.innerHTML = `<span><i style="background:var(--safe)"></i>under goal</span><span><i style="background:var(--over)"></i>over goal</span>`;
@@ -1268,7 +1410,7 @@ function selectCalDay(ds, cell, detail, todayStr) {
   if (h) {
     const bits = [fmt(h.total)];
     if (h.taps) bits.push(`${h.taps} tap${h.taps === 1 ? "" : "s"}`);
-    if (goal > 0) bits.push(h.total <= goal ? "under goal ✓" : `${fmt(round2(h.total - goal))} over`);
+    if (hasGoal()) bits.push(h.total <= goal ? "under goal ✓" : `${fmt(round2(h.total - goal))} over`);
     b.textContent = nice; main = " — " + bits.join(" · ");
     if ((h.note || "").trim()) note = h.note;
   } else if (ds === todayStr && today > 0) {
@@ -1455,9 +1597,10 @@ function renderTop(animate) {
 
   // goal ring + caption (ring is always visible; it fills only with a goal set)
   el.ringProg.style.strokeDasharray = RING_C;
-  if (goal > 0) {
+  if (hasGoal()) {
     el.totalWrap.classList.add("has-goal");
-    const frac = Math.min(1, today / goal);
+    // a goal of 0 has no "progress" — the ring is full the moment you go over
+    const frac = goal > 0 ? Math.min(1, today / goal) : (today > 0 ? 1 : 0);
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
     updateRingCap(frac);
     // progress is already shown by the ring, the number's colour and the
@@ -1474,8 +1617,9 @@ function renderTop(animate) {
 
   // button label + live headroom under it (Feature 3)
   el.addLabel.textContent = `+ ${fmt(step)}`;
-  if (goal > 0) {
+  if (hasGoal()) {
     if (today > goal) el.addSub.textContent = `${fmt(today - goal)} over`;
+    else if (goal === 0) el.addSub.textContent = "goal: none today";
     else if (today === goal) el.addSub.textContent = "at your goal";
     else el.addSub.textContent = `${fmt(goal - today)} left today`;
   } else {
@@ -1499,7 +1643,7 @@ function renderChart() {
     const avg = recent.reduce((s, d) => s + d.total, 0) / recent.length;
     const best = Math.max(...history.map((d) => d.total));
     let tail;
-    if (goal > 0) {
+    if (hasGoal()) {
       const under = history.filter((d) => d.total <= goal).length;
       tail = `<span>under goal <b>${under}/${history.length}</b></span>`;
     } else {
@@ -1516,7 +1660,7 @@ function renderChart() {
   const max = Math.max(1, goal || 0, ...series.map((s) => s.value));
   el.chart.textContent = "";
   series.forEach((s) => {
-    const over = goal > 0 && s.value > goal;
+    const over = hasGoal() && s.value > goal;
     const bar = document.createElement("div");
     bar.className = "bar" + (s.today ? " today" : "") + (over ? " over" : "");
     bar.style.height = Math.max(2, (s.value / max) * 100) + "%";
@@ -1524,7 +1668,7 @@ function renderChart() {
     el.chart.appendChild(bar);
   });
   // dashed goal line across the chart
-  if (goal > 0) {
+  if (hasGoal()) {
     const line = document.createElement("div");
     line.className = "cap-line";
     line.style.bottom = (goal / max) * 100 + "%";
@@ -1543,7 +1687,7 @@ function renderChart() {
   });
 
   // goal legend in the card header — replaces the inline tag so nothing overlaps the bars (Feature 6)
-  el.chartLegend.innerHTML = goal > 0 ? `<i></i>goal ${fmt(goal)}` : "";
+  el.chartLegend.innerHTML = hasGoal() ? `<i></i>goal ${fmt(goal)}` : "";
 }
 
 function renderHistory() {
@@ -1585,7 +1729,7 @@ function applyDelta(amt, confirmed) {
   if (amt < 0 && today <= 0) return;   // nothing to subtract
   // Accountability: the tap that would cross the goal has to be a conscious
   // choice — pause and confirm instead of sliding over on autopilot.
-  if (!confirmed && goal > 0 && amt > 0 && today <= goal && round2(today + amt) > goal) {
+  if (!confirmed && hasGoal() && amt > 0 && today <= goal && round2(today + amt) > goal) {
     confirmOver(amt);
     return;
   }
@@ -1598,7 +1742,7 @@ function applyDelta(amt, confirmed) {
   save(KEY_ACT_DATE, sessionDate());   // remember which day this activity belongs to (past-midnight taps still count as the day before)
   buzz(amt > 0 ? 15 : 10); click();
   el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
-  if (goal > 0 && amt > 0) {
+  if (hasGoal() && amt > 0) {
     if (prev < goal && today === goal) atGoalHeadsUp();        // landed exactly on the limit
     else if (prev <= goal && today > goal) warnOver();          // crossed over it
   }
@@ -1678,7 +1822,7 @@ function openEndDay(resume) {
     const refreshSub = () => {
       const p = projected();
       let sub = `Log ${fmt(p)} and start a fresh day.`;
-      if (goal > 0) {
+      if (hasGoal()) {
         sub = p > goal
           ? `Log ${fmt(p)} — ${fmt(round2(p - goal))} over your ${fmt(goal)} goal.`
           : `Log ${fmt(p)} — under your ${fmt(goal)} goal ✓`;
@@ -2008,7 +2152,7 @@ function commitDay(note, dateStr, extras) {
     if (y && mo && d) when = new Date(y, mo - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
   }
   const total = today;
-  const underGoal = goal > 0 && total <= goal;
+  const underGoal = hasGoal() && total <= goal;
   const entry = {
     date: isoLocal(when),
     label: dayLabel(when),
@@ -2040,7 +2184,7 @@ function commitDay(note, dateStr, extras) {
 
   // grow the tree on an under-goal day; a miss makes it droop (no growth)
   let prestiged = false;
-  if (goal > 0) {
+  if (hasGoal()) {
     if (underGoal) {
       tree.sad = false;
       tree.progress += 1;
@@ -2053,7 +2197,7 @@ function commitDay(note, dateStr, extras) {
 
   // a fuller "day complete" moment
   buzz(prestiged ? [0, 40, 60, 40, 60, 90] : [0, 35, 40, 35, 40, 70]);
-  const overBy = goal > 0 && total > goal ? ` · ${fmt(round2(total - goal))} over goal` : "";
+  const overBy = hasGoal() && total > goal ? ` · ${fmt(round2(total - goal))} over goal` : "";
   toast(prestiged
     ? `🌳 Tree fully grown — Prestige ${tree.level}!`
     : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
@@ -2080,6 +2224,9 @@ function commitDay(note, dateStr, extras) {
     const firstRow = el.history.querySelector(".hist-row");
     if (firstRow) firstRow.classList.add("enter");
   }
+
+  // ending a day is the natural moment to consider the next rung down
+  setTimeout(() => { maybeZeroHandoff(); maybeTaperOffer(); }, 1400);
 }
 
 // Feature 9: undo the most recent End Day (merges it back into today).
@@ -2162,9 +2309,25 @@ function openSettings() {
     addEl(s, "label", "Amount added per tap");
     const stepInput = numInput(fmt(step), "0.01");
     s.appendChild(stepInput);
-    addEl(s, "label", "Daily goal (blank or 0 for none)");
-    const goalInput = numInput(goal > 0 ? fmt(goal) : "", "0");
+    addEl(s, "label", "Daily goal — leave blank for none, 0 is the finish line");
+    const goalInput = numInput(hasGoal() ? fmt(goal) : "", "0");
     s.appendChild(goalInput);
+
+    // step-down plan: the app's whole point is walking the goal down to zero
+    settingsSection(s, "Taper to zero");
+    const taperToggle = makeToggle(s, "Suggest step-downs", taper.on);
+    taperToggle.addEventListener("change", () => { taper.on = taperToggle.checked; save(KEY_TAPER, taper); buzz(8); });
+    addEl(s, "label", "Drop the goal by");
+    const stepDown = numInput(fmt(taper.step), "0.01");
+    stepDown.addEventListener("change", () => { const v = parseFloat(stepDown.value); if (v > 0) { taper.step = round2(v); save(KEY_TAPER, taper); } });
+    s.appendChild(stepDown);
+    addEl(s, "label", "No more often than every (days)");
+    const everyIn = numInput(String(taper.everyDays), "1");
+    everyIn.addEventListener("change", () => { const v = parseInt(everyIn.value, 10); if (v >= 1) { taper.everyDays = v; save(KEY_TAPER, taper); } });
+    s.appendChild(everyIn);
+    addEl(s, "p", "When you've held your limit for a while and are living below it, the app offers the next rung down. It never suggests one while you're struggling.", "sub");
+    const zp = hasGoal() ? projectZero(goalLog) : null;
+    if (zp && !zp.done) addEl(s, "p", `At your current pace you'd reach 0 around ${zp.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`, "sub");
 
     settingsSection(s, "Feedback");
     const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
@@ -2237,8 +2400,12 @@ function openSettings() {
       const ns = parseFloat(stepInput.value);
       if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }
       step = round2(ns);
+      // blank = no goal at all; 0 is a real goal (the finish line)
       const ng = parseFloat(goalInput.value);
-      goal = isNaN(ng) || ng <= 0 ? 0 : round2(ng);
+      if (goalInput.value.trim() === "" || isNaN(ng) || ng < 0) { goalOn = false; goal = 0; }
+      else { goalOn = true; goal = round2(ng); }
+      save(KEY_GOAL_ON, goalOn);
+      if (goalOn) noteGoalChange(goal);
       countLabel = labelInput.value.trim();
       haptic = hapticToggle.checked;
       sound = soundToggle.checked;
@@ -3762,7 +3929,7 @@ function renderTree() {
 
   const cap = document.createElement("div");
   cap.className = "tree-caption";
-  if (goal <= 0) cap.textContent = "Set a daily goal in Settings to start growing your tree.";
+  if (!hasGoal()) cap.textContent = "Set a daily goal in Settings to start growing your tree.";
   else if (tree.sad) cap.textContent = "Your tree is drooping — finish today under your goal to perk it back up.";
   else if (tree.progress === 0) cap.textContent = tree.level > 0 ? "A fresh seedling. Keep under your goal to grow it again." : "A tiny seed. Stay under your goal each day to grow it.";
   else cap.textContent = "Thriving 🌱 keep finishing under your goal.";
@@ -3869,6 +4036,7 @@ checkMilestones();
 // the heads-up waits a beat so it never lands on top of the lock/daily gates
 setTimeout(checkRiskyTimes, 2500);
 maybeWeeklyRecap();
+setTimeout(() => { maybeZeroHandoff(); maybeTaperOffer(); }, 1800);
 setTimeout(maybeBackupNudge, 3200);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
