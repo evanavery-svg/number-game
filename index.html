@@ -43,6 +43,18 @@
       --halo-safe: rgba(48,209,88,0.20); --halo-warn: rgba(255,159,10,0.22); --halo-over: rgba(255,69,58,0.24);
       --glow-safe: rgba(48,209,88,0.45); --glow-warn: rgba(255,159,10,0.45); --glow-over: rgba(255,69,58,0.50);
     }
+    /* One type scale for the whole app, so every screen feels related.
+       hero → the big number; display → panel headline numbers; title → card
+       and sheet headings; body → normal copy; small → captions; micro → labels. */
+    :root {
+      --fs-hero: 72px;
+      --fs-display: 44px;
+      --fs-title: 21px;
+      --fs-lg: 26px;
+      --fs-body: 15px;
+      --fs-small: 13px;
+      --fs-micro: 11px;
+    }
     /* Follow the phone's appearance: light mode gets a light skin. */
     @media (prefers-color-scheme: light) {
       :root {
@@ -227,7 +239,7 @@
     }
     .ring-center { display: flex; align-items: center; justify-content: center; }
     .total .value {
-      font-size: 72px;
+      font-size: var(--fs-hero);
       font-weight: 300;
       line-height: 1;
       letter-spacing: -2.5px;
@@ -280,19 +292,20 @@
       margin: 2px 0 16px;
       border: none;
       border-radius: 28px;
-      background: linear-gradient(180deg, var(--accent-2) 0%, var(--accent) 100%);
+      /* flat, solid fill — the ring is the hero, this is just the action */
+      background: var(--accent);
       color: var(--btn-text);
       font-size: 34px;
       font-weight: 700;
       letter-spacing: 0.3px;
       cursor: pointer;
-      box-shadow: 0 14px 36px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.35);
-      transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.28);
+      transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1), filter 0.2s ease;
       user-select: none;
     }
     .add-btn:active {
       transform: scale(0.975) translateY(2px);
-      box-shadow: 0 6px 16px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.25);
+      filter: brightness(0.94);
     }
     .add-label, .add-btn small { position: relative; z-index: 1; }
     .add-btn small { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; opacity: 0.5; margin-top: 10px; }
@@ -326,31 +339,26 @@
     .row .end { color: var(--accent); }
 
     /* ---- cards ---- */
-    .chart-card, .history { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); }
-    .chart-card { padding: 18px 16px 12px; margin-bottom: 14px; }
     .section-title {
-      font-size: 12px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
+      font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
       color: var(--muted); margin: 0 2px 10px;
     }
-    .chart-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
-    .chart-head .section-title { margin: 0; }
-    .chart-legend:not(:empty) { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--over); }
-    .chart-legend i { display: inline-block; width: 14px; height: 0; border-top: 1px dashed var(--over); }
-    .chart-stats {
-      display: flex; flex-wrap: wrap; gap: 4px 18px;
-      font-size: 13px; color: var(--muted);
-      margin: 0 2px 14px;
-    }
-    .chart-stats b { color: var(--text); font-weight: 700; }
-    .chart { position: relative; display: flex; align-items: flex-end; gap: 5px; height: 84px; }
-    .bar { flex: 1; min-width: 5px; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
-    .bar.today { background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
-    .bar.over { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
-    /* dashed line marking the daily goal across the chart */
-    .cap-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--over); opacity: 0.5; pointer-events: none; }
-    .chart-labels { display: flex; gap: 5px; margin-top: 7px; }
-    .chart-labels span { flex: 1; min-width: 5px; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
-    .chart-labels span.today { color: var(--accent); }
+    .chart-card, .history { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); }
+    .chart-card { padding: 18px 16px 14px; margin-bottom: 14px; }
+    /* one card per view gets to be the hero — a soft accent frame */
+    .hero-card { box-shadow: var(--card-shadow), inset 0 0 0 1.5px var(--accent); }
+    .hero-card .section-title { color: var(--accent); }
+
+    /* insights view switcher */
+    .seg-row { display: flex; gap: 4px; padding: 4px; margin: 0 16px 10px; background: var(--surface); border-radius: 12px; }
+    .seg-btn { flex: 1; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: var(--fs-small); font-weight: 700; border-radius: 9px; padding: 9px 0; transition: background 0.18s ease, color 0.18s ease; }
+    .seg-btn.on { background: var(--surface-2); color: var(--text); }
+    .seg-page { animation: itemIn 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
+    /* "more stats" reveal keeps the headline grid scannable */
+    .more-stats { display: block; width: 100%; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: var(--fs-small); font-weight: 700; padding: 2px 0 12px; }
+    .more-stats:active { color: var(--text); }
+    /* a card with nothing to show yet, rather than a hole in the page */
+    .card-empty { font-size: var(--fs-small); color: var(--faint); line-height: 1.5; }
 
     .history { padding: 4px 0; margin-bottom: 16px; max-height: 42vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .history .section-title { margin: 14px 18px 4px; }
@@ -398,7 +406,7 @@
     }
     .overlay.show .sheet { transform: translateY(0); }
     .sheet::before { content: ""; display: block; width: 38px; height: 5px; border-radius: 999px; background: var(--surface-2); margin: 0 auto 16px; }
-    .sheet h3 { margin: 0 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -0.3px; }
+    .sheet h3 { margin: 0 0 6px; font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.3px; }
     .sheet p.sub { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
     .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 16px 0 6px; }
     .sheet input, .sheet textarea {
@@ -442,7 +450,7 @@
     .sheet-btn.link { background: transparent; color: var(--accent); margin-top: 6px; }
     .sheet-divider { height: 1px; background: var(--hair); margin: 18px 0 2px; border: none; }
     /* settings section header */
-    .settings-section { font-size: 11px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase; color: var(--accent); margin: 24px 0 4px; padding-top: 6px; border-top: 1px solid var(--hair); }
+    .settings-section { font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase; color: var(--muted); margin: 24px 0 4px; padding-top: 6px; border-top: 1px solid var(--hair); }
     .settings-section:first-of-type { border-top: none; padding-top: 0; margin-top: 14px; }
     /* accessibility: stop double-tap zoom on controls, keep pinch-zoom; visible focus */
     button, .ring-wrap, .range-chip, .cal-day, .wk-bar, .tod-bar, .mg-face, .gg-face, .chip, .mood-btn { touch-action: manipulation; }
@@ -483,7 +491,7 @@
     .panel-overlay.show .panel { transform: translateY(0); }
     .panel::before { content: ""; display: block; width: 38px; height: 5px; border-radius: 999px; background: var(--surface-2); margin: 10px auto 0; }
     .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 8px; }
-    .panel-head h3 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.4px; }
+    .panel-head h3 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.4px; }
     .panel-close { background: none; border: none; color: var(--accent); font-size: 16px; font-weight: 700; cursor: pointer; padding: 6px 4px; }
     .panel-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); }
     .panel-body .history { max-height: none; }
@@ -491,7 +499,7 @@
     .range-row { display: flex; gap: 7px; margin-bottom: 12px; }
     .range-chip { flex: 1; border: none; cursor: pointer; background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 8px 0; box-shadow: var(--card-shadow); transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease; }
     .range-chip:active { transform: scale(0.96); }
-    .range-chip.on { background: var(--accent); color: var(--btn-text); box-shadow: none; }
+    .range-chip.on { background: var(--text); color: var(--bg); box-shadow: none; }
     /* on-pace line */
     .pace-line { font-size: 13px; color: var(--muted); text-align: center; margin: -4px 0 14px; line-height: 1.4; }
     .pace-line b { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -509,7 +517,7 @@
     .taper-card { display: flex; align-items: center; justify-content: center; gap: 18px; background: var(--bg); border-radius: 16px; padding: 20px; margin: 10px 0 4px; box-shadow: inset 0 0 0 1px var(--surface-2); }
     .taper-from { font-size: 34px; font-weight: 300; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
     .taper-arrow { font-size: 22px; color: var(--faint); }
-    .taper-to { font-size: 46px; font-weight: 300; color: var(--safe); font-variant-numeric: tabular-nums; letter-spacing: -1.5px; }
+    .taper-to { font-size: var(--fs-display); font-weight: 300; color: var(--safe); font-variant-numeric: tabular-nums; letter-spacing: -1.5px; }
     /* year heatmap */
     .year-grid { display: grid; grid-template-columns: repeat(53, 1fr); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 2px; margin-top: 8px; }
     .year-cell { width: 100%; aspect-ratio: 1 / 1; border-radius: 2px; background: var(--surface-2); }
@@ -521,7 +529,7 @@
     .year-cell.today { box-shadow: inset 0 0 0 1.5px var(--accent); }
     .insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     .tile { background: var(--surface); border-radius: 16px; padding: 15px 14px; box-shadow: var(--card-shadow); }
-    .tile-val { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .tile-val { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; line-height: 1.1; }
     .tile-val.good { color: var(--safe); }
     .tile-val.bad { color: var(--over); }
     .tile-lbl { font-size: 12px; color: var(--muted); margin-top: 5px; font-weight: 500; }
@@ -608,7 +616,7 @@
     .worry-open .worry-arrow { color: var(--accent); font-size: 20px; flex: none; }
 
     /* worry dump flow */
-    .worry-timer { font-size: 42px; font-weight: 300; letter-spacing: -1px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: 6px 0 0; }
+    .worry-timer { font-size: var(--fs-display); font-weight: 300; letter-spacing: -1px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: 6px 0 0; }
     .worry-timer.done { color: var(--muted); }
     .worry-timer-sub { text-align: center; font-size: 12px; color: var(--faint); margin: 2px 0 4px; }
     .worry-item { padding: 13px 0; border-top: 1px solid var(--hair); }
@@ -654,7 +662,7 @@
     .since-card { background: var(--surface); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--card-shadow); cursor: pointer; transition: transform 0.08s ease; overflow: hidden; }
     .since-card:active { transform: scale(0.99); }
     .since-name { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
-    .since-big { font-size: 44px; font-weight: 300; letter-spacing: -1.5px; line-height: 1.1; margin-top: 6px; color: var(--accent); }
+    .since-big { font-size: var(--fs-display); font-weight: 300; letter-spacing: -1.5px; line-height: 1.1; margin-top: 6px; color: var(--accent); }
     .since-big .since-unit { font-size: 18px; font-weight: 500; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
     .since-detail { font-size: 13px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
     .since-start { font-size: 12px; color: var(--faint); margin-top: 8px; }
@@ -685,7 +693,7 @@
     .urge-count { font-size: 13px; font-weight: 700; color: var(--muted); }
     .urge-btn { border: none; cursor: pointer; background: var(--surface-2); color: var(--accent); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 8px 15px; transition: transform 0.08s ease; }
     .urge-btn:active { transform: scale(0.96); }
-    .craving-clock { font-size: 52px; font-weight: 300; letter-spacing: -2px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: 8px 0 2px; }
+    .craving-clock { font-size: var(--fs-display); font-weight: 300; letter-spacing: -2px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: 8px 0 2px; }
     .craving-line { text-align: center; font-size: 14px; color: var(--muted); min-height: 20px; }
     /* weekly recap */
     .recap { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
@@ -754,7 +762,7 @@
 
     /* ---- water tracker (separate panel) ---- */
     .water-card { background: var(--surface); border-radius: 22px; box-shadow: var(--card-shadow); padding: 24px 18px 20px; text-align: center; margin-bottom: 14px; }
-    .water-big { font-size: 60px; font-weight: 300; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--water); }
+    .water-big { font-size: var(--fs-display); font-weight: 300; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--water); }
     .water-big.bump { animation: bump 0.22s ease; }
     .water-big .water-unit { font-size: 22px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
     .water-goal { font-size: 14px; color: var(--muted); margin-top: 12px; }
@@ -972,7 +980,7 @@
     }
     .mg-timer.tick { animation: mgTick 0.5s ease; }
     @keyframes mgTick { 0% { transform: scale(1); } 40% { transform: scale(1.16); } 100% { transform: scale(1); } }
-    .mg-title { font-size: 27px; font-weight: 700; letter-spacing: -0.6px; margin: 0; }
+    .mg-title { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.6px; margin: 0; }
     .mg-sub { font-size: 14px; color: var(--muted); margin: 9px 0 32px; }
     .mg-faces { display: flex; gap: 8px; justify-content: center; }
     .mg-face {
@@ -1047,7 +1055,7 @@
     @keyframes ggEndIn { from { opacity: 0; } }
     .gg-end-emoji { font-size: 62px; line-height: 1; animation: ggEndPop 0.7s cubic-bezier(0.34,1.56,0.64,1); }
     @keyframes ggEndPop { from { opacity: 0; transform: scale(0.4) translateY(12px); } }
-    .gg-end-msg { font-size: 26px; font-weight: 700; letter-spacing: -0.4px; line-height: 1.32; max-width: 300px; }
+    .gg-end-msg { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.4px; line-height: 1.32; max-width: 300px; }
     .gg-end-sub { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: 0.4px; font-variant-numeric: tabular-nums; }
 
     /* ---- shared motion utilities ---- */
@@ -1073,12 +1081,7 @@
     .lock.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
     /* brief whole-app colour cross-fade when the theme changes */
     .theme-fade, .theme-fade * { transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease, fill 0.4s ease, stroke 0.4s ease !important; }
-    /* the big button breathes very gently while idle */
-    @keyframes btnBreathe {
-      0%, 100% { box-shadow: 0 14px 36px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.35); }
-      50% { box-shadow: 0 16px 44px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,0.35); }
-    }
-    .add-btn { animation: bootIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.18s backwards, btnBreathe 3.4s ease-in-out 1s infinite; }
+    .add-btn { animation: bootIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.18s backwards; }
 
     /* Compact layout for short screens (iPhone SE-class, ~667–736px tall) so
        the home screen fits in one viewport without clipping anything. */
@@ -1188,7 +1191,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.6 · © Avery LLC</div>
+  <div class="version">v8.7 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1241,36 +1244,39 @@
         <h3>Insights</h3>
         <button class="panel-close" id="insightsClose">Done</button>
       </div>
+      <!-- three views so the page has a point of view instead of one long scroll -->
+      <div class="seg-row" id="segRow"></div>
       <div class="panel-body">
-        <div class="range-row" id="rangeRow"></div>
-        <div class="insights-grid" id="insightsGrid"></div>
-        <div class="pace-line" id="paceLine" style="display:none"></div>
-
-        <div class="chart-card" id="ladderCard" style="display:none"></div>
-        <div class="chart-card" id="recordsCard" style="display:none"></div>
-        <div class="chart-card" id="tapLogCard" style="display:none"></div>
-        <div class="chart-card" id="trendCard" style="display:none"></div>
-        <div class="chart-card" id="calCard" style="display:none"></div>
-        <div class="chart-card" id="yearCard" style="display:none"></div>
-        <div class="chart-card" id="weekdayCard" style="display:none"></div>
-        <div class="chart-card" id="timeCard" style="display:none"></div>
-        <div class="chart-card" id="moodCard" style="display:none"></div>
-        <div class="chart-card" id="connCard" style="display:none"></div>
-        <div class="chart-card" id="winsCard" style="display:none"></div>
-
-        <div class="chart-card" id="chartCard" style="display:none">
-          <div class="chart-head">
-            <div class="section-title" id="chartTitle">Last days</div>
-            <div class="chart-legend" id="chartLegend"></div>
-          </div>
-          <div class="chart-stats" id="chartStats"></div>
-          <div class="chart" id="chart"></div>
-          <div class="chart-labels" id="chartLabels"></div>
+        <!-- OVERVIEW: where you stand right now -->
+        <div class="seg-page" id="segOverview">
+          <div class="range-row" id="rangeRow"></div>
+          <div class="insights-grid" id="insightsGrid"></div>
+          <button class="more-stats" id="moreStats">More stats</button>
+          <div class="insights-grid" id="insightsGrid2" style="display:none"></div>
+          <div class="pace-line" id="paceLine" style="display:none"></div>
+          <div class="chart-card" id="trendCard" style="display:none"></div>
+          <div class="chart-card" id="tapLogCard" style="display:none"></div>
         </div>
 
-        <div class="history" id="history">
-          <div class="section-title">History</div>
-          <div class="hist-empty" id="histEmpty">No previous days yet.</div>
+        <!-- JOURNEY: the arc of the whole thing -->
+        <div class="seg-page" id="segJourney" style="display:none">
+          <div class="chart-card hero-card" id="ladderCard" style="display:none"></div>
+          <div class="chart-card" id="recordsCard" style="display:none"></div>
+          <div class="chart-card" id="calCard" style="display:none"></div>
+          <div class="chart-card" id="yearCard" style="display:none"></div>
+          <div class="history" id="history">
+            <div class="section-title">History</div>
+            <div class="hist-empty" id="histEmpty">No previous days yet.</div>
+          </div>
+        </div>
+
+        <!-- PATTERNS: what correlates with what -->
+        <div class="seg-page" id="segPatterns" style="display:none">
+          <div class="chart-card" id="weekdayCard" style="display:none"></div>
+          <div class="chart-card" id="timeCard" style="display:none"></div>
+          <div class="chart-card" id="moodCard" style="display:none"></div>
+          <div class="chart-card" id="connCard" style="display:none"></div>
+          <div class="chart-card" id="winsCard" style="display:none"></div>
         </div>
       </div>
     </div>

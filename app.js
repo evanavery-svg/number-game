@@ -52,7 +52,6 @@ const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game ena
 const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
 const KEY_GAME_BEST = "count.gameBest";         // best focus-game score
 
-const CHART_DAYS = 14;
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
 
 const el = {
@@ -73,12 +72,7 @@ const el = {
   insightsOverlay: document.getElementById("insightsOverlay"),
   insightsClose: document.getElementById("insightsClose"),
   insightsGrid: document.getElementById("insightsGrid"),
-  chartCard: document.getElementById("chartCard"),
-  chartTitle: document.getElementById("chartTitle"),
-  chartStats: document.getElementById("chartStats"),
   chart: document.getElementById("chart"),
-  chartLegend: document.getElementById("chartLegend"),
-  chartLabels: document.getElementById("chartLabels"),
   addLabel: document.querySelector("#addBtn .add-label"),
   addSub: document.querySelector("#addBtn small"),
   history: document.getElementById("history"),
@@ -95,6 +89,9 @@ const el = {
   reminder: document.getElementById("reminderBanner"),
   reminderText: document.getElementById("reminderText"),
   reminderDismiss: document.getElementById("reminderDismiss"),
+  segRow: document.getElementById("segRow"),
+  insightsGrid2: document.getElementById("insightsGrid2"),
+  moreStats: document.getElementById("moreStats"),
   rangeRow: document.getElementById("rangeRow"),
   paceLine: document.getElementById("paceLine"),
   ladderCard: document.getElementById("ladderCard"),
@@ -799,7 +796,6 @@ function render() {
   el.quote.textContent = quoteOfTheDay();
   renderTop();
   renderInsights();
-  renderChart();
   renderHistory();
   renderSinceStrip();
 }
@@ -814,6 +810,38 @@ function rangeLabel(days) {
   return days === 7 ? "Last 7 days" : days === 30 ? "Last 30 days" : days === 90 ? "Last 90 days" : "All time";
 }
 const RANGES = [{ n: 7, t: "7d" }, { n: 30, t: "30d" }, { n: 90, t: "90d" }, { n: Infinity, t: "All" }];
+// Insights is split into three views so each has a point of view.
+const SEGMENTS = [
+  { key: "overview", label: "Overview", page: "segOverview" },
+  { key: "journey", label: "Journey", page: "segJourney" },
+  { key: "patterns", label: "Patterns", page: "segPatterns" },
+];
+let insightSeg = "overview";
+let moreStatsOpen = false;
+function renderSegRow() {
+  const row = el.segRow;
+  row.textContent = "";
+  SEGMENTS.forEach((sg) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "seg-btn" + (insightSeg === sg.key ? " on" : "");
+    b.textContent = sg.label;
+    b.addEventListener("click", () => { insightSeg = sg.key; showSegment(); buzz(6); });
+    row.appendChild(b);
+  });
+  showSegment();
+}
+function showSegment() {
+  SEGMENTS.forEach((sg) => {
+    const page = document.getElementById(sg.page);
+    if (page) page.style.display = insightSeg === sg.key ? "block" : "none";
+  });
+  el.segRow.querySelectorAll(".seg-btn").forEach((b, i) => b.classList.toggle("on", SEGMENTS[i].key === insightSeg));
+  // the range switcher only drives the Overview stats
+  el.rangeRow.style.display = insightSeg === "overview" ? "flex" : "none";
+  const body = el.insightsOverlay.querySelector(".panel-body");
+  if (body) body.scrollTop = 0;
+}
 function renderRangeRow() {
   const row = el.rangeRow;
   row.textContent = "";
@@ -827,31 +855,35 @@ function renderRangeRow() {
   });
 }
 
-// Insights panel: a grid of headline stats above the chart and history.
+// Insights panel: four headline stats, the rest behind a reveal, then the
+// cards for the currently selected view.
 function renderInsights() {
   renderRangeRow();
-  const g = el.insightsGrid;
-  g.textContent = "";
+  renderSegRow();
+  const g = el.insightsGrid, g2 = el.insightsGrid2;
+  g.textContent = ""; g2.textContent = "";
   const inRange = histInRange(insightRange);
   const n = inRange.length;
   const rangeAvg = n ? inRange.reduce((s, d) => s + d.total, 0) / n : 0;
   const rangeTotal = round2(inRange.reduce((s, d) => s + d.total, 0) + (today > 0 ? today : 0));
 
   if (hasGoal()) {
+    // four that matter most, always visible
     const cur = underStreak();
-    g.appendChild(statTile(String(cur), "Current streak", { good: cur > 0 }));
-    g.appendChild(statTile(String(bestStreak()), "Best streak"));
     const under = inRange.filter((d) => d.total <= goal).length;
+    g.appendChild(statTile(String(cur), "Current streak", { good: cur > 0 }));
     g.appendChild(statTile(n ? Math.round((under / n) * 100) + "%" : "—", "Under goal", { good: n > 0 }));
     g.appendChild(statTile(n ? fmt(round2(rangeAvg)) : "—", "Avg / day"));
     g.appendChild(statTile(fmt(rangeTotal), rangeLabel(insightRange)));
-    g.appendChild(statTile(String(n), "Days logged"));
+    // the rest on demand
+    g2.appendChild(statTile(String(bestStreak()), "Best streak"));
+    g2.appendChild(statTile(String(n), "Days logged"));
     // once you're near/at the finish line, days at zero is the number that counts
     const zs = zeroStreak(history.map((d) => d.total));
     const zeroDays = history.filter((d) => d.total === 0).length;
     if (goal === 0 || zeroDays > 0) {
-      g.appendChild(statTile(String(zs), "Days at zero", { good: zs > 0 }));
-      g.appendChild(statTile(String(zeroDays), "Zero days total", { good: zeroDays > 0 }));
+      g2.appendChild(statTile(String(zs), "Days at zero", { good: zs > 0 }));
+      g2.appendChild(statTile(String(zeroDays), "Zero days total", { good: zeroDays > 0 }));
     }
   } else {
     g.appendChild(statTile(fmt(rangeTotal), rangeLabel(insightRange)));
@@ -859,6 +891,9 @@ function renderInsights() {
     g.appendChild(statTile(n ? fmt(Math.max(...inRange.map((d) => d.total))) : "—", "Highest day"));
     g.appendChild(statTile(String(n), "Days logged"));
   }
+  el.moreStats.style.display = g2.childNodes.length ? "block" : "none";
+  el.insightsGrid2.style.display = moreStatsOpen ? "grid" : "none";
+  el.moreStats.textContent = moreStatsOpen ? "Fewer stats" : "More stats";
 
   renderPace();
   renderLadder();
@@ -908,7 +943,12 @@ function renderPace() {
 // it's heading. This is the story of the whole journey in one card.
 function renderLadder() {
   const card = el.ladderCard;
-  if (goalLog.length < 2) { card.style.display = "none"; return; }
+  if (goalLog.length < 2) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'Taper ladder', "section-title");
+    addEl(card, "div", 'Your goal history will chart here once you change your goal for the first time.', "card-empty");
+    return;
+  }
   card.style.display = "block";
   card.textContent = "";
   addEl(card, "div", "Taper ladder", "section-title");
@@ -955,7 +995,12 @@ function renderLadder() {
 // All-time highlights.
 function renderRecords() {
   const card = el.recordsCard;
-  if (history.length < 3) { card.style.display = "none"; return; }
+  if (history.length < 3) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'Records', "section-title");
+    addEl(card, "div", 'Log a few days and your personal bests will collect here.', "card-empty");
+    return;
+  }
   card.style.display = "block";
   card.textContent = "";
   addEl(card, "div", "Records", "section-title");
@@ -988,7 +1033,12 @@ function renderRecords() {
 const TREND_DAYS = 84, TREND_WIN = 7;
 function renderTrend() {
   const card = el.trendCard;
-  if (history.length < 10) { card.style.display = "none"; return; }
+  if (history.length < 10) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'Trend · 7-day average', "section-title");
+    addEl(card, "div", 'After about 10 logged days a trend line appears here, showing which way you’re heading.', "card-empty");
+    return;
+  }
   const byDate = {};
   history.forEach((d) => { byDate[d.date] = d.total; });
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
@@ -1033,7 +1083,12 @@ function renderTrend() {
 // A GitHub-style heatmap of the past year — the whole streak at a glance.
 function renderYear() {
   const card = el.yearCard;
-  if (history.length < 14) { card.style.display = "none"; return; }
+  if (history.length < 14) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'Past year', "section-title");
+    addEl(card, "div", 'Two weeks in, a year-at-a-glance grid of your days shows up here.', "card-empty");
+    return;
+  }
   card.style.display = "block";
   card.textContent = "";
   addEl(card, "div", "Past year", "section-title");
@@ -1124,7 +1179,12 @@ function renderConnections() {
 function renderMood() {
   const card = el.moodCard;
   const withMood = history.filter((d) => typeof d.mood === "number" && d.mood >= 1);
-  if (withMood.length < 3) { card.style.display = "none"; return; }
+  if (withMood.length < 3) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'Mood & patterns', "section-title");
+    addEl(card, "div", 'Check in with your mood on a few more days and the patterns will surface here.', "card-empty");
+    return;
+  }
   card.style.display = "block";
   card.textContent = "";
 
@@ -1427,7 +1487,12 @@ function selectCalDay(ds, cell, detail, todayStr) {
 // Average by weekday — the highest (worst, for a limit) is flagged.
 function renderWeekday() {
   const card = el.weekdayCard;
-  if (history.length < 4) { card.style.display = "none"; return; }
+  if (history.length < 4) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'By weekday', "section-title");
+    addEl(card, "div", 'Once you have four logged days, your weekday averages appear here.', "card-empty");
+    return;
+  }
   card.style.display = "block";
   card.textContent = "";
 
@@ -1488,7 +1553,12 @@ function renderTimeOfDay() {
   history.forEach((d) => addTimes(d.tapTimes));
   addTimes(tapLog);
 
-  if (count < 5) { card.style.display = "none"; return; }   // too little to be meaningful
+  if (count < 5) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", 'By time of day', "section-title");
+    addEl(card, "div", 'A few more taps and your daily rhythm will show up here.', "card-empty");
+    return;
+  }
   card.style.display = "block";
   card.textContent = "";
 
@@ -1552,13 +1622,14 @@ function statTile(value, label, opts) {
 
 function openInsights() {
   calOffset = 0;
+  insightSeg = "overview";   // always land on Overview
+  moreStatsOpen = false;
   renderInsights();
   el.insightsOverlay.classList.add("show");
   // entrance choreography: tiles + cards rise in, bars grow to height
   staggerIn(el.insightsGrid, 30);
-  const body = el.insightsOverlay.querySelector(".panel-body");
-  if (body) staggerIn(body, 55, 8);
-  growBars(el.chart, ".bar");
+  const page = document.getElementById("segOverview");
+  if (page) staggerIn(page, 55, 8);
   growBars(el.weekdayCard, ".wk-bar");
   growBars(el.timeCard, ".tod-bar");
   growBars(el.moodCard, ".ms-bar");
@@ -1629,67 +1700,6 @@ function renderTop(animate) {
   el.undo.disabled = taps === 0;
 }
 
-function renderChart() {
-  const series = history.slice(-CHART_DAYS).map((d) => ({ value: d.total, today: false, label: d.label, date: d.endedAt || d.date }));
-  series.push({ value: today, today: true, label: "today", date: new Date().toISOString() });
-
-  if (history.length === 0 && today === 0) { el.chartCard.style.display = "none"; return; }
-  el.chartCard.style.display = "block";
-  el.chartTitle.textContent = `Last ${Math.min(CHART_DAYS, history.length) + 1} days`;
-
-  // stats strip (avg of last 7 · best · success rate / this week)
-  if (history.length > 0) {
-    const recent = history.slice(-7);
-    const avg = recent.reduce((s, d) => s + d.total, 0) / recent.length;
-    const best = Math.max(...history.map((d) => d.total));
-    let tail;
-    if (hasGoal()) {
-      const under = history.filter((d) => d.total <= goal).length;
-      tail = `<span>under goal <b>${under}/${history.length}</b></span>`;
-    } else {
-      tail = `<span>this week <b>${fmt(weekTotal())}</b></span>`;
-    }
-    el.chartStats.innerHTML =
-      `avg <b>${fmt(avg)}</b>` +
-      `<span>best <b>${fmt(best)}</b></span>` + tail;
-  } else {
-    el.chartStats.innerHTML = `this week <b>${fmt(weekTotal())}</b>`;
-  }
-
-  // scale includes the goal so the cap line always sits on the chart
-  const max = Math.max(1, goal || 0, ...series.map((s) => s.value));
-  el.chart.textContent = "";
-  series.forEach((s) => {
-    const over = hasGoal() && s.value > goal;
-    const bar = document.createElement("div");
-    bar.className = "bar" + (s.today ? " today" : "") + (over ? " over" : "");
-    bar.style.height = Math.max(2, (s.value / max) * 100) + "%";
-    bar.title = `${s.label}: ${fmt(s.value)}`;
-    el.chart.appendChild(bar);
-  });
-  // dashed goal line across the chart
-  if (hasGoal()) {
-    const line = document.createElement("div");
-    line.className = "cap-line";
-    line.style.bottom = (goal / max) * 100 + "%";
-    el.chart.appendChild(line);
-  }
-
-  // weekday initials under each bar, today highlighted (Feature 5)
-  const WK = ["S", "M", "T", "W", "T", "F", "S"];
-  el.chartLabels.textContent = "";
-  series.forEach((s) => {
-    const lab = document.createElement("span");
-    const dt = new Date(s.date);
-    lab.textContent = isNaN(dt.getTime()) ? "" : WK[dt.getDay()];
-    if (s.today) lab.className = "today";
-    el.chartLabels.appendChild(lab);
-  });
-
-  // goal legend in the card header — replaces the inline tag so nothing overlaps the bars (Feature 6)
-  el.chartLegend.innerHTML = hasGoal() ? `<i></i>goal ${fmt(goal)}` : "";
-}
-
 function renderHistory() {
   el.history.querySelectorAll(".hist-row").forEach((n) => n.remove());
   if (history.length === 0) { el.histEmpty.style.display = "block"; return; }
@@ -1746,7 +1756,7 @@ function applyDelta(amt, confirmed) {
     if (prev < goal && today === goal) atGoalHeadsUp();        // landed exactly on the limit
     else if (prev <= goal && today > goal) warnOver();          // crossed over it
   }
-  renderTop(true); renderChart();   // history list doesn't change on a tap
+  renderTop(true);   // history list doesn't change on a tap
 }
 // The moment of truth: going over the goal requires an explicit yes.
 function confirmOver(amt) {
@@ -1798,7 +1808,7 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
-  renderTop(true); renderChart();
+  renderTop(true);
 }
 
 // End Day: a short daily wind-down — log the total plus an optional mood
@@ -2215,7 +2225,6 @@ function commitDay(note, dateStr, extras) {
   el.quote.textContent = quoteOfTheDay();
   el.total.textContent = fmt(total);   // seed the count-down start value
   renderTop(true);
-  renderChart();
   renderHistory();
 
   // animate the freshly logged day sliding into the list (only when it's the
@@ -4002,6 +4011,13 @@ el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key 
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 el.statsBtn.addEventListener("click", openInsights);
 el.insightsClose.addEventListener("click", closeInsights);
+el.moreStats.addEventListener("click", () => {
+  moreStatsOpen = !moreStatsOpen;
+  el.insightsGrid2.style.display = moreStatsOpen ? "grid" : "none";
+  el.moreStats.textContent = moreStatsOpen ? "Fewer stats" : "More stats";
+  if (moreStatsOpen) staggerIn(el.insightsGrid2, 30);
+  buzz(6);
+});
 el.insightsOverlay.addEventListener("click", (e) => { if (e.target === el.insightsOverlay) closeInsights(); });
 el.reminderDismiss.addEventListener("click", () => { save(KEY_REMIND_DISMISS, isoLocal(new Date())); el.reminder.style.display = "none"; });
 el.sinceClose.addEventListener("click", closeSince);
