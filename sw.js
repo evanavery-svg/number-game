@@ -1,6 +1,6 @@
 // Service worker: caches the app so it opens instantly and works offline.
 // Bump CACHE when you change any file, so phones pick up the new version.
-const CACHE = "app-v87";
+const CACHE = "app-v88";
 const ASSETS = [
   ".",
   "index.html",
@@ -26,6 +26,17 @@ self.addEventListener("activate", (event) => {
     )
   );
   self.clients.claim();
+});
+
+// Tapping a reminder should bring the app up, not just dismiss the banner.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) if ("focus" in c) return c.focus();
+      return self.clients.openWindow("./");
+    })
+  );
 });
 
 self.addEventListener("fetch", (event) => {

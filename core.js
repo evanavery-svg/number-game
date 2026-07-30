@@ -195,6 +195,26 @@ function projectZero(goalLog, now) {
   const perDay = dropped / spanDays;
   return { date: new Date(t + (last.goal / perDay) * DAY), perDay, done: false };
 }
+// The mirror of taperReady: the current limit has become too tight to hold.
+// Going back up a rung is a legitimate move, not a failure — noticing it early
+// beats letting someone rack up red days until they abandon the app.
+function backslideReady(perf, goal) {
+  if (goal < 0) return false;
+  if (perf.n < 10) return false;              // not enough recent data
+  if (perf.underPct > 0.5) return false;      // still holding it more often than not
+  return perf.avg > goal;                     // and genuinely living above the limit
+}
+// Zero-day milestones worth a real celebration — the app's whole point.
+const ZERO_WINS = [7, 30, 100, 365];
+function zeroWinReached(streak, alreadySeen) {
+  const seen = alreadySeen || [];
+  for (let i = ZERO_WINS.length - 1; i >= 0; i--) {
+    const w = ZERO_WINS[i];
+    if (streak >= w && !seen.includes(w)) return w;
+  }
+  return null;
+}
+
 // Consecutive zero days counted back from the end of a chronological list.
 function zeroStreak(totals) {
   let n = 0;
@@ -211,5 +231,6 @@ if (typeof module !== "undefined" && module.exports) {
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
     goalPerformance, taperReady, projectZero, zeroStreak,
+    backslideReady, ZERO_WINS, zeroWinReached,
   };
 }

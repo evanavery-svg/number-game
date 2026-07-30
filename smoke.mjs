@@ -7,15 +7,23 @@
 //   PW=/path/to/playwright CHROMIUM=/path/to/chromium node smoke.mjs
 //
 // Defaults match this repo's dev container.
-const PW = process.env.PW || "/opt/node22/lib/node_modules/playwright/index.js";
 const BASE = process.env.BASE || "http://localhost:8080/index.html";
-const EXEC = process.env.CHROMIUM || "/opt/pw-browsers/chromium";
-const { chromium } = (await import(PW)).default;
+const EXEC = process.env.CHROMIUM || "";   // blank = let Playwright pick its own build
+// Resolve Playwright from wherever it lives: an explicit PW path, a normal
+// node_modules install (CI), or this dev container's global copy.
+async function loadPlaywright() {
+  const tries = [process.env.PW, "playwright", "/opt/node22/lib/node_modules/playwright/index.js"].filter(Boolean);
+  for (const spec of tries) {
+    try { const m = await import(spec); return m.chromium || (m.default && m.default.chromium); } catch (e) { /* try the next */ }
+  }
+  throw new Error("Playwright not found — set PW=/path/to/playwright or `npm i -D playwright`");
+}
+const chromium = await loadPlaywright();
 
 const checks = [];
 function check(name, cond) { checks.push({ name, ok: !!cond }); console.log(`${cond ? "ok  " : "FAIL"} ${name}`); }
 
-const browser = await chromium.launch({ executablePath: EXEC });
+const browser = await chromium.launch(EXEC ? { executablePath: EXEC } : {});
 const errors = [];
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
 const page = await ctx.newPage();

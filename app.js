@@ -47,6 +47,8 @@ const KEY_GOAL_LOG = "count.goalLog";     // [{ at, goal }] every goal change, f
 const KEY_TAPER = "count.taper";          // { on, step, everyDays } step-down plan
 const KEY_TAPER_ASK = "count.taperAsk";   // ISO date a step down was last offered
 const KEY_ZERO_ASK = "count.zeroAsk";     // bool — already offered the Time Since handoff
+const KEY_RAISE_ASK = "count.raiseAsk";   // ISO date a step back up was last offered
+const KEY_ZERO_WINS = "count.zeroWins";   // [7,30,…] zero-day milestones celebrated
 const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandatory once-a-day mood pulse
 const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game enabled
 const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
@@ -89,6 +91,7 @@ const el = {
   reminder: document.getElementById("reminderBanner"),
   reminderText: document.getElementById("reminderText"),
   reminderDismiss: document.getElementById("reminderDismiss"),
+  srLive: document.getElementById("srLive"),
   segRow: document.getElementById("segRow"),
   insightsGrid2: document.getElementById("insightsGrid2"),
   moreStats: document.getElementById("moreStats"),
@@ -304,16 +307,26 @@ function openOnboarding(step) {
   });
 }
 
+// One arbiter for the taper-related prompts, so two never stack on each other.
+// Order matters: celebrate first, then help, then adjust the limit.
+function runTaperPrompts() {
+  if (maybeZeroWin()) return;
+  if (maybeZeroHandoff()) return;
+  if (maybeRaiseOffer()) return;
+  maybeTaperOffer();
+}
+
 // ---- taper: offer the next rung down once it's been earned ----
 function maybeTaperOffer() {
-  if (!taper.on || !hasGoal() || goal <= 0) return;
-  if (gatesUp() || el.overlay.classList.contains("show")) return;
+  if (!taper.on || !hasGoal() || goal <= 0) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const last = load(KEY_TAPER_ASK, null);
-  if (last && Date.now() - new Date(last).getTime() < taper.everyDays * 864e5) return;
+  if (last && Date.now() - new Date(last).getTime() < taper.everyDays * 864e5) return false;
   const perf = goalPerformance(history, goal, 30);
-  if (!taperReady(perf, goal, taper.step)) return;
+  if (!taperReady(perf, goal, taper.step)) return false;
   save(KEY_TAPER_ASK, new Date().toISOString());
   openTaperOffer(perf);
+  return true;
 }
 function openTaperOffer(perf) {
   const next = Math.max(0, round2(goal - taper.step));
@@ -338,14 +351,84 @@ function openTaperOffer(perf) {
     s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
   });
 }
+// The other half of the taper: when the current limit has stopped being
+// holdable, offer to step back up. Going up a rung is a legitimate move — the
+// alternative is stacking red days until you give up on the whole thing.
+const RAISE_GAP_MS = 14 * 864e5;
+function maybeRaiseOffer() {
+  if (!taper.on || !hasGoal()) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const last = load(KEY_RAISE_ASK, null);
+  if (last && Date.now() - new Date(last).getTime() < RAISE_GAP_MS) return false;
+  const perf = goalPerformance(history, goal, 14);
+  if (!backslideReady(perf, goal)) return false;
+  save(KEY_RAISE_ASK, new Date().toISOString());
+  openRaiseOffer(perf);
+  return true;
+}
+function openRaiseOffer(perf) {
+  // land on a rung that's actually within reach: a step up, or just above
+  // where you've really been sitting
+  const stepUp = round2(goal + taper.step);
+  const suggested = Math.max(stepUp, round2(Math.ceil(perf.avg * 2) / 2));
+  openSheet((s) => {
+    addEl(s, "h3", "This limit looks tight");
+    addEl(s, "p", `You've gone over ${fmt(goal)} on ${perf.n - perf.under} of the last ${perf.n} days, averaging ${fmt(round2(perf.avg))}. That's information, not a failure — a limit you can actually hold beats one you can't.`, "sub");
+    const card = document.createElement("div"); card.className = "taper-card";
+    addEl(card, "div", fmt(goal), "taper-from");
+    addEl(card, "div", "→", "taper-arrow");
+    const to = addEl(card, "div", fmt(suggested), "taper-to"); to.classList.add("up");
+    s.appendChild(card);
+    addEl(s, "p", "You can start walking it down again whenever you're ready — your record and history stay exactly as they are.", "sub");
+    s.appendChild(makeBtn(`Move up to ${fmt(suggested)}`, "primary", () => {
+      goal = suggested; goalOn = true;
+      save(KEY_GOAL, goal); save(KEY_GOAL_ON, true); noteGoalChange(goal);
+      // a fresh limit deserves a fresh window before the next drop is offered
+      save(KEY_TAPER_ASK, new Date().toISOString());
+      closeSheet(); render(); buzz(20);
+      toast(`Goal is now ${fmt(suggested)} — steady beats strict`, 3600);
+    }));
+    s.appendChild(makeBtn(`Keep it at ${fmt(goal)}`, "ghost", closeSheet));
+  });
+}
+
+// Reaching and holding zero is the entire point — mark it properly.
+function maybeZeroWin() {
+  if (!hasGoal() || goal !== 0) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const streak = zeroStreak(history.map((d) => d.total));
+  const seen = load(KEY_ZERO_WINS, []);
+  const win = zeroWinReached(streak, seen);
+  if (!win) return false;
+  seen.push(win); save(KEY_ZERO_WINS, seen);
+  openZeroWin(win, streak);
+  return true;
+}
+function openZeroWin(win, streak) {
+  const label = win >= 365 ? "a year" : win >= 100 ? "100 days" : win >= 30 ? "a month" : "a week";
+  openSheet((s) => {
+    addEl(s, "h3", "You did it 🎉");
+    const card = document.createElement("div"); card.className = "win-card";
+    addEl(card, "div", win >= 365 ? "🏔️" : win >= 100 ? "🌟" : win >= 30 ? "🏆" : "🎯", "win-emoji");
+    addEl(card, "div", String(streak), "win-big");
+    addEl(card, "div", "days at zero", "win-cap");
+    s.appendChild(card);
+    addEl(s, "p", `${label[0].toUpperCase() + label.slice(1)} at zero${countLabel ? ` of ${countLabel}` : ""}. This is the thing the whole app was for — you walked a number down until it wasn't there any more.`, "sub");
+    s.appendChild(makeBtn("🎉", "primary", closeSheet));
+  });
+  buzz([0, 50, 60, 50, 60, 120]);
+  const burst = () => confettiBurst(window.innerWidth * (0.25 + Math.random() * 0.5), window.innerHeight * (0.25 + Math.random() * 0.3), 26);
+  burst(); setTimeout(burst, 320); setTimeout(burst, 680);
+}
+
 // Once the goal is zero and you're stacking zero days, offer to hand off to a
 // Time Since tracker — tapering is done, this is abstaining now.
 function maybeZeroHandoff() {
-  if (!features.since || !hasGoal() || goal !== 0) return;
-  if (load(KEY_ZERO_ASK, false)) return;
-  if (gatesUp() || el.overlay.classList.contains("show")) return;
+  if (!features.since || !hasGoal() || goal !== 0) return false;
+  if (load(KEY_ZERO_ASK, false)) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const streak = zeroStreak(history.map((d) => d.total));
-  if (streak < 3) return;
+  if (streak < 3) return false;
   save(KEY_ZERO_ASK, true);
   const name = countLabel || "this";
   confirmSheet(`${streak} days at zero 🎯`,
@@ -356,6 +439,7 @@ function maybeZeroHandoff() {
       renderSinceStrip();
       toast("Tracker started ⏱");
     });
+  return true;
 }
 
 function runDailyGates() {
@@ -1638,6 +1722,24 @@ function openInsights() {
 }
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
+// Speak the running total for screen readers. Debounced so the count-up
+// animation and rapid tapping don't produce a stream of interruptions.
+let srTimer = null;
+function announceTotal() {
+  if (!el.srLive) return;
+  clearTimeout(srTimer);
+  srTimer = setTimeout(() => {
+    const unit = countLabel ? ` ${countLabel}` : "";
+    let msg = `${fmt(today)}${unit} today`;
+    if (hasGoal()) {
+      if (today > goal) msg += `, ${fmt(round2(today - goal))} over your goal of ${fmt(goal)}`;
+      else if (goal === 0) msg += `, goal is zero`;
+      else msg += `, ${fmt(round2(goal - today))} left of ${fmt(goal)}`;
+    }
+    el.srLive.textContent = msg;
+  }, 450);
+}
+
 // The progress line starts with flat ends, then rounds off once you're at
 // least halfway to the goal — a clean rounded stroke end, no floating dot.
 function updateRingCap(frac) {
@@ -1698,6 +1800,7 @@ function renderTop(animate) {
   }
 
   el.undo.disabled = taps === 0;
+  announceTotal();
 }
 
 function renderHistory() {
@@ -2235,7 +2338,7 @@ function commitDay(note, dateStr, extras) {
   }
 
   // ending a day is the natural moment to consider the next rung down
-  setTimeout(() => { maybeZeroHandoff(); maybeTaperOffer(); }, 1400);
+  setTimeout(runTaperPrompts, 1400);
 }
 
 // Feature 9: undo the most recent End Day (merges it back into today).
@@ -2403,7 +2506,9 @@ function openSettings() {
     const timeInput = document.createElement("input");
     timeInput.type = "time"; timeInput.value = reminderTime || "20:00";
     s.appendChild(timeInput);
-    addEl(s, "p", "A nudge if you haven't tracked by this time. On iPhone, reminders show while the app is open — add it to your Home Screen for the best chance of a notification.", "sub");
+    addEl(s, "p", reminderScheduling()
+      ? "A nudge if you haven't tracked by this time. Scheduled ahead, so it arrives even when the app is closed."
+      : "A nudge if you haven't tracked by this time. This browser can't wake a web app on a schedule, so on iPhone it appears the next time you open the app — a real background alert would need a server behind it.", "sub");
 
     s.appendChild(makeBtn("Save", "primary", () => {
       const ns = parseFloat(stepInput.value);
@@ -2418,14 +2523,15 @@ function openSettings() {
       countLabel = labelInput.value.trim();
       haptic = hapticToggle.checked;
       sound = soundToggle.checked;
-      const wasOff = !reminderOn;
       reminderOn = remindToggle.checked;
       reminderTime = timeInput.value || "20:00";
       save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
       save(KEY_HAPTIC, haptic); save(KEY_SOUND, sound);
       save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
-      if (reminderOn && wasOff && "Notification" in window && Notification.permission === "default") {
-        Notification.requestPermission().catch(() => {});
+      if (reminderOn && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().then(scheduleReminders).catch(() => {});
+      } else {
+        scheduleReminders();
       }
       closeSheet(); render(); checkReminder();
     }));
@@ -2928,6 +3034,43 @@ function notifyOnce(todayStr) {
       new Notification("Tracker", { body });
     }
   } catch (e) {}
+}
+
+// Schedule the daily reminder so it can fire with the app closed.
+//
+// This needs the Notification Triggers API (`showTrigger`). Where it's missing
+// — which today includes iOS Safari — a web app with no server genuinely
+// cannot wake itself: the Push API needs a backend to send the message, and
+// plain notifications only fire while our code is running. So on iOS the
+// reminder appears the next time you open the app, and the Settings copy says
+// so rather than pretending otherwise.
+function reminderScheduling() {
+  return typeof Notification !== "undefined" && "showTrigger" in Notification.prototype;
+}
+const REMIND_AHEAD_DAYS = 14;
+async function scheduleReminders() {
+  if (!reminderScheduling()) return;
+  if (!navigator.serviceWorker) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    // clear any previously scheduled ones so changing the time doesn't stack up
+    const pending = await reg.getNotifications({ includeTriggered: true, tag: "daily-scheduled" });
+    pending.forEach((n) => n.close());
+    if (!reminderOn || Notification.permission !== "granted") return;
+    const [h, m] = (reminderTime || "20:00").split(":").map(Number);
+    for (let i = 0; i < REMIND_AHEAD_DAYS; i++) {
+      const when = new Date();
+      when.setDate(when.getDate() + i);
+      when.setHours(h, m, 0, 0);
+      if (when.getTime() <= Date.now()) continue;
+      await reg.showNotification("Tracker", {
+        body: "Don't forget to track today.",
+        icon: "icon-192.png", badge: "icon-192.png",
+        tag: "daily-scheduled",
+        showTrigger: new TimestampTrigger(when.getTime()),
+      });
+    }
+  } catch (e) { /* scheduling unsupported or refused — the in-app path still works */ }
 }
 
 // ---- time since (a small, separate tool) ----
@@ -4052,7 +4195,7 @@ checkMilestones();
 // the heads-up waits a beat so it never lands on top of the lock/daily gates
 setTimeout(checkRiskyTimes, 2500);
 maybeWeeklyRecap();
-setTimeout(() => { maybeZeroHandoff(); maybeTaperOffer(); }, 1800);
+setTimeout(runTaperPrompts, 1800);
 setTimeout(maybeBackupNudge, 3200);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
@@ -4067,6 +4210,7 @@ document.addEventListener("visibilitychange", () => {
 
 // Daily reminder + keep the unlock window fresh during active use.
 checkReminder();
+scheduleReminders();
 setInterval(() => {
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight

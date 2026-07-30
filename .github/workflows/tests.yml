@@ -1,0 +1,51 @@
+name: tests
+
+# Runs the unit tests and the end-to-end smoke test on every push and PR, so a
+# regression is caught here instead of on a phone.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check
+        run: |
+          node --check core.js
+          node --check app.js
+          node --check sw.js
+      - name: Unit tests
+        run: node --test core.test.mjs
+
+  smoke:
+    name: smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright + Chromium
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Serve the app
+        run: |
+          python3 -m http.server 8080 --directory . &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/index.html >/dev/null && break
+            sleep 1
+          done
+      - name: Smoke test
+        env:
+          BASE: http://localhost:8080/index.html
+        run: node smoke.mjs

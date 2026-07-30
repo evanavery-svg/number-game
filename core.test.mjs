@@ -144,6 +144,29 @@ test("projectZero extrapolates the ladder's descent", () => {
   assert.equal(core.projectZero([], now), null);
 });
 
+test("backslideReady spots a limit that's become too tight", () => {
+  // mostly over the limit and averaging above it → offer to step back up
+  assert.equal(core.backslideReady({ n: 14, underPct: 0.3, avg: 5.2 }, 4), true);
+  // still holding it more often than not → leave them alone
+  assert.equal(core.backslideReady({ n: 14, underPct: 0.7, avg: 3.5 }, 4), false);
+  // over often but averaging at/below the limit → not a real backslide
+  assert.equal(core.backslideReady({ n: 14, underPct: 0.4, avg: 4 }, 4), false);
+  // too little data
+  assert.equal(core.backslideReady({ n: 6, underPct: 0, avg: 9 }, 4), false);
+  // never mutually true with taperReady
+  const perf = { n: 20, underPct: 0.9, avg: 2.4 };
+  assert.equal(core.taperReady(perf, 4, 1) && core.backslideReady(perf, 4), false);
+});
+
+test("zeroWinReached fires the biggest unseen milestone once", () => {
+  assert.equal(core.zeroWinReached(7, []), 7);
+  assert.equal(core.zeroWinReached(6, []), null);
+  assert.equal(core.zeroWinReached(30, [7]), 30);
+  assert.equal(core.zeroWinReached(30, [7, 30]), null);   // already celebrated
+  // a long streak with nothing seen reports the highest reached
+  assert.equal(core.zeroWinReached(400, []), 365);
+});
+
 test("zeroStreak counts trailing zeros", () => {
   assert.equal(core.zeroStreak([3, 1, 0, 0, 0]), 3);
   assert.equal(core.zeroStreak([0, 0, 1]), 0);

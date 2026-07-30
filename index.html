@@ -452,6 +452,8 @@
     /* settings section header */
     .settings-section { font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase; color: var(--muted); margin: 24px 0 4px; padding-top: 6px; border-top: 1px solid var(--hair); }
     .settings-section:first-of-type { border-top: none; padding-top: 0; margin-top: 14px; }
+    /* visually hidden, still announced by screen readers */
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
     /* accessibility: stop double-tap zoom on controls, keep pinch-zoom; visible focus */
     button, .ring-wrap, .range-chip, .cal-day, .wk-bar, .tod-bar, .mg-face, .gg-face, .chip, .mood-btn { touch-action: manipulation; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
@@ -513,6 +515,11 @@
     .ladder-svg { width: 100%; height: 76px; display: block; margin: 12px 0 2px; overflow: visible; }
     .ladder-path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
     .ladder-zero { stroke: var(--safe); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: 0.8; }
+    /* reaching-zero celebration */
+    .win-card { text-align: center; background: var(--bg); border-radius: 18px; padding: 26px 20px 22px; margin: 10px 0 6px; box-shadow: inset 0 0 0 1.5px var(--safe); }
+    .win-emoji { font-size: 54px; line-height: 1; }
+    .win-big { font-size: var(--fs-hero); font-weight: 300; letter-spacing: -3px; line-height: 1; color: var(--safe); font-variant-numeric: tabular-nums; margin-top: 8px; }
+    .win-cap { font-size: var(--fs-small); font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
     /* step-down offer */
     .taper-card { display: flex; align-items: center; justify-content: center; gap: 18px; background: var(--bg); border-radius: 16px; padding: 20px; margin: 10px 0 4px; box-shadow: inset 0 0 0 1px var(--surface-2); }
     .taper-from { font-size: 34px; font-weight: 300; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
@@ -1191,7 +1198,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.7 · © Avery LLC</div>
+  <div class="version">v8.8 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1230,6 +1237,9 @@
       </div>
     </div>
   </div>
+
+  <!-- screen-reader announcement of the running total (visually hidden) -->
+  <div class="sr-only" id="srLive" aria-live="polite" aria-atomic="true"></div>
 
   <div class="toast" id="toast"></div>
 
