@@ -969,6 +969,35 @@
       letter-spacing: 0.3px;
     }
 
+    /* ---- morning greeting (once a day, dismisses itself) ---- */
+    .day-gate {
+      position: fixed; inset: 0; z-index: 96; background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: calc(env(safe-area-inset-top) + 20px) 30px calc(env(safe-area-inset-bottom) + 28px);
+      touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
+      opacity: 0; transition: opacity 0.5s ease, transform 0.4s ease;
+    }
+    .day-gate.show { opacity: 1; }
+    .day-gate.out { opacity: 0; transform: scale(1.04); pointer-events: none; }
+    .dg-inner { text-align: center; max-width: 340px; }
+    .dg-emoji { font-size: 50px; line-height: 1; animation: itemIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+    .dg-text {
+      font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.5px; line-height: 1.35;
+      margin: 20px 0 0; color: var(--text);
+      animation: itemIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.14s backwards;
+    }
+    .dg-hint {
+      font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase;
+      color: var(--faint); margin-top: 30px;
+      animation: itemIn 0.6s ease 0.7s backwards;
+    }
+
+    /* your own affirmations (settings list) */
+    .affirm-list { margin-top: 4px; }
+    .affirm-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--hair); }
+    .affirm-row:first-child { border-top: none; }
+    .affirm-text { flex: 1; font-size: var(--fs-body); line-height: 1.4; overflow-wrap: anywhere; }
+
     /* ---- daily mood gate (mandatory once-a-day check-in) ---- */
     .mood-gate {
       position: fixed; inset: 0; z-index: 95; background: var(--bg);
@@ -1110,8 +1139,9 @@
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
+      .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .mg-bar i.run, .game-gate, .breath-orb { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -1198,7 +1228,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v8.8 · © Avery LLC</div>
+  <div class="version">v8.9 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1210,6 +1240,15 @@
       <div class="lock-dots" id="lockDots"><i></i><i></i><i></i><i></i></div>
       <div class="lock-error" id="lockError"></div>
       <div class="lock-pad" id="lockPad"></div>
+    </div>
+  </div>
+
+  <!-- Morning greeting: a once-a-day hello that dismisses itself (not a gate) -->
+  <div class="day-gate" id="dayGate" style="display:none">
+    <div class="dg-inner">
+      <div class="dg-emoji" aria-hidden="true">🌤️</div>
+      <p class="dg-text" id="dgText" role="status" aria-live="polite"></p>
+      <div class="dg-hint">tap to continue</div>
     </div>
   </div>
 

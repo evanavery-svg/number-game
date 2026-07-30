@@ -36,6 +36,7 @@ await page.addInitScript((dk) => {
   localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
   localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
   localStorage.setItem("count.gameOn", "false");
+  localStorage.setItem("count.greetShown", JSON.stringify(dk));   // skip the morning greeting
 }, dk);
 
 await page.goto(BASE);
@@ -78,6 +79,28 @@ await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].fi
 await page.waitForTimeout(400);
 const histLenAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("count.history") || "[]").length);
 check("end day appends a history entry", histLenAfter === histLenBefore + 1);
+
+// morning greeting: shows once on a fresh day, then clears itself
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p2 = await ctx2.newPage();
+  p2.on("pageerror", (e) => errors.push("greeting: " + String(e)));
+  await p2.addInitScript((dk) => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+  }, dk);
+  await p2.goto(BASE);
+  await p2.waitForTimeout(600);
+  const shown = await p2.evaluate(() => document.getElementById("dayGate").classList.contains("show"));
+  const text = await p2.evaluate(() => document.getElementById("dgText").textContent.trim());
+  check("morning greeting shows on a fresh day", shown && text.length > 0);
+  await p2.waitForTimeout(3600);
+  check("morning greeting clears itself", await p2.evaluate(() => document.getElementById("dayGate").style.display === "none"));
+  await ctx2.close();
+}
 
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));

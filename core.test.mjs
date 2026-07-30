@@ -167,6 +167,25 @@ test("zeroWinReached fires the biggest unseen milestone once", () => {
   assert.equal(core.zeroWinReached(400, []), 365);
 });
 
+test("pickAffirmation prefers your own lines and is stable per day", () => {
+  const built = ["a", "b", "c"];
+  const own = ["mine one", "mine two"];
+  // your own lines win when present
+  assert.equal(core.pickAffirmation(own, built, 0), "mine one");
+  assert.equal(core.pickAffirmation(own, built, 1), "mine two");
+  // falls back to builtins when the list is empty or only whitespace
+  assert.equal(core.pickAffirmation([], built, 1), "b");
+  assert.equal(core.pickAffirmation(["  ", ""], built, 2), "c");
+  // stable for a given day, and wraps (including negatives)
+  assert.equal(core.pickAffirmation(own, built, 4), core.pickAffirmation(own, built, 4));
+  assert.equal(core.pickAffirmation(built, [], 3), "a");     // 3 % 3 = 0
+  assert.equal(core.pickAffirmation(built, [], -1), "c");
+  // a single line always wins
+  assert.equal(core.pickAffirmation(["only"], built, 99), "only");
+  // nothing anywhere → empty string, never undefined
+  assert.equal(core.pickAffirmation([], [], 5), "");
+});
+
 test("zeroStreak counts trailing zeros", () => {
   assert.equal(core.zeroStreak([3, 1, 0, 0, 0]), 3);
   assert.equal(core.zeroStreak([0, 0, 1]), 0);

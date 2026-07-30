@@ -224,6 +224,17 @@ function zeroStreak(totals) {
   return n;
 }
 
+// Pick the day's affirmation. The user's own lines win when they've written
+// any; otherwise the built-in set. Seeded by day so the same day always shows
+// the same line (same wrap idiom as quoteOfTheDay).
+function pickAffirmation(userList, builtins, dayIndex) {
+  const own = (userList || []).map((s) => String(s == null ? "" : s).trim()).filter(Boolean);
+  const pool = own.length ? own : (builtins || []);
+  if (!pool.length) return "";
+  const i = Math.floor(dayIndex || 0);
+  return pool[((i % pool.length) + pool.length) % pool.length];
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -231,6 +242,6 @@ if (typeof module !== "undefined" && module.exports) {
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
     goalPerformance, taperReady, projectZero, zeroStreak,
-    backslideReady, ZERO_WINS, zeroWinReached,
+    backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
   };
 }

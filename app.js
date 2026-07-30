@@ -47,6 +47,9 @@ const KEY_GOAL_LOG = "count.goalLog";     // [{ at, goal }] every goal change, f
 const KEY_TAPER = "count.taper";          // { on, step, everyDays } step-down plan
 const KEY_TAPER_ASK = "count.taperAsk";   // ISO date a step down was last offered
 const KEY_ZERO_ASK = "count.zeroAsk";     // bool — already offered the Time Since handoff
+const KEY_GREET_ON = "count.greetOn";     // bool — show the morning greeting
+const KEY_GREET_SHOWN = "count.greetShown"; // app-day key of the last greeting
+const KEY_AFFIRMS = "count.affirms";      // your own affirmation lines
 const KEY_RAISE_ASK = "count.raiseAsk";   // ISO date a step back up was last offered
 const KEY_ZERO_WINS = "count.zeroWins";   // [7,30,…] zero-day milestones celebrated
 const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandatory once-a-day mood pulse
@@ -119,6 +122,8 @@ const el = {
   treeOverlay: document.getElementById("treeOverlay"),
   treeClose: document.getElementById("treeClose"),
   treeBody: document.getElementById("treeBody"),
+  dayGate: document.getElementById("dayGate"),
+  dgText: document.getElementById("dgText"),
   moodGate: document.getElementById("moodGate"),
   mgFaces: document.getElementById("mgFaces"),
   mgTimer: document.getElementById("mgTimer"),
@@ -442,9 +447,49 @@ function maybeZeroHandoff() {
   return true;
 }
 
+// ---- morning greeting ----
+// A hello, not a gate: it needs no interaction and clears itself, so it costs
+// a few seconds rather than becoming another thing to tap past.
+const GREET_MS = 3000;
+let greetTimer = null;
+function maybeDayGreeting() {
+  if (!greetOn) return false;
+  if (el.dayGate.classList.contains("show")) return false;
+  if (el.lock && el.lock.style.display === "flex") return false;   // wait until unlocked
+  if (load(KEY_GREET_SHOWN, "") === moodGateKey()) return false;   // already said hello today
+  save(KEY_GREET_SHOWN, moodGateKey());
+  showDayGreeting();
+  return true;
+}
+function showDayGreeting() {
+  el.dgText.textContent = pickAffirmation(affirms, AFFIRMATIONS, monthDayIndex(new Date()));
+  el.dayGate.style.display = "flex";
+  el.dayGate.classList.remove("out");
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => el.dayGate.classList.add("show"));
+  clearTimeout(greetTimer);
+  greetTimer = setTimeout(hideDayGreeting, GREET_MS);
+}
+function hideDayGreeting() {
+  clearTimeout(greetTimer); greetTimer = null;
+  if (el.dayGate.style.display === "none") return;   // already gone
+  document.body.style.overflow = "";
+  const done = () => {
+    el.dayGate.style.display = "none";
+    el.dayGate.classList.remove("out");
+    runDailyGates();   // hand off to the mood check-in / game
+  };
+  if (reduceMotion()) { el.dayGate.classList.remove("show"); done(); return; }
+  el.dayGate.classList.remove("show");
+  el.dayGate.classList.add("out");
+  setTimeout(done, 420);
+}
+
 function runDailyGates() {
+  if (el.dayGate.classList.contains("show")) return;
   if (el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show")) return;
   if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
+  if (maybeDayGreeting()) return;   // say hello first
   if (features.mood && moodDaily[moodGateKey()] == null) { showMoodGate(); return; }
   if (gameOn && gamePlayed !== moodGateKey()) { showGameGate(); return; }
 }
@@ -645,6 +690,26 @@ function hideGameGate() {
   el.gameGate.classList.add("out");
   setTimeout(done, 360);
 }
+
+// ---- morning greeting ----
+// Second-person and forward-looking, so it reads as a greeting about today
+// rather than the reflective QUOTES line under the ring.
+const AFFIRMATIONS = [
+  "Today is going to be a good day.",
+  "Today is yours.",
+  "Good things are coming your way today.",
+  "You've got everything you need for today.",
+  "Today is a fresh page.",
+  "You're going to be glad you showed up today.",
+  "Today gets to be gentle.",
+  "You can handle whatever today brings.",
+  "Something good is going to happen today.",
+  "Today is going to treat you well.",
+  "You're allowed a good day.",
+  "Today will be kinder than you expect.",
+];
+let greetOn = load(KEY_GREET_ON, true);
+let affirms = load(KEY_AFFIRMS, []);
 
 // ---- daily encouragement ----
 const QUOTES = [
@@ -2447,6 +2512,9 @@ function openSettings() {
 
     // Features — turn the extras on or off to keep things lean
     settingsSection(s, "Features");
+    const greetFeat = makeToggle(s, "Morning greeting", greetOn);
+    greetFeat.addEventListener("change", () => { greetOn = greetFeat.checked; save(KEY_GREET_ON, greetOn); buzz(8); });
+    s.appendChild(makeBtn("✎ Your affirmations", "link", () => { closeSheet(); setTimeout(openAffirmations, 320); }));
     const moodFeat = makeToggle(s, "Daily mood check-in", features.mood);
     moodFeat.addEventListener("change", () => { features.mood = moodFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const gameToggle = makeToggle(s, "Daily focus game (10s)", gameOn);
@@ -3108,7 +3176,8 @@ function toLocalInput(d) {
 // ---- milestone celebrations + risky-time heads-up ----
 // True while a full-screen gate/lock is covering the app — defer surprises.
 function gatesUp() {
-  return (el.lock && el.lock.style.display === "flex") || el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show");
+  return (el.lock && el.lock.style.display === "flex") || el.dayGate.classList.contains("show") ||
+    el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show");
 }
 // Celebrate when a run crosses a new milestone. First sight of a tracker just
 // records where it is (so old milestones aren't re-announced).
@@ -3905,6 +3974,58 @@ function openWaterSettings() {
   });
 }
 // Add / remove your own glass-size buttons.
+// Your own affirmations for the morning greeting. Same list-management shape as
+// the glass sizes below — chips with an × plus a field to add.
+function openAffirmations() {
+  openSheet((s) => {
+    addEl(s, "h3", "Your affirmations");
+    addEl(s, "p", "Write your own lines for the morning greeting. While you have any, they're used instead of the built-in ones. Tap a line's × to remove it.", "sub");
+
+    const list = document.createElement("div");
+    list.className = "affirm-list";
+    const renderList = () => {
+      list.textContent = "";
+      if (!affirms.length) {
+        const e = addEl(list, "div", "None yet — the built-in greetings are being used.", "sub");
+        e.style.color = "var(--faint)";
+      }
+      affirms.forEach((line) => {
+        const row = document.createElement("div"); row.className = "affirm-row";
+        addEl(row, "span", line, "affirm-text");
+        const x = document.createElement("button");
+        x.className = "water-mchip-x"; x.textContent = "×"; x.setAttribute("aria-label", "Remove: " + line);
+        x.addEventListener("click", () => {
+          affirms = affirms.filter((v) => v !== line);
+          save(KEY_AFFIRMS, affirms); renderList();
+        });
+        row.appendChild(x); list.appendChild(row);
+      });
+    };
+    renderList();
+    s.appendChild(list);
+
+    addEl(s, "label", "Add an affirmation");
+    const input = document.createElement("input");
+    input.type = "text"; input.maxLength = 90; input.placeholder = "Today is going to be a good day.";
+    s.appendChild(input);
+    s.appendChild(makeBtn("Add", "primary", () => {
+      const v = input.value.replace(/\s+/g, " ").trim();
+      if (!v) { toast("Write something first"); return; }
+      if (affirms.includes(v)) { toast("You already have that one"); return; }
+      affirms.push(v); save(KEY_AFFIRMS, affirms);
+      input.value = ""; renderList(); input.focus();
+      toast("Added ✓");
+    }));
+    s.appendChild(makeBtn("See it now", "", () => {
+      closeSheet();
+      save(KEY_GREET_SHOWN, "");   // let it show again so you can preview
+      setTimeout(() => { if (greetOn) maybeDayGreeting(); else toast("Turn the morning greeting on first"); }, 340);
+    }));
+    s.appendChild(makeBtn("Done", "ghost", closeSheet));
+    setTimeout(() => input.focus(), 50);
+  });
+}
+
 function openWaterPresets() {
   openSheet((s) => {
     addEl(s, "h3", "Glass sizes");
@@ -4153,6 +4274,7 @@ el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key 
 })();
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
 el.statsBtn.addEventListener("click", openInsights);
+el.dayGate.addEventListener("click", hideDayGreeting);   // tap anywhere to move on
 el.insightsClose.addEventListener("click", closeInsights);
 el.moreStats.addEventListener("click", () => {
   moreStatsOpen = !moreStatsOpen;
