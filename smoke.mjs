@@ -63,12 +63,17 @@ check("range switcher present", (await page.$$("#rangeRow .range-chip")).length 
 await page.click("#insightsClose");
 await page.waitForTimeout(200);
 
-// settings opens with sections
+// settings opens as a menu, and a sub-sheet opens from it
 await page.click("#gearBtn");
 await page.waitForTimeout(300);
-check("settings has sections", (await page.$$("#sheet .settings-section")).length >= 4);
-await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Cancel")?.click());
-await page.waitForTimeout(200);
+check("settings menu renders rows", (await page.$$("#sheet .sheet-btn.with-ico")).length >= 6);
+await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Tracking"))?.click());
+await page.waitForTimeout(500);
+check("settings sub-sheet opens", (await page.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Tracking");
+await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Back")?.click());
+await page.waitForTimeout(500);
+await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Done")?.click());
+await page.waitForTimeout(300);
 
 // end day logs an entry
 await page.click("#addBtn"); await page.waitForTimeout(120);

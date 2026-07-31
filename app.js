@@ -2444,6 +2444,43 @@ function makeBtn(label, cls, onClick) {
   b.addEventListener("click", onClick);
   return b;
 }
+// ---- line icons for structural chrome ----
+// Same house style as the header icons and SS_CLOCK: 24-grid, no fill, stroke
+// currentColor so they take the theme. Expressive emoji (moods, game,
+// celebrations, timeline, triggers) are deliberately left alone.
+function ico(paths, w) {
+  return `<svg viewBox="0 0 24 24" width="${w || 20}" height="${w || 20}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+const ICONS = {
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
+  droplet: '<path d="M12 3s6 6.2 6 10a6 6 0 0 1-12 0c0-3.8 6-10 6-10z"/>',
+  tree: '<path d="M12 22v-5"/><path d="M12 17 7 12h3L6.5 7.5h3L12 3l2.5 4.5h3L14 12h3z"/>',
+  chart: '<path d="M5 19V11M12 19V5M19 19v-7"/>',
+  pencil: '<path d="M4 20h4L20 8l-4-4L4 16z"/><path d="M14.5 5.5 18.5 9.5"/>',
+  lock: '<rect x="4" y="10.5" width="16" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
+  shield: '<path d="M12 3l7 3v6c0 4-3 7.2-7 9-4-1.8-7-5-7-9V6z"/>',
+  sliders: '<path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/>',
+  bell: '<path d="M6 10a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 14 6 10z"/><path d="M10.5 19a1.8 1.8 0 0 0 3 0"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.9 1.8-1.8 0-1.8 1.4-2.2 2.7-2.2H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
+  database: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+  undo: '<path d="M4 9h9a5 5 0 0 1 0 10h-3"/><path d="M8 5 4 9l4 4"/>',
+};
+// makeBtn sets textContent, so icon buttons get their own builder.
+function makeIconBtn(iconKey, label, cls, onClick, opts) {
+  const b = document.createElement("button");
+  b.className = "sheet-btn with-ico " + (cls || "");
+  const i = document.createElement("span");
+  i.className = "btn-ico";
+  i.innerHTML = ICONS[iconKey] ? ico(ICONS[iconKey]) : "";
+  const t = document.createElement("span");
+  t.className = "btn-label";
+  t.textContent = label;
+  b.append(i, t);
+  if (opts && opts.chevron) addEl(b, "span", "›", "btn-chev");
+  b.addEventListener("click", onClick);
+  return b;
+}
 function makeToggle(parent, labelText, checked) {
   const row = document.createElement("div");
   row.className = "toggle-row";
@@ -2470,15 +2507,33 @@ function confirmSheet(title, sub, confirmLabel, onYes, danger) {
   });
 }
 
-function settingsSection(s, title) { addEl(s, "div", title, "settings-section"); }
 
-// Settings, grouped into sections. Some controls save on change (theme,
-// features); the rest are committed by the Save button.
+// Settings is a short menu of rows; each opens a focused sub-sheet. Same
+// pattern as the App Lock / Water / Affirmations sheets already in this file.
 function openSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Settings");
+    const row = (icon, label, fn) => s.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); setTimeout(fn, 300); }, { chevron: true }));
+    row("target", "Tracking", openTrackingSettings);
+    row("sliders", "Taper to zero", openTaperSettings);
+    row("chart", "Features", openFeatureSettings);
+    row("palette", "Appearance", openAppearanceSettings);
+    row("bell", "Reminders", openReminderSettings);
+    row("lock", "Privacy", openPrivacySettings);
+    row("database", "Data & backup", openDataSettings);
+    // time-sensitive, so it stays on the top level rather than being buried
+    if (lastEnded) {
+      s.appendChild(makeIconBtn("undo", `Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
+    }
+    s.appendChild(makeBtn("Done", "ghost", closeSheet));
+  });
+}
+// Every sub-sheet offers its way back, so the menu is never a dead end.
+function backToSettings() { closeSheet(); setTimeout(openSettings, 300); }
 
-    settingsSection(s, "Tracking");
+function openTrackingSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Tracking");
     addEl(s, "label", "What are you counting? (optional)");
     const labelInput = document.createElement("input");
     labelInput.type = "text"; labelInput.maxLength = 24; labelInput.placeholder = "e.g. coffees, cigarettes"; labelInput.value = countLabel;
@@ -2489,9 +2544,27 @@ function openSettings() {
     addEl(s, "label", "Daily goal — leave blank for none, 0 is the finish line");
     const goalInput = numInput(hasGoal() ? fmt(goal) : "", "0");
     s.appendChild(goalInput);
+    s.appendChild(makeBtn("Save", "primary", () => {
+      const ns = parseFloat(stepInput.value);
+      if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }
+      step = round2(ns);
+      // blank = no goal at all; 0 is a real goal (the finish line)
+      const ng = parseFloat(goalInput.value);
+      if (goalInput.value.trim() === "" || isNaN(ng) || ng < 0) { goalOn = false; goal = 0; }
+      else { goalOn = true; goal = round2(ng); }
+      save(KEY_GOAL_ON, goalOn);
+      if (goalOn) noteGoalChange(goal);
+      countLabel = labelInput.value.trim();
+      save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
+      closeSheet(); render();
+    }));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
 
-    // step-down plan: the app's whole point is walking the goal down to zero
-    settingsSection(s, "Taper to zero");
+function openTaperSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Taper to zero");
     const taperToggle = makeToggle(s, "Suggest step-downs", taper.on);
     taperToggle.addEventListener("change", () => { taper.on = taperToggle.checked; save(KEY_TAPER, taper); buzz(8); });
     addEl(s, "label", "Drop the goal by");
@@ -2505,16 +2578,17 @@ function openSettings() {
     addEl(s, "p", "When you've held your limit for a while and are living below it, the app offers the next rung down. It never suggests one while you're struggling.", "sub");
     const zp = hasGoal() ? projectZero(goalLog) : null;
     if (zp && !zp.done) addEl(s, "p", `At your current pace you'd reach 0 around ${zp.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`, "sub");
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
 
-    settingsSection(s, "Feedback");
-    const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
-    const soundToggle = makeToggle(s, "Sound on tap", sound);
-
-    // Features — turn the extras on or off to keep things lean
-    settingsSection(s, "Features");
+function openFeatureSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Features");
+    addEl(s, "p", "Switch off anything you don't use — it disappears from the ⋯ menu and daily flow.", "sub");
     const greetFeat = makeToggle(s, "Morning greeting", greetOn);
     greetFeat.addEventListener("change", () => { greetOn = greetFeat.checked; save(KEY_GREET_ON, greetOn); buzz(8); });
-    s.appendChild(makeBtn("✎ Your affirmations", "link", () => { closeSheet(); setTimeout(openAffirmations, 320); }));
+    s.appendChild(makeIconBtn("pencil", "Your affirmations", "link", () => { closeSheet(); setTimeout(openAffirmations, 300); }));
     const moodFeat = makeToggle(s, "Daily mood check-in", features.mood);
     moodFeat.addEventListener("change", () => { features.mood = moodFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const gameToggle = makeToggle(s, "Daily focus game (10s)", gameOn);
@@ -2529,9 +2603,13 @@ function openSettings() {
     waterFeat.addEventListener("change", () => { features.water = waterFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const treeFeat = makeToggle(s, "Growth tree", features.tree);
     treeFeat.addEventListener("change", () => { features.tree = treeFeat.checked; save(KEY_FEATURES, features); buzz(8); });
-    addEl(s, "p", "Switch off anything you don't use — it disappears from the ⋯ menu and daily flow.", "sub");
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
 
-    settingsSection(s, "Appearance");
+function openAppearanceSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Appearance");
     // Theme picker — swatches apply live; daily auto-rotate is a toggle.
     addEl(s, "label", "Theme");
     const themeGrid = document.createElement("div");
@@ -2559,7 +2637,6 @@ function openSettings() {
     };
     buildSwatches();
     s.appendChild(themeGrid);
-
     autoInput = makeToggle(s, "Switch theme every day", themeAuto);
     autoInput.addEventListener("change", () => {
       themeAuto = autoInput.checked;
@@ -2567,8 +2644,17 @@ function openSettings() {
       themeFade(); applyTheme(); buzz(8); buildSwatches();
     });
     addEl(s, "p", "Rotates through all themes — a new one each day.", "sub");
+    const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
+    hapticToggle.addEventListener("change", () => { haptic = hapticToggle.checked; save(KEY_HAPTIC, haptic); buzz(8); });
+    const soundToggle = makeToggle(s, "Sound on tap", sound);
+    soundToggle.addEventListener("change", () => { sound = soundToggle.checked; save(KEY_SOUND, sound); click(); });
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
 
-    settingsSection(s, "Reminders");
+function openReminderSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Reminders");
     const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
     addEl(s, "label", "Reminder time");
     const timeInput = document.createElement("input");
@@ -2577,49 +2663,40 @@ function openSettings() {
     addEl(s, "p", reminderScheduling()
       ? "A nudge if you haven't tracked by this time. Scheduled ahead, so it arrives even when the app is closed."
       : "A nudge if you haven't tracked by this time. This browser can't wake a web app on a schedule, so on iPhone it appears the next time you open the app — a real background alert would need a server behind it.", "sub");
-
     s.appendChild(makeBtn("Save", "primary", () => {
-      const ns = parseFloat(stepInput.value);
-      if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }
-      step = round2(ns);
-      // blank = no goal at all; 0 is a real goal (the finish line)
-      const ng = parseFloat(goalInput.value);
-      if (goalInput.value.trim() === "" || isNaN(ng) || ng < 0) { goalOn = false; goal = 0; }
-      else { goalOn = true; goal = round2(ng); }
-      save(KEY_GOAL_ON, goalOn);
-      if (goalOn) noteGoalChange(goal);
-      countLabel = labelInput.value.trim();
-      haptic = hapticToggle.checked;
-      sound = soundToggle.checked;
       reminderOn = remindToggle.checked;
       reminderTime = timeInput.value || "20:00";
-      save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
-      save(KEY_HAPTIC, haptic); save(KEY_SOUND, sound);
       save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
       if (reminderOn && "Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().then(scheduleReminders).catch(() => {});
       } else {
         scheduleReminders();
       }
-      closeSheet(); render(); checkReminder();
+      closeSheet(); checkReminder();
     }));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
 
-    if (lastEnded) {
-      s.appendChild(makeBtn(`↶ Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
-    }
+function openPrivacySettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Privacy");
+    addEl(s, "p", "Everything lives on this device only — no accounts, no servers.", "sub");
+    s.appendChild(makeIconBtn("lock", lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); setTimeout(openLockSettings, 300); }, { chevron: true }));
+    s.appendChild(makeIconBtn("shield", journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { closeSheet(); setTimeout(openJournalPinSettings, 300); }, { chevron: true }));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
 
-    settingsSection(s, "Privacy");
-    s.appendChild(makeBtn(lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); openLockSettings(); }));
-    s.appendChild(makeBtn(journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { closeSheet(); openJournalPinSettings(); }));
-
-    settingsSection(s, "Data");
+function openDataSettings() {
+  openSheet((s) => {
+    addEl(s, "h3", "Data & backup");
     const lastBk = load(KEY_BACKUP_AT, 0) || 0;
     addEl(s, "p", lastBk ? `Last full backup: ${Math.floor((Date.now() - lastBk) / 864e5)} days ago.` : "No full backup yet — your data lives only on this device.", "sub");
-    s.appendChild(makeBtn("Full backup (everything)", "link", () => { closeSheet(); startFullBackup(); }));
-    s.appendChild(makeBtn("Restore from backup", "link", () => { closeSheet(); startRestore(); }));
+    s.appendChild(makeBtn("Full backup (everything)", "primary", () => { closeSheet(); startFullBackup(); }));
+    s.appendChild(makeBtn("Restore from backup", "", () => { closeSheet(); startRestore(); }));
     s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
-
-    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
 
@@ -4235,10 +4312,10 @@ function closeTree() { el.treeOverlay.classList.remove("show"); }
 function openMore() {
   openSheet((s) => {
     addEl(s, "h3", "More");
-    if (features.since) s.appendChild(makeBtn("⏱   Time Since", "", () => { closeSheet(); requestSince(); }));
-    if (features.water) s.appendChild(makeBtn("💧   Water", "", () => { closeSheet(); openWater(); }));
-    if (features.tree) s.appendChild(makeBtn("🌳   Your Tree", "", () => { closeSheet(); openTree(); }));
-    if (timelineOn) s.appendChild(makeBtn("📊   Your week", "", () => { closeSheet(); openWeeklyRecap(); }));
+    if (features.since) s.appendChild(makeIconBtn("clock", "Time Since", "", () => { closeSheet(); requestSince(); }));
+    if (features.water) s.appendChild(makeIconBtn("droplet", "Water", "", () => { closeSheet(); openWater(); }));
+    if (features.tree) s.appendChild(makeIconBtn("tree", "Your Tree", "", () => { closeSheet(); openTree(); }));
+    if (timelineOn) s.appendChild(makeIconBtn("chart", "Your week", "", () => { closeSheet(); openWeeklyRecap(); }));
     if (!features.since && !features.water && !features.tree && !timelineOn) addEl(s, "p", "All extras are off — turn them on in Settings → Features.", "sub");
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
