@@ -75,6 +75,27 @@ await page.waitForTimeout(500);
 await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Done")?.click());
 await page.waitForTimeout(300);
 
+// themes: the picker, and the head pre-paint script, must agree with THEMES.
+// A mismatch is invisible until a specific calendar day rotates onto it, so
+// assert the two lists are identical rather than waiting to find out.
+{
+  await page.click("#gearBtn");
+  await page.waitForTimeout(300);
+  await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Appearance"))?.click());
+  await page.waitForTimeout(500);
+  const keys = await page.evaluate(() => THEMES.map((t) => t.key));
+  const swatches = (await page.$$("#sheet .theme-swatch")).length;
+  check("theme picker renders every theme", swatches === keys.length && keys.length === 8);
+  const html = await (await fetch(BASE)).text();
+  const m = html.match(/var order = \[([^\]]*)\]/);
+  const order = m ? m[1].split(",").map((s) => s.trim().replace(/^"|"$/g, "")) : [];
+  check("pre-paint theme order matches THEMES", order.join() === keys.join());
+  await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Back")?.click());
+  await page.waitForTimeout(500);
+  await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Done")?.click());
+  await page.waitForTimeout(300);
+}
+
 // end day logs an entry
 await page.click("#addBtn"); await page.waitForTimeout(120);
 await page.click("#endBtn");

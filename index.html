@@ -151,6 +151,35 @@
       --glow-safe: rgba(26,158,95,0.35); --glow-warn: rgba(217,138,31,0.35); --glow-over: rgba(209,51,43,0.40);
       --num-lo: #2f9e6a; --num-mid: #d98a1f; --num-hi: #d1332b;
     }
+    :root[data-theme="grove"] {    /* Grove — forest green & burnt orange */
+      --bg: #12210f; --surface: #1c2e1b; --surface-2: #2c4531;
+      --text: #eaf0e6; --muted: #93a68f; --faint: #5e7059;
+      --accent: #a9531f; --accent-2: #c96c31; --r-acc-1: #c96c31; --r-acc-2: #a9531f;
+      --btn-glow: rgba(169,83,31,0.42);
+      /* the palette's teal-green carries "safe" so the ring stays in-family */
+      --safe: #4f9a7f; --r-safe-1: #6fbb9d; --r-safe-2: #3f6e5e;
+      --halo-safe: rgba(79,154,127,0.20); --glow-safe: rgba(79,154,127,0.45);
+      --num-lo: #7fb79b;
+    }
+    :root[data-theme="dusk"] {     /* Dusk — navy, mauve & terracotta */
+      --bg: #151e3c; --surface: #1e2a52; --surface-2: #2a3868;
+      --text: #e7ebef; --muted: #9e93b4; --faint: #6b6483;
+      --accent: #b55f4e; --accent-2: #d0785f; --r-acc-1: #d0785f; --r-acc-2: #b55f4e;
+      --btn-glow: rgba(181,95,78,0.42);
+    }
+    :root[data-theme="nocturne"] { /* Nocturne — midnight navy & pale lavender */
+      --bg: #080908; --surface: #14192b; --surface-2: #1d2a47;
+      --text: #d5d8ec; --muted: #7e88a8; --faint: #6b5f69;
+      --accent: #c6cbe8; --accent-2: #d5d8ec; --r-acc-1: #d5d8ec; --r-acc-2: #9aa3c9;
+      --btn-glow: rgba(213,216,236,0.28); --btn-text: #12172a;   /* light accent ⇒ dark label */
+    }
+    :root[data-theme="roast"] {    /* Roast — coffee, navy & sand */
+      --bg: #141315; --surface: #241914; --surface-2: #3e2c25;
+      --text: #edebe9; --muted: #a6968b; --faint: #6b5a4f;
+      --accent: #e5bc93; --accent-2: #f0d0af; --r-acc-1: #f0d0af; --r-acc-2: #e5bc93;
+      --btn-glow: rgba(229,188,147,0.34); --btn-text: #2a1d16;   /* light accent ⇒ dark label */
+      --water: #3c64a0; --water-2: #6e93cc;                      /* the palette's navy */
+    }
     /* SVG ring gradient stops read from variables so themes retint them */
     #gradAccent stop:nth-child(1) { stop-color: var(--r-acc-1); }
     #gradAccent stop:nth-child(2) { stop-color: var(--r-acc-2); }
@@ -1166,7 +1195,7 @@
   <script>
     // Apply the saved (or auto-rotated) theme before first paint — no colour flash.
     try {
-      var order = ["default","blue","forest","teal"];
+      var order = ["default","blue","forest","teal","grove","dusk","nocturne","roast"];
       var t;
       if (JSON.parse(localStorage.getItem("count.themeAuto"))) {
         var d = new Date();
@@ -1246,7 +1275,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v9.0 · © Avery LLC</div>
+  <div class="version">v9.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

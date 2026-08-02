@@ -189,6 +189,10 @@ const THEMES = [
   { key: "blue",    name: "Mono",     accent: "#ffffff", bg: "#000000" },
   { key: "forest",  name: "Eclipse",  accent: "#2f7ff2", bg: "#090b12" },
   { key: "teal",    name: "Scarlet",  accent: "#e01f2b", bg: "#edeef2" },
+  { key: "grove",    name: "Grove",    accent: "#a9531f", bg: "#12210f" },
+  { key: "dusk",     name: "Dusk",     accent: "#b55f4e", bg: "#1e2a52" },
+  { key: "nocturne", name: "Nocturne", accent: "#c6cbe8", bg: "#0d1120" },
+  { key: "roast",    name: "Roast",    accent: "#e5bc93", bg: "#241914" },
 ];
 let theme = load(KEY_THEME, "default");
 if (!THEMES.some((t) => t.key === theme)) theme = "default";   // a since-removed theme was saved — fall back cleanly
