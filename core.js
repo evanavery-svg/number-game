@@ -235,9 +235,43 @@ function pickAffirmation(userList, builtins, dayIndex) {
   return pool[((i % pool.length) + pool.length) % pool.length];
 }
 
+// Pick the plan that fits the moment. An exact tag match always wins; failing
+// that, a plan whose cue hour is within an hour of now. Returns null when
+// nothing fits, so callers can stay quiet rather than show a generic line.
+function planFor(plans, tag, hour) {
+  const list = (plans || []).filter((p) => p && String(p.action || "").trim());
+  if (!list.length) return null;
+  if (tag) {
+    const exact = list.find((p) => p.tag === tag);
+    if (exact) return exact;
+  }
+  if (hour != null) {
+    const near = list.find((p) => p.hour != null && Math.abs(p.hour - hour) <= 1);
+    if (near) return near;
+  }
+  return null;
+}
+
+// Write a day's total into history, correcting an existing entry or inserting
+// a reconstructed one in date order. Backfilled days are marked so exports
+// stay honest about which numbers were entered after the fact. A null total
+// removes the day. Returns a new array — never mutates the input.
+function upsertDay(history, date, total) {
+  const out = (history || []).filter((d) => d && d.date !== date);
+  if (total != null) {
+    const prev = (history || []).find((d) => d && d.date === date);
+    out.push(prev
+      ? Object.assign({}, prev, { total: round2(total) })
+      : { date, total: round2(total), taps: 0, endedAt: new Date(date + "T12:00:00").toISOString(), backfilled: true });
+  }
+  out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return out;
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    planFor, upsertDay,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

@@ -56,6 +56,7 @@ const KEY_MOOD_DAILY = "count.moodDaily";       // { "YYYY-MM-DD": 1..5 } mandat
 const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game enabled
 const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
 const KEY_GAME_BEST = "count.gameBest";         // best focus-game score
+const KEY_PLANS = "count.plans";                // [{ id, tag, hour, cue, action }] if-then plans
 
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
 
@@ -140,7 +141,75 @@ function load(key, fallback) {
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
   catch (e) { return fallback; }
 }
-function save(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+function save(key, value) { localStorage.setItem(key, JSON.stringify(value)); mirrorSoon(); }
+
+// ---- on-device safety net ----
+// Everything lives in localStorage, which iOS clears for sites you haven't
+// opened in about a week, and which "Clear website data" wipes outright. So
+// every save also lands a full snapshot in IndexedDB, which survives both.
+// If the app ever boots to an empty localStorage with a snapshot on hand, it
+// puts the data back (see restoreIfWiped). Best-effort throughout: a failure
+// here must never break an ordinary save.
+const IDB_NAME = "count", IDB_STORE = "snapshot", IDB_KEY = "latest";
+function idb() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(IDB_NAME, 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(IDB_STORE)) r.result.createObjectStore(IDB_STORE); };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+function idbPut(value) {
+  return idb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, IDB_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  }));
+}
+function idbGet() {
+  return idb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const q = tx.objectStore(IDB_STORE).get(IDB_KEY);
+    q.onsuccess = () => { db.close(); resolve(q.result || null); };
+    q.onerror = () => { db.close(); reject(q.error); };
+  }));
+}
+function idbClear() { return idbPut(null).catch(() => {}); }
+
+// Snapshot every app key. Debounced, because a burst of taps would otherwise
+// write the whole store on each one.
+let mirrorTimer = null;
+function mirrorSoon() {
+  if (!("indexedDB" in window)) return;
+  clearTimeout(mirrorTimer);
+  mirrorTimer = setTimeout(() => {
+    try {
+      const data = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf("count.") === 0) data[k] = localStorage.getItem(k);
+      }
+      if (Object.keys(data).length) idbPut({ at: Date.now(), data }).catch(() => {});
+    } catch (e) { /* never let the safety net break a save */ }
+  }, 2000);
+}
+
+// Boot check: empty localStorage but a snapshot in hand means the data was
+// evicted or cleared, not that this is a new user. Put it back and reload —
+// the module-level state was already read from the empty store, so a reload
+// is the honest way to pick it up. Never silent: the toast survives the
+// reload via a one-shot flag.
+function restoreIfWiped() {
+  if (!("indexedDB" in window)) return;
+  if (localStorage.getItem(KEY_ONBOARDED) !== null) return;   // normal boot
+  idbGet().then((snap) => {
+    if (!snap || !snap.data || !snap.data[KEY_ONBOARDED]) return;   // genuinely new user
+    Object.keys(snap.data).forEach((k) => localStorage.setItem(k, snap.data[k]));
+    sessionStorage.setItem("count.restored", String(snap.at || Date.now()));
+    location.reload();
+  }).catch(() => {});
+}
 
 let today = load(KEY_TODAY, 0);
 let taps = load(KEY_TAPS, 0);
@@ -158,6 +227,7 @@ let moodDaily = load(KEY_MOOD_DAILY, {});   // once-a-day mood pulse, keyed by d
 let gameOn = load(KEY_GAME_ON, true);       // daily focus game (toggle in Settings)
 let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
 let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
+let plans = load(KEY_PLANS, []);            // if-then plans
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
@@ -1634,7 +1704,61 @@ function selectCalDay(ds, cell, detail, todayStr) {
   line.appendChild(b); line.appendChild(document.createTextNode(main));
   detail.appendChild(line);
   if (note) { const n = document.createElement("div"); n.className = "cal-note"; n.textContent = note; detail.appendChild(n); }
+  // Let a wrong or forgotten day be put right — every streak, average and
+  // taper decision is computed from these numbers, so they have to be true.
+  if (ds <= todayStr) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "cal-edit";
+    edit.textContent = h ? "Edit this day" : "Fill this day in";
+    edit.addEventListener("click", (ev) => { ev.stopPropagation(); openDayFix(ds); });
+    detail.appendChild(edit);
+  }
   buzz(6);
+}
+
+// Correct one day's total, or reconstruct a day that never got logged.
+function openDayFix(ds) {
+  const nice = new Date(ds + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  const isToday = ds === sessionDate();
+  const existing = history.find((d) => d.date === ds);
+  openSheet((s) => {
+    addEl(s, "h3", nice);
+    addEl(s, "p", isToday
+      ? "This is today — changing it sets your running total."
+      : "Put in what this day actually came to. Days filled in after the fact are marked as such in your exports.", "sub");
+
+    addEl(s, "label", "Total for this day");
+    const input = numInput(isToday ? fmt(today) : (existing ? fmt(existing.total) : ""), "0");
+    s.appendChild(input);
+
+    s.appendChild(makeBtn("Save", "primary", () => {
+      const v = parseFloat(input.value);
+      if (!isFinite(v) || v < 0) { toast("Enter a number"); return; }
+      if (isToday) {
+        today = round2(v);
+        save(KEY_TODAY, today);
+      } else {
+        history = upsertDay(history, ds, v);
+        save(KEY_HISTORY, history);
+      }
+      buzz(12);
+      closeSheet(); render(); renderCalendar();
+      toast(`${nice} set to ${fmt(round2(v))}`);
+    }));
+
+    // Only offer removal for a real past entry — there's no "unlog" for today.
+    if (existing && !isToday) {
+      s.appendChild(makeBtn("Remove this day", "link", () => {
+        history = upsertDay(history, ds, null);
+        save(KEY_HISTORY, history);
+        buzz(12);
+        closeSheet(); render(); renderCalendar();
+        toast(`${nice} removed`);
+      }));
+    }
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
 }
 
 // Average by weekday — the highest (worst, for a limit) is flagged.
@@ -1943,6 +2067,34 @@ function confirmOver(amt) {
 function addTap(e) {
   spawnRipple(e);
   applyDelta(step);
+}
+
+// Log a tap straight from the URL (?add=1, ?add=0.5) so a Home Screen
+// shortcut or a Siri shortcut can record one without you opening the app and
+// walking the gates. The parameter is stripped immediately afterwards — a
+// refresh must not log the same tap twice.
+function handleQuickAdd() {
+  let raw = null;
+  try { raw = new URLSearchParams(location.search).get("add"); } catch (e) { return; }
+  if (raw === null) return;
+  // note: `history` here is this app's day list, so go through window
+  try { window.history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* not fatal */ }
+  const n = Number(raw);
+  if (!isFinite(n) || n === 0) return;
+  applyDelta(n, true);   // already a deliberate act — don't re-ask at the goal line
+  toast(`Logged ${fmt(n)} — you're at ${fmt(today)} today`, 3000);
+}
+
+// Say so when the safety net fired. The restore reloads the page, so the
+// message rides across in sessionStorage and is shown once.
+function announceRestore() {
+  let at = null;
+  try { at = sessionStorage.getItem("count.restored"); } catch (e) { return; }
+  if (!at) return;
+  try { sessionStorage.removeItem("count.restored"); } catch (e) { /* shown either way */ }
+  const days = Math.floor((Date.now() - Number(at)) / 864e5);
+  const when = !isFinite(days) || days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+  toast(`Your data was missing — restored from this device's backup (${when}) 🛟`, 6000);
 }
 
 // expanding ripple from the tap point on the big button
@@ -2524,7 +2676,14 @@ function openSettings() {
     row("palette", "Appearance", openAppearanceSettings);
     row("bell", "Reminders", openReminderSettings);
     row("lock", "Privacy", openPrivacySettings);
-    row("database", "Data & backup", openDataSettings);
+    // Show backup age on the row itself — buried inside the sheet, a stale
+    // backup is something you only find out about after losing something.
+    const bkAt = load(KEY_BACKUP_AT, 0) || 0;
+    const bkDays = bkAt ? Math.floor((Date.now() - bkAt) / 864e5) : null;
+    const bkLabel = bkDays === null ? "Data & backup · never backed up"
+      : bkDays <= 0 ? "Data & backup · backed up today"
+      : `Data & backup · ${bkDays}d since backup`;
+    row("database", bkLabel, openDataSettings);
     // time-sensitive, so it stays on the top level rather than being buried
     if (lastEnded) {
       s.appendChild(makeIconBtn("undo", `Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
@@ -3290,7 +3449,10 @@ function checkRiskyTimes() {
     const n = (it.log || []).filter((e) => { const d = new Date(e.at); return !isNaN(d.getTime()) && d.getHours() === hr; }).length;
     if (n >= 2) {
       save(KEY_RISKY_LAST, key);
-      toast(`🫶 Around now is when "${it.name}" has tripped you up before. You've got this.`, 4600);
+      // If a plan was written for about this hour, this is the moment it's for.
+      const p = planFor(plans, null, hr);
+      if (p) toast(`🫶 Around now is when "${it.name}" has tripped you up. Your plan: ${p.action}`, 6000);
+      else toast(`🫶 Around now is when "${it.name}" has tripped you up before. You've got this.`, 4600);
       return;
     }
   }
@@ -3324,6 +3486,90 @@ function appendRecovery(card, it) {
 }
 
 // "Don't break the chain": a contribution-style grid of clean days (green) vs
+// ---- if-then plans ----
+// The patterns above work out *when* and *what* sets you off, and then stop.
+// A plan is the other half: a response decided in advance, while you're calm,
+// so the moment itself doesn't need a decision. Deciding ahead of time is one
+// of the better-supported findings in behaviour change (implementation
+// intentions), which is more than can be said for most of this app.
+// Lives behind the journal passcode with everything else it touches.
+function savePlans() { save(KEY_PLANS, plans); }
+
+function appendPlans(card, pat) {
+  addEl(card, "div", "Your plans", "plan-title");
+  addEl(card, "div", "Decide now what you'll do, so you don't have to decide then.", "plan-sub");
+
+  const list = document.createElement("div"); list.className = "plan-list";
+  plans.forEach((p) => {
+    const row = document.createElement("div"); row.className = "plan-row";
+    const body = document.createElement("div"); body.className = "plan-body";
+    addEl(body, "div", "When " + p.cue, "plan-cue");
+    addEl(body, "div", "→ " + p.action, "plan-action");
+    row.appendChild(body);
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "plan-del"; del.textContent = "×";
+    del.setAttribute("aria-label", "Delete this plan");
+    del.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      plans = plans.filter((x) => x.id !== p.id);
+      savePlans(); buzz(10); renderSince();
+    });
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+  if (plans.length) card.appendChild(list);
+
+  // Offer a cue drawn from what was actually detected, so the plan is about
+  // this person's real pattern rather than a blank page.
+  const suggestions = [];
+  if (pat && pat.topTag) {
+    const t = triggerOf(pat.topTag);
+    if (t && !plans.some((p) => p.tag === pat.topTag)) suggestions.push({ tag: pat.topTag, cue: `${t.label.toLowerCase()} hits` });
+  }
+  if (pat && pat.peakHN >= 2 && !plans.some((p) => p.hour === pat.peakH)) {
+    suggestions.push({ hour: pat.peakH, cue: `it gets to ${hourLabel(pat.peakH)}` });
+  }
+  suggestions.slice(0, 2).forEach((sg) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "plan-add";
+    b.textContent = `+ Plan for when ${sg.cue}`;
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openPlanSheet(sg); });
+    card.appendChild(b);
+  });
+  const own = document.createElement("button");
+  own.type = "button"; own.className = "plan-add";
+  own.textContent = "+ Write your own";
+  own.addEventListener("click", (ev) => { ev.stopPropagation(); openPlanSheet({}); });
+  card.appendChild(own);
+}
+
+function openPlanSheet(seed) {
+  openSheet((s) => {
+    addEl(s, "h3", "Make a plan");
+    addEl(s, "p", "Two halves: what happens, and what you'll do about it.", "sub");
+
+    addEl(s, "label", "When…");
+    const cue = document.createElement("input");
+    cue.type = "text"; cue.value = seed.cue || ""; cue.placeholder = "it gets late and I'm alone";
+    s.appendChild(cue);
+
+    addEl(s, "label", "…I will");
+    const act = document.createElement("input");
+    act.type = "text"; act.placeholder = "put my phone in the kitchen and go for a walk";
+    s.appendChild(act);
+
+    s.appendChild(makeBtn("Save plan", "primary", () => {
+      const c = cue.value.trim(), a = act.value.trim();
+      if (!c || !a) { toast("Fill in both halves"); return; }
+      plans.push({ id: Date.now(), tag: seed.tag || null, hour: seed.hour == null ? null : seed.hour, cue: c, action: a });
+      savePlans(); buzz(12);
+      closeSheet(); renderSince();
+      toast("Plan saved — you'll see it when it's relevant");
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+  });
+}
+
 // slip days (red) since the tracker began, so the streak is something you see.
 const CHAIN_WEEKS = 13;
 function appendChain(card, it) {
@@ -3594,6 +3840,7 @@ function renderSince() {
           if (pat.moodGap === "low") addEl(pw, "div", "Slips tend to land on lower-mood days — extra care when you're low", "pat-line");
           if (pat.trend === "up") addEl(pw, "div", "📈 Your runs are getting longer — keep it up", "pat-line good");
           if (pw.childNodes.length) card.appendChild(pw);
+          appendPlans(card, pat);
         }
         const logWrap = document.createElement("div"); logWrap.className = "since-log";
         entries.slice(-6).reverse().forEach((e) => {
@@ -3880,6 +4127,19 @@ function openResetReason(existing) {
       chipRow.appendChild(b);
     });
     s.appendChild(chipRow);
+
+    // If a plan exists for a trigger just picked, show it — not as a reproach,
+    // but so the next time it's already written down.
+    const planNote = document.createElement("div");
+    planNote.className = "plan-recall";
+    planNote.style.display = "none";
+    s.appendChild(planNote);
+    const refreshPlanNote = () => {
+      const hit = Object.keys(picked).filter((k) => picked[k]).map((k) => planFor(plans, k, null)).find(Boolean);
+      planNote.style.display = hit ? "block" : "none";
+      if (hit) planNote.textContent = `Your plan for this: ${hit.action}`;
+    };
+    chipRow.addEventListener("click", refreshPlanNote);
 
     addEl(s, "label", "Why did you reset? (optional)");
     const ta = document.createElement("textarea");
@@ -4395,11 +4655,28 @@ if (!reduceMotion() && today > 0) {
 maybeLock();
 if (!maybeOnboard()) runDailyGates();   // first-run intro takes priority over the daily gates
 checkMilestones();
+restoreIfWiped();
+setTimeout(announceRestore, 900);
+handleQuickAdd();
 // the heads-up waits a beat so it never lands on top of the lock/daily gates
 setTimeout(checkRiskyTimes, 2500);
 maybeWeeklyRecap();
 setTimeout(runTaperPrompts, 1800);
 setTimeout(maybeBackupNudge, 3200);
+// The app open in two places (a tab and the installed app, say) would other-
+// wise each hold stale state and overwrite the other on the next save. This
+// fires only in the *other* copy, so pick the new values up and re-render.
+window.addEventListener("storage", (e) => {
+  if (!e.key || e.key.indexOf("count.") !== 0) return;
+  today = load(KEY_TODAY, 0);
+  taps = load(KEY_TAPS, 0);
+  tapLog = load(KEY_TAPLOG, []);
+  history = load(KEY_HISTORY, []);
+  goal = load(KEY_GOAL, 0);
+  goalOn = load(KEY_GOAL_ON, goalOn);   // already migrated by now; keep what we have otherwise
+  render();
+});
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();

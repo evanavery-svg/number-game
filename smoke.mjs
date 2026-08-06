@@ -128,6 +128,71 @@ check("end day appends a history entry", histLenAfter === histLenBefore + 1);
   await ctx2.close();
 }
 
+// ?add=N logs a tap without opening the UI, and must not re-log on refresh
+{
+  const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p3 = await ctx3.newPage();
+  p3.on("pageerror", (e) => errors.push("quickadd: " + String(e)));
+  await p3.addInitScript((dk) => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p3.goto(BASE + "?add=1");
+  await p3.waitForTimeout(600);
+  check("?add logs the amount", (await p3.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 1);
+  check("?add strips itself from the URL", !(await p3.evaluate(() => location.search)).includes("add"));
+  await p3.reload();
+  await p3.waitForTimeout(600);
+  check("?add does not re-log on refresh", (await p3.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 1);
+  await ctx3.close();
+}
+
+// the safety net: wipe localStorage and confirm the IndexedDB mirror restores it
+{
+  const ctx4 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p4 = await ctx4.newPage();
+  p4.on("pageerror", (e) => errors.push("restore: " + String(e)));
+  // deliberately NOT addInitScript — the whole point is a load with an empty
+  // localStorage, which an init script would quietly refill.
+  await p4.goto(BASE);
+  await p4.evaluate((dk) => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p4.goto(BASE);
+  await p4.waitForTimeout(400);
+  await p4.click("#addBtn");                 // a save schedules the mirror
+  await p4.waitForTimeout(2800);             // let the 2s debounce land
+  const seeded = await p4.evaluate(() => JSON.parse(localStorage.getItem("count.today")));
+  // simulate eviction: localStorage gone, IndexedDB intact
+  await p4.evaluate(() => localStorage.clear());
+  await p4.goto(BASE);
+  await p4.waitForTimeout(3200);             // boot, restore, reload, announce
+  const back = await p4.evaluate(() => JSON.parse(localStorage.getItem("count.today") || "null"));
+  check("wiped data is restored from the on-device mirror", back === seeded && seeded > 0);
+  check("restore is announced, not silent", (await p4.evaluate(() => document.getElementById("toast").textContent)).includes("restored"));
+  await ctx4.close();
+}
+
+// a genuinely new user must not be hijacked by the restore path
+{
+  const ctx5 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p5 = await ctx5.newPage();
+  p5.on("pageerror", (e) => errors.push("fresh: " + String(e)));
+  await p5.goto(BASE);
+  await p5.waitForTimeout(1500);
+  check("a fresh install still onboards normally", (await p5.evaluate(() => localStorage.getItem("count.onboarded"))) === null);
+  await ctx5.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

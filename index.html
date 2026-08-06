@@ -949,6 +949,43 @@
     .cal-detail { font-size: 13px; color: var(--muted); margin-top: var(--sp-3); min-height: 18px; text-align: center; }
     .cal-detail b { color: var(--text); font-weight: 700; }
     .cal-note { font-size: 12px; color: var(--faint); font-style: italic; margin-top: 3px; }
+    .cal-edit {
+      margin-top: var(--sp-2); background: var(--key); border: none; border-radius: 8px;
+      color: var(--accent); font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.02em;
+      padding: 6px 12px; cursor: pointer; font-family: inherit;
+      transition: background var(--dur-fast) var(--ease-out);
+    }
+    .cal-edit:active { background: var(--key-press); }
+
+    /* ---- if-then plans (inside the private journal) ---- */
+    .plan-title { font-size: var(--fs-small); font-weight: 700; color: var(--text); margin-top: var(--sp-4); }
+    .plan-sub { font-size: var(--fs-micro); color: var(--faint); margin-top: 2px; }
+    .plan-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+    .plan-row {
+      display: flex; align-items: flex-start; gap: var(--sp-2);
+      background: var(--surface-2); border-radius: 12px; padding: 10px 12px;
+    }
+    .plan-body { flex: 1; min-width: 0; }
+    .plan-cue { font-size: var(--fs-micro); color: var(--muted); }
+    .plan-action { font-size: var(--fs-small); color: var(--text); font-weight: 600; margin-top: 2px; }
+    .plan-del {
+      background: none; border: none; color: var(--faint); font-size: 20px; line-height: 1;
+      padding: 0 2px; cursor: pointer; font-family: inherit;
+    }
+    .plan-del:active { color: var(--over); }
+    .plan-add {
+      display: block; width: 100%; margin-top: var(--sp-2);
+      background: none; border: 1px dashed var(--hair); border-radius: 12px;
+      color: var(--accent); font-size: var(--fs-small); font-weight: 600;
+      padding: 10px; cursor: pointer; font-family: inherit; text-align: center;
+      transition: background var(--dur-fast) var(--ease-out);
+    }
+    .plan-add:active { background: var(--key); }
+    .plan-recall {
+      background: var(--surface-2); border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 10px 12px; margin-top: var(--sp-3);
+      font-size: var(--fs-small); color: var(--text);
+    }
     .cal-legend { display: flex; gap: 14px; margin-top: var(--sp-3); font-size: 11px; color: var(--muted); }
     .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
@@ -1275,7 +1312,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v9.1 · © Avery LLC</div>
+  <div class="version">v9.2 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

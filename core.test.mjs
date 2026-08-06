@@ -193,6 +193,48 @@ test("zeroStreak counts trailing zeros", () => {
   assert.equal(core.zeroStreak([0]), 1);
 });
 
+test("planFor prefers an exact tag, then a nearby hour", () => {
+  const plans = [
+    { id: 1, tag: "a", action: "step outside" },
+    { id: 2, hour: 21, action: "phone in the kitchen" },
+  ];
+  assert.equal(core.planFor(plans, "a", 9).id, 1);          // tag wins
+  assert.equal(core.planFor(plans, "zz", 21).id, 2);        // no tag match → hour
+  assert.equal(core.planFor(plans, "zz", 20).id, 2);        // within an hour
+  assert.equal(core.planFor(plans, "zz", 18), null);        // too far off
+  assert.equal(core.planFor(plans, null, null), null);
+  assert.equal(core.planFor([], "a", 9), null);
+  assert.equal(core.planFor(null, "a", 9), null);
+  // a plan with no action written yet is not a plan
+  assert.equal(core.planFor([{ tag: "a", action: "  " }], "a", 9), null);
+});
+
+test("upsertDay corrects, inserts in order, and marks backfills", () => {
+  const hist = [
+    { date: "2026-07-01", total: 3, taps: 6 },
+    { date: "2026-07-03", total: 1, taps: 2 },
+  ];
+  // correcting an existing day keeps its other fields and is not a backfill
+  const fixed = core.upsertDay(hist, "2026-07-01", 5);
+  assert.equal(fixed[0].total, 5);
+  assert.equal(fixed[0].taps, 6);
+  assert.equal(fixed[0].backfilled, undefined);
+  // a missing day is inserted in date order and flagged
+  const filled = core.upsertDay(hist, "2026-07-02", 2);
+  assert.deepEqual(filled.map((d) => d.date), ["2026-07-01", "2026-07-02", "2026-07-03"]);
+  assert.equal(filled[1].backfilled, true);
+  assert.equal(filled[1].total, 2);
+  // null removes the day
+  assert.deepEqual(core.upsertDay(hist, "2026-07-03", null).map((d) => d.date), ["2026-07-01"]);
+  // totals are rounded like every other number in the app
+  assert.equal(core.upsertDay([], "2026-07-01", 0.1 + 0.2)[0].total, 0.3);
+  // the input is never mutated
+  assert.equal(hist[0].total, 3);
+  assert.equal(hist.length, 2);
+  // empty history is fine
+  assert.equal(core.upsertDay([], "2026-07-01", 1).length, 1);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };
