@@ -106,6 +106,29 @@ await page.waitForTimeout(400);
 const histLenAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("count.history") || "[]").length);
 check("end day appends a history entry", histLenAfter === histLenBefore + 1);
 
+// a logged calendar day opens the full editor, not the light backfill sheet
+{
+  await page.click("#statsBtn");
+  await page.waitForTimeout(500);
+  const picked = await page.evaluate(() => {
+    const c = [...document.querySelectorAll(".cal-day.today")][0] || [...document.querySelectorAll(".cal-day:not(.blank):not(.empty)")][0];
+    if (!c) return false;
+    c.click(); return true;
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelector(".cal-edit")?.click());
+  await page.waitForTimeout(500);
+  const full = await page.evaluate(() => ({
+    note: !!document.querySelector("#sheet textarea"),
+    del: [...document.querySelectorAll("#sheet .sheet-btn")].some((b) => b.textContent.includes("Delete this day")),
+  }));
+  check("a logged day opens the full editor with a delete", picked && full.note && full.del);
+  await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Cancel")?.click());
+  await page.waitForTimeout(300);
+  await page.click("#insightsClose");
+  await page.waitForTimeout(300);
+}
+
 // morning greeting: shows once on a fresh day, then clears itself
 {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });

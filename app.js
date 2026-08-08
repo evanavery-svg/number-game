@@ -1711,30 +1711,39 @@ function selectCalDay(ds, cell, detail, todayStr) {
     edit.type = "button";
     edit.className = "cal-edit";
     edit.textContent = h ? "Edit this day" : "Fill this day in";
-    edit.addEventListener("click", (ev) => { ev.stopPropagation(); openDayFix(ds); });
+    // A logged day gets the full editor — the same sheet the history list
+    // opens, with the note, the date, the tap times and a confirmed delete.
+    // The lighter sheet below is only for reconstructing a day that has none.
+    edit.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const i = h ? history.indexOf(h) : -1;
+      if (i >= 0) openHistorySheet(i); else openDayFix(ds);
+    });
     detail.appendChild(edit);
   }
   buzz(6);
 }
 
-// Correct one day's total, or reconstruct a day that never got logged.
+// Reconstruct a day that was never logged. Days that *do* have an entry go to
+// openHistorySheet instead, so there's one full editor rather than two partial
+// ones. The exception is today-in-progress: that's the live counter, not a
+// history row, so it's handled here.
 function openDayFix(ds) {
   const nice = new Date(ds + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
   const isToday = ds === sessionDate();
-  const existing = history.find((d) => d.date === ds);
   openSheet((s) => {
     addEl(s, "h3", nice);
     addEl(s, "p", isToday
-      ? "This is today — changing it sets your running total."
+      ? "This is today, still running — changing it sets your current total."
       : "Put in what this day actually came to. Days filled in after the fact are marked as such in your exports.", "sub");
 
     addEl(s, "label", "Total for this day");
-    const input = numInput(isToday ? fmt(today) : (existing ? fmt(existing.total) : ""), "0");
+    const input = numInput(isToday ? fmt(today) : "", "0");
     s.appendChild(input);
 
     s.appendChild(makeBtn("Save", "primary", () => {
       const v = parseFloat(input.value);
-      if (!isFinite(v) || v < 0) { toast("Enter a number"); return; }
+      if (!isFinite(v) || v < 0) { toast("Enter a number ≥ 0"); return; }
       if (isToday) {
         today = round2(v);
         save(KEY_TODAY, today);
@@ -1743,18 +1752,20 @@ function openDayFix(ds) {
         save(KEY_HISTORY, history);
       }
       buzz(12);
-      closeSheet(); render(); renderCalendar();
+      closeSheet(); render();
       toast(`${nice} set to ${fmt(round2(v))}`);
     }));
 
-    // Only offer removal for a real past entry — there's no "unlog" for today.
-    if (existing && !isToday) {
-      s.appendChild(makeBtn("Remove this day", "link", () => {
-        history = upsertDay(history, ds, null);
-        save(KEY_HISTORY, history);
-        buzz(12);
-        closeSheet(); render(); renderCalendar();
-        toast(`${nice} removed`);
+    // Today can't be "deleted" — there's no row yet — but it can be zeroed,
+    // which is what you want after a mis-tap. Confirmed: it discards the count.
+    if (isToday && today > 0) {
+      s.appendChild(makeBtn("Clear today's count", "danger", () => {
+        confirmSheet("Clear today?", `${fmt(today)} will be set back to 0.`, "Clear", () => {
+          today = 0;
+          save(KEY_TODAY, today);
+          buzz(12); render();
+          toast("Today cleared");
+        }, true);
       }));
     }
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));

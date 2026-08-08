@@ -260,9 +260,11 @@ function upsertDay(history, date, total) {
   const out = (history || []).filter((d) => d && d.date !== date);
   if (total != null) {
     const prev = (history || []).find((d) => d && d.date === date);
+    const when = new Date(date + "T12:00:00");
     out.push(prev
       ? Object.assign({}, prev, { total: round2(total) })
-      : { date, total: round2(total), taps: 0, endedAt: new Date(date + "T12:00:00").toISOString(), backfilled: true });
+      // label matters: the day editor and the history list both title themselves with it
+      : { date, label: dayLabel(when), total: round2(total), taps: 0, endedAt: when.toISOString(), backfilled: true });
   }
   out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return out;

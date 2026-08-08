@@ -224,6 +224,8 @@ test("upsertDay corrects, inserts in order, and marks backfills", () => {
   assert.deepEqual(filled.map((d) => d.date), ["2026-07-01", "2026-07-02", "2026-07-03"]);
   assert.equal(filled[1].backfilled, true);
   assert.equal(filled[1].total, 2);
+  // a label is required — the day editor titles itself with it
+  assert.equal(filled[1].label, core.dayLabel(new Date(2026, 6, 2, 12)));
   // null removes the day
   assert.deepEqual(core.upsertDay(hist, "2026-07-03", null).map((d) => d.date), ["2026-07-01"]);
   // totals are rounded like every other number in the app
