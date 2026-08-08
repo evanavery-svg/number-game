@@ -270,10 +270,24 @@ function upsertDay(history, date, total) {
   return out;
 }
 
+// Is this YYYY-MM-DD after today? An <input type="date"> max attribute is
+// only advisory — it styles the field but does not stop the value being read
+// — so every date that gets written has to be checked here as well.
+function isFutureDate(ds, todayStr) {
+  if (!ds || !todayStr) return false;
+  return String(ds) > String(todayStr);   // ISO dates compare correctly as strings
+}
+
+// Days sitting in the future, which should not exist. Used to let the
+// calendar reach them so a bad entry can actually be corrected.
+function futureDays(history, todayStr) {
+  return (history || []).filter((d) => d && isFutureDate(d.date, todayStr));
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    planFor, upsertDay,
+    planFor, upsertDay, isFutureDate, futureDays,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

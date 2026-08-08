@@ -123,6 +123,19 @@ check("end day appends a history entry", histLenAfter === histLenBefore + 1);
     del: [...document.querySelectorAll("#sheet .sheet-btn")].some((b) => b.textContent.includes("Delete this day")),
   }));
   check("a logged day opens the full editor with a delete", picked && full.note && full.del);
+  // regression: a day must never be movable into the future. The input's max
+  // attribute does not enforce this — only the save handler does.
+  const before = await page.evaluate(() => localStorage.getItem("count.history"));
+  const future = (() => { const d = new Date(); d.setDate(d.getDate() + 23); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  await page.evaluate((f) => {
+    const i = document.querySelector("#sheet input[type=date]");
+    i.value = f; i.dispatchEvent(new Event("change", { bubbles: true }));
+  }, future);
+  await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Save")?.click());
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => localStorage.getItem("count.history"));
+  check("a day cannot be moved into the future", after === before && !after.includes(future));
+
   await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Cancel")?.click());
   await page.waitForTimeout(300);
   await page.click("#insightsClose");

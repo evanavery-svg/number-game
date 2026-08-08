@@ -237,6 +237,22 @@ test("upsertDay corrects, inserts in order, and marks backfills", () => {
   assert.equal(core.upsertDay([], "2026-07-01", 1).length, 1);
 });
 
+test("isFutureDate / futureDays catch days that cannot exist yet", () => {
+  assert.equal(core.isFutureDate("2026-08-31", "2026-08-08"), true);
+  assert.equal(core.isFutureDate("2026-08-08", "2026-08-08"), false);   // today is fine
+  assert.equal(core.isFutureDate("2026-08-07", "2026-08-08"), false);
+  // year and month boundaries compare correctly as strings
+  assert.equal(core.isFutureDate("2027-01-01", "2026-12-31"), true);
+  assert.equal(core.isFutureDate("2026-09-01", "2026-10-01"), false);
+  assert.equal(core.isFutureDate(null, "2026-08-08"), false);
+  assert.equal(core.isFutureDate("2026-08-31", null), false);
+
+  const hist = [{ date: "2026-08-01" }, { date: "2026-08-31" }, { date: "2026-12-25" }];
+  assert.deepEqual(core.futureDays(hist, "2026-08-08").map((d) => d.date), ["2026-08-31", "2026-12-25"]);
+  assert.deepEqual(core.futureDays([], "2026-08-08"), []);
+  assert.deepEqual(core.futureDays(null, "2026-08-08"), []);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

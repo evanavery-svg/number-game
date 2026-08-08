@@ -1604,6 +1604,22 @@ function earliestMonthOffset() {
   return Math.max(0, (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()));
 }
 
+// Paging forward normally stops at the current month. A day dated in the
+// future shouldn't exist, but if one does you have to be able to reach it to
+// put it right — so allow paging out to the furthest one. Returns a negative
+// offset (calOffset counts backwards), or 0 when there's nothing out there.
+function latestMonthOffset() {
+  const now = new Date();
+  let min = 0;
+  futureDays(history, isoLocal(now)).forEach((d) => {
+    const t = new Date(d.date + "T12:00:00");
+    if (isNaN(t.getTime())) return;
+    const off = (now.getFullYear() - t.getFullYear()) * 12 + (now.getMonth() - t.getMonth());
+    if (off < min) min = off;
+  });
+  return min;
+}
+
 // Calendar heatmap — each day tinted under (green) / over (red). calOffset lets
 // you page back through previous months (0 = current month).
 function renderCalendar() {
@@ -1628,6 +1644,7 @@ function renderCalendar() {
   const nav = document.createElement("div");
   nav.className = "cal-nav";
   const maxBack = earliestMonthOffset();
+  const maxFwd = latestMonthOffset();   // < 0 only when a future-dated day needs fixing
   const prev = document.createElement("button");
   prev.className = "cal-nav-btn"; prev.textContent = "‹"; prev.setAttribute("aria-label", "Previous month");
   prev.disabled = calOffset >= maxBack;
@@ -1637,8 +1654,8 @@ function renderCalendar() {
   title.textContent = target.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const next = document.createElement("button");
   next.className = "cal-nav-btn"; next.textContent = "›"; next.setAttribute("aria-label", "Next month");
-  next.disabled = calOffset <= 0;
-  next.addEventListener("click", () => { if (calOffset > 0) { calOffset--; renderCalendar(); } });
+  next.disabled = calOffset <= maxFwd;
+  next.addEventListener("click", () => { if (calOffset > maxFwd) { calOffset--; renderCalendar(); } });
   nav.append(prev, title, next);
   card.appendChild(nav);
 
@@ -1701,12 +1718,16 @@ function selectCalDay(ds, cell, detail, todayStr) {
   } else {
     b.textContent = nice; main = " — nothing logged";
   }
+  if (h && ds > todayStr) main += " · this day is in the future";
   line.appendChild(b); line.appendChild(document.createTextNode(main));
   detail.appendChild(line);
   if (note) { const n = document.createElement("div"); n.className = "cal-note"; n.textContent = note; detail.appendChild(n); }
   // Let a wrong or forgotten day be put right — every streak, average and
   // taper decision is computed from these numbers, so they have to be true.
-  if (ds <= todayStr) {
+  // A day that already has an entry is always editable, including one dated in
+  // the future: those shouldn't exist, and locking them would strand the very
+  // entry that needs deleting.
+  if (ds <= todayStr || h) {
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "cal-edit";
@@ -2492,6 +2513,9 @@ function commitDay(note, dateStr, extras) {
   const now = new Date();
   // log under the chosen date (keeping the current time of day), or today
   let when = now;
+  // Same reason as the day editor: the picker's max is advisory, so a future
+  // date has to be refused here rather than trusted from the input.
+  if (isFutureDate(dateStr, isoLocal(now))) dateStr = null;
   if (dateStr) {
     const [y, mo, d] = dateStr.split("-").map(Number);
     if (y && mo && d) when = new Date(y, mo - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
@@ -2953,6 +2977,10 @@ function openHistorySheet(idx) {
       day.note = ta.value.replace(/\s*\n\s*/g, " ").trim();
       // move the day to a new date, keeping its original time of day
       const ds = dateInput.value;
+      // The input's max attribute only styles the field — it does not stop the
+      // value being read, so a day could be pushed into the future and then
+      // sat there uneditable. Refuse it here, where it actually counts.
+      if (isFutureDate(ds, isoLocal(new Date()))) { toast("That date hasn't happened yet"); return; }
       if (ds) {
         const [y, mo, d] = ds.split("-").map(Number);
         if (y && mo && d) {
