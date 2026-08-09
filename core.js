@@ -292,10 +292,61 @@ function dateTaken(history, date, except) {
   return (history || []).some((d) => d && d !== except && d.date === date);
 }
 
+// The calendar month as data: leading blanks, then one descriptor per day.
+// This mapping is where the wrong-day and off-by-one bugs lived, so it's kept
+// out of the DOM code where it can be tested directly. `totals` is keyed by
+// YYYY-MM-DD; `todayStr` is the session day, not the wall-clock one.
+function calendarCells(year, month, totals, todayStr, goal, hasGoalFlag) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0, lead = new Date(year, month, 1).getDay(); i < lead; i++) cells.push({ blank: true });
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const has = Object.prototype.hasOwnProperty.call(totals || {}, ds);
+    const total = has ? totals[ds] : null;
+    cells.push({
+      blank: false, day, ds, total, isToday: ds === todayStr,
+      state: !has ? "empty" : !hasGoalFlag ? "logged" : (total <= goal ? "under" : "over"),
+    });
+  }
+  return cells;
+}
+
+// The per-card numbers on the Time Since page. Shared by the full render and
+// the once-a-second retime so the two can't drift apart.
+function sinceCardModel(item, now) {
+  const t = now == null ? Date.now() : now;
+  const elapsed = Math.max(0, t - new Date(item.start).getTime());
+  const next = nextMile(elapsed), prev = prevMileMs(elapsed);
+  const span = next.ms - prev;
+  return {
+    elapsed,
+    parts: partsMs(elapsed),
+    big: bigSince(partsMs(elapsed)),
+    next,
+    remaining: Math.max(0, next.ms - elapsed),
+    frac: span > 0 ? Math.min(1, Math.max(0, (elapsed - prev) / span)) : 0,
+  };
+}
+
+// The date half of logging a day: which day it belongs to, and how it's
+// labelled. A date picker's max attribute is advisory, so a future date is
+// refused here and falls back to now. Both the future-date and missing-label
+// bugs lived in this handful of lines, so they're testable on their own.
+function dayStamp(dateStr, now) {
+  const t = now || new Date();
+  let when = t;
+  if (dateStr && !isFutureDate(dateStr, isoLocal(t))) {
+    const [y, mo, d] = String(dateStr).split("-").map(Number);
+    if (y && mo && d) when = new Date(y, mo - 1, d, t.getHours(), t.getMinutes(), t.getSeconds());
+  }
+  return { date: isoLocal(when), label: dayLabel(when), endedAt: when.toISOString() };
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    planFor, upsertDay, isFutureDate, futureDays, dateTaken,
+    planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

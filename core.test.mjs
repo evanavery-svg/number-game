@@ -264,6 +264,66 @@ test("dateTaken spots a clash without counting the entry against itself", () => 
   assert.equal(core.dateTaken(null, "2026-08-02", a), false);
 });
 
+test("calendarCells lays out a month and tags each day", () => {
+  // July 2026: the 1st is a Wednesday, so 3 leading blanks, 31 days
+  const totals = { "2026-07-02": 2, "2026-07-03": 9 };
+  const cells = core.calendarCells(2026, 6, totals, "2026-07-02", 4, true);
+  assert.equal(cells.filter((c) => c.blank).length, 3);
+  assert.equal(cells.filter((c) => !c.blank).length, 31);
+  const byDs = (ds) => cells.find((c) => c.ds === ds);
+  assert.equal(byDs("2026-07-01").state, "empty");
+  assert.equal(byDs("2026-07-02").state, "under");     // 2 <= goal 4
+  assert.equal(byDs("2026-07-03").state, "over");      // 9 > goal 4
+  assert.equal(byDs("2026-07-02").isToday, true);
+  assert.equal(byDs("2026-07-03").isToday, false);
+  assert.equal(byDs("2026-07-02").total, 2);
+  assert.equal(byDs("2026-07-01").total, null);
+  // with no goal set, a logged day is just "logged"
+  assert.equal(core.calendarCells(2026, 6, totals, "x", 0, false).find((c) => c.ds === "2026-07-03").state, "logged");
+  // a total of 0 is a real total, not a missing day
+  assert.equal(core.calendarCells(2026, 6, { "2026-07-05": 0 }, "x", 4, true).find((c) => c.ds === "2026-07-05").state, "under");
+  // the session day is what counts as today — the regression from v9.5
+  assert.equal(core.calendarCells(2026, 6, {}, "2026-07-08", 4, true).filter((c) => c.isToday).length, 1);
+  // February in a leap year
+  assert.equal(core.calendarCells(2028, 1, {}, "x", 4, true).filter((c) => !c.blank).length, 29);
+});
+
+test("sinceCardModel is the one source for the Time Since numbers", () => {
+  const now = new Date(2026, 6, 30, 12).getTime();
+  const m = core.sinceCardModel({ start: new Date(now - 2 * core.DAY).getTime() }, now);
+  assert.equal(m.elapsed, 2 * core.DAY);
+  assert.deepEqual(m.big, { n: 2, u: "days" });
+  assert.equal(m.parts.d, 2);
+  assert.equal(m.next.label, "3 days");
+  assert.equal(m.remaining, core.DAY);
+  assert.ok(m.frac > 0 && m.frac < 1);
+  // a start in the future can't produce a negative run
+  assert.equal(core.sinceCardModel({ start: new Date(now + core.DAY).getTime() }, now).elapsed, 0);
+  // frac stays inside 0..1 at a milestone boundary
+  const at = core.sinceCardModel({ start: new Date(now - core.DAY).getTime() }, now);
+  assert.ok(at.frac >= 0 && at.frac <= 1);
+});
+
+test("dayStamp refuses a future date and always labels the day", () => {
+  const now = new Date(2026, 6, 30, 21, 15, 30);   // 30 Jul 2026, 9:15:30pm
+  // an explicit past date keeps the current time of day
+  const past = core.dayStamp("2026-07-28", now);
+  assert.equal(past.date, "2026-07-28");
+  assert.equal(new Date(past.endedAt).getHours(), 21);
+  assert.equal(past.label, core.dayLabel(new Date(2026, 6, 28)));
+  // a future date is refused and falls back to now — the v9.4 regression
+  const future = core.dayStamp("2026-08-31", now);
+  assert.equal(future.date, "2026-07-30");
+  // today itself is fine
+  assert.equal(core.dayStamp("2026-07-30", now).date, "2026-07-30");
+  // no date given, or a malformed one, falls back to now
+  assert.equal(core.dayStamp(null, now).date, "2026-07-30");
+  assert.equal(core.dayStamp("", now).date, "2026-07-30");
+  assert.equal(core.dayStamp("nonsense", now).date, "2026-07-30");
+  // a label is always present — the v9.3 regression
+  ["2026-07-28", null, "2026-08-31"].forEach((d) => assert.ok(core.dayStamp(d, now).label.length > 0));
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

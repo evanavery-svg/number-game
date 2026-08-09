@@ -1728,8 +1728,6 @@ function renderCalendar() {
   const now = calBase();
   const target = new Date(now.getFullYear(), now.getMonth() - calOffset, 1);
   const y = target.getFullYear(), m = target.getMonth();
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const lead = new Date(y, m, 1).getDay();
   // the day the live count belongs to — see calBase()
   const todayStr = sessionDate();
 
@@ -1760,29 +1758,23 @@ function renderCalendar() {
   const grid = document.createElement("div");
   grid.className = "cal";
   WK_INIT.forEach((w) => { const h = document.createElement("div"); h.className = "cal-head"; h.textContent = w; grid.appendChild(h); });
-  for (let i = 0; i < lead; i++) { const b = document.createElement("div"); b.className = "cal-day blank"; grid.appendChild(b); }
 
   // tapping a day fills in this readout with that day's total
   const detail = document.createElement("div");
   detail.className = "cal-detail";
   detail.textContent = "Tap a day to see that day's total.";
 
-  for (let day = 1; day <= daysInMonth; day++) {
-    const ds = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  // the month's shape comes from core.js so it can be tested without a DOM
+  calendarCells(y, m, totals, todayStr, goal, hasGoal()).forEach((c) => {
     const cell = document.createElement("div");
-    cell.className = "cal-day";
-    cell.textContent = String(day);
-    if (ds in totals) {
-      if (hasGoal()) cell.classList.add(totals[ds] <= goal ? "under" : "over");
-      else cell.classList.add("logged");
-      cell.title = `${ds}: ${fmt(totals[ds])}`;
-    } else {
-      cell.classList.add("empty");
-    }
-    if (ds === todayStr) cell.classList.add("today");
-    cell.addEventListener("click", () => selectCalDay(ds, cell, detail, todayStr));
+    if (c.blank) { cell.className = "cal-day blank"; grid.appendChild(cell); return; }
+    cell.className = "cal-day " + c.state;
+    cell.textContent = String(c.day);
+    if (c.total != null) cell.title = `${c.ds}: ${fmt(c.total)}`;
+    if (c.isToday) cell.classList.add("today");
+    cell.addEventListener("click", () => selectCalDay(c.ds, cell, detail, todayStr));
     grid.appendChild(cell);
-  }
+  });
   card.appendChild(grid);
   card.appendChild(detail);
 
@@ -2616,21 +2608,14 @@ function openWorryActions(worries) {
 }
 function commitDay(note, dateStr, extras) {
   const now = new Date();
-  // log under the chosen date (keeping the current time of day), or today
-  let when = now;
-  // Same reason as the day editor: the picker's max is advisory, so a future
-  // date has to be refused here rather than trusted from the input.
-  if (isFutureDate(dateStr, isoLocal(now))) dateStr = null;
-  if (dateStr) {
-    const [y, mo, d] = dateStr.split("-").map(Number);
-    if (y && mo && d) when = new Date(y, mo - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
-  }
+  // which day this belongs to, and its label — a future date is refused there
+  const stamp = dayStamp(dateStr, now);
   const total = today;
   const underGoal = hasGoal() && total <= goal;
   const entry = {
-    date: isoLocal(when),
-    label: dayLabel(when),
-    total: total, taps: taps, endedAt: when.toISOString(),
+    date: stamp.date,
+    label: stamp.label,
+    total: total, taps: taps, endedAt: stamp.endedAt,
     note: note || "", tapTimes: tapLog.slice(),
   };
   // optional end-day reflection (mood check-in, factors, tiny wins, worries)
@@ -3874,19 +3859,17 @@ function tickSince() {
   if (cards.length !== since.length) { renderSince(); return; }   // shape changed — rebuild
   since.forEach((it, i) => {
     const card = cards[i];
-    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
-    const p = partsMs(elapsed), b = bigSince(p);
+    const m = sinceCardModel(it);   // same numbers renderSince uses — one source
     const big = card.querySelector(".since-big");
-    if (big) big.innerHTML = `${b.n}<span class="since-unit">${b.u}</span>`;
+    if (big) big.innerHTML = `${m.big.n}<span class="since-unit">${m.big.u}</span>`;
     const det = card.querySelector(".since-detail");
-    if (det) det.textContent = `${p.d}d ${p.h}h ${p.m}m ${p.s}s`;
+    if (det) det.textContent = `${m.parts.d}d ${m.parts.h}h ${m.parts.m}m ${m.parts.s}s`;
     const val = card.querySelector(".since-saved-val");
-    if (val && it.rate > 0) val.textContent = savedText(it.rate, it.unit, elapsed);
-    const next = nextMile(elapsed), prev = prevMileMs(elapsed);
+    if (val && it.rate > 0) val.textContent = savedText(it.rate, it.unit, m.elapsed);
     const head = card.querySelector(".since-prog-head");
-    if (head) head.innerHTML = `<span>Next: ${next.label}</span><span>${durLabel(next.ms - elapsed)} left</span>`;
+    if (head) head.innerHTML = `<span>Next: ${m.next.label}</span><span>${durLabel(m.remaining)} left</span>`;
     const fill = card.querySelector(".since-bar i");
-    if (fill) fill.style.width = (Math.min(1, Math.max(0, (elapsed - prev) / (next.ms - prev))) * 100) + "%";
+    if (fill) fill.style.width = (m.frac * 100) + "%";
   });
 }
 
@@ -3901,9 +3884,8 @@ function renderSince() {
     return;
   }
   since.forEach((it) => {
-    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
-    const p = partsMs(elapsed);
-    const b = bigSince(p);
+    const model = sinceCardModel(it);
+    const elapsed = model.elapsed, p = model.parts, b = model.big;
     const card = document.createElement("div");
     card.className = "since-card";
     const name = document.createElement("div"); name.className = "since-name"; name.textContent = it.name;
@@ -3932,11 +3914,10 @@ function renderSince() {
     }
 
     // progress toward the next milestone
-    const next = nextMile(elapsed), prev = prevMileMs(elapsed);
-    const frac = Math.min(1, Math.max(0, (elapsed - prev) / (next.ms - prev)));
+    const next = model.next, frac = model.frac;
     const prog = document.createElement("div"); prog.className = "since-prog";
     const head = document.createElement("div"); head.className = "since-prog-head";
-    head.innerHTML = `<span>Next: ${next.label}</span><span>${durLabel(next.ms - elapsed)} left</span>`;
+    head.innerHTML = `<span>Next: ${next.label}</span><span>${durLabel(model.remaining)} left</span>`;
     const bar = document.createElement("div"); bar.className = "since-bar";
     const fill = document.createElement("i"); fill.style.width = (frac * 100) + "%";
     bar.appendChild(fill);
