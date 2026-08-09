@@ -136,6 +136,23 @@ check("end day appends a history entry", histLenAfter === histLenBefore + 1);
   const after = await page.evaluate(() => localStorage.getItem("count.history"));
   check("a day cannot be moved into the future", after === before && !after.includes(future));
 
+  // regression: two rows must never share a date — the calendar can only reach
+  // one of them while both keep counting toward averages and streaks.
+  const occupied = await page.evaluate(() => {
+    const h = JSON.parse(localStorage.getItem("count.history") || "[]");
+    return h.length ? h[0].date : null;
+  });
+  if (occupied) {
+    await page.evaluate((d) => {
+      const i = document.querySelector("#sheet input[type=date]");
+      i.value = d; i.dispatchEvent(new Event("change", { bubbles: true }));
+    }, occupied);
+    await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Save")?.click());
+    await page.waitForTimeout(500);
+    const dates = await page.evaluate(() => JSON.parse(localStorage.getItem("count.history") || "[]").map((d) => d.date));
+    check("a day cannot be moved onto an occupied date", new Set(dates).size === dates.length);
+  }
+
   await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Cancel")?.click());
   await page.waitForTimeout(300);
   await page.click("#insightsClose");

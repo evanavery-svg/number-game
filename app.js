@@ -142,6 +142,9 @@ function load(key, fallback) {
   catch (e) { return fallback; }
 }
 function save(key, value) { localStorage.setItem(key, JSON.stringify(value)); mirrorSoon(); }
+// Removing a key has to reach the mirror too, or switching something off (a
+// passcode, say) would come back the next time the safety net restored.
+function forget(key) { localStorage.removeItem(key); mirrorSoon(); }
 
 // ---- on-device safety net ----
 // Everything lives in localStorage, which iOS clears for sites you haven't
@@ -1317,10 +1320,12 @@ function renderYear() {
   addEl(card, "div", "Past year", "section-title");
   const totals = {};
   history.forEach((d) => { totals[d.date] = d.total; });
-  const todayStr = isoLocal(new Date());
+  // the running count belongs to the session day (4am cutoff), not the
+  // wall-clock one, or between midnight and 4am it lands on the wrong square
+  const todayStr = sessionDate();
   if (today > 0 && !(todayStr in totals)) totals[todayStr] = today;
 
-  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const today0 = new Date(todayStr + "T12:00:00"); today0.setHours(0, 0, 0, 0);
   const start = new Date(today0); start.setDate(today0.getDate() - today0.getDay() - 52 * 7);
   const grid = document.createElement("div"); grid.className = "year-grid";
   for (let i = 0; i < 53 * 7; i++) {
@@ -1596,9 +1601,15 @@ const WK_INIT = ["S", "M", "T", "W", "T", "F", "S"];
 const WK_NAME = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
 
 // How many whole months back the earliest logged day sits (history is sorted ascending).
+// Everything month-based works from the session day rather than the wall
+// clock, so that between midnight and 4am the calendar stays on the day the
+// current taps actually belong to — including on the 1st, when the session
+// day is still in the previous month.
+function calBase() { return new Date(sessionDate() + "T12:00:00"); }
+
 function earliestMonthOffset() {
   if (!history.length) return 0;
-  const now = new Date();
+  const now = calBase();
   const first = new Date(history[0].endedAt || history[0].date);
   if (isNaN(first.getTime())) return 0;
   return Math.max(0, (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()));
@@ -1609,9 +1620,9 @@ function earliestMonthOffset() {
 // put it right — so allow paging out to the furthest one. Returns a negative
 // offset (calOffset counts backwards), or 0 when there's nothing out there.
 function latestMonthOffset() {
-  const now = new Date();
+  const now = calBase();
   let min = 0;
-  futureDays(history, isoLocal(now)).forEach((d) => {
+  futureDays(history, sessionDate()).forEach((d) => {
     const t = new Date(d.date + "T12:00:00");
     if (isNaN(t.getTime())) return;
     const off = (now.getFullYear() - t.getFullYear()) * 12 + (now.getMonth() - t.getMonth());
@@ -1628,12 +1639,13 @@ function renderCalendar() {
   card.style.display = "block";
   card.textContent = "";
 
-  const now = new Date();
+  const now = calBase();
   const target = new Date(now.getFullYear(), now.getMonth() - calOffset, 1);
   const y = target.getFullYear(), m = target.getMonth();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const lead = new Date(y, m, 1).getDay();
-  const todayStr = isoLocal(now);
+  // the day the live count belongs to — see calBase()
+  const todayStr = sessionDate();
 
   // map date -> total (history + today in progress); keys are per-day so any month works
   const totals = {};
@@ -1731,7 +1743,9 @@ function selectCalDay(ds, cell, detail, todayStr) {
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "cal-edit";
-    edit.textContent = h ? "Edit this day" : "Fill this day in";
+    // "Fill in" only when there's genuinely nothing there — today's running
+    // count is something, even though it isn't a history row yet.
+    edit.textContent = (h || (ds === todayStr && today > 0)) ? "Edit this day" : "Fill this day in";
     // A logged day gets the full editor — the same sheet the history list
     // opens, with the note, the date, the tap times and a confirmed delete.
     // The lighter sheet below is only for reconstructing a day that has none.
@@ -1755,7 +1769,7 @@ function openDayFix(ds) {
   openSheet((s) => {
     addEl(s, "h3", nice);
     addEl(s, "p", isToday
-      ? "This is today, still running — changing it sets your current total."
+      ? "This is today, still running — setting the total replaces it, and clears today's individual tap times."
       : "Put in what this day actually came to. Days filled in after the fact are marked as such in your exports.", "sub");
 
     addEl(s, "label", "Total for this day");
@@ -1767,7 +1781,11 @@ function openDayFix(ds) {
       if (!isFinite(v) || v < 0) { toast("Enter a number ≥ 0"); return; }
       if (isToday) {
         today = round2(v);
-        save(KEY_TODAY, today);
+        // The tap log described the old total, so it no longer describes this
+        // one — keeping it would log a tap count that contradicts the total
+        // and leave undo() with a stale entry to pop.
+        taps = 0; tapLog = [];
+        save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
       } else {
         history = upsertDay(history, ds, v);
         save(KEY_HISTORY, history);
@@ -2981,6 +2999,10 @@ function openHistorySheet(idx) {
       // value being read, so a day could be pushed into the future and then
       // sat there uneditable. Refuse it here, where it actually counts.
       if (isFutureDate(ds, isoLocal(new Date()))) { toast("That date hasn't happened yet"); return; }
+      // Two rows on one date break the calendar — only one is reachable, while
+      // both keep counting toward averages and streaks. Refuse rather than
+      // merge: combining two days' notes and tap times can't be undone.
+      if (ds && dateTaken(history, ds, day)) { toast("That day already has an entry"); return; }
       if (ds) {
         const [y, mo, d] = ds.split("-").map(Number);
         if (y && mo && d) {
@@ -3097,6 +3119,7 @@ function applyBackup(data) {
   // replace this device's data with the backup's
   Object.keys(gatherAll()).forEach((k) => localStorage.removeItem(k));
   Object.keys(data).forEach((k) => { if (k.startsWith("count.")) localStorage.setItem(k, data[k]); });
+  mirrorSoon();   // the restored data must reach the safety net, not the data it replaced
   toast("Restored — reloading…");
   setTimeout(() => location.reload(), 700);
 }
@@ -3154,7 +3177,7 @@ let BIO_AVAIL = false;
 
 function lockSet() { return !!load(KEY_LOCK_PIN, null); }
 function bioSet() { return !!load(KEY_LOCK_BIO, null); }
-function clearLock() { [KEY_LOCK_PIN, KEY_LOCK_SALT, KEY_LOCK_BIO].forEach((k) => localStorage.removeItem(k)); }
+function clearLock() { [KEY_LOCK_PIN, KEY_LOCK_SALT, KEY_LOCK_BIO].forEach(forget); }
 
 async function sha256(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
@@ -3315,7 +3338,7 @@ function openLockSettings() {
           try { await bioRegister(); toast("Face ID enabled"); }
           catch (e) { bioToggle.checked = false; toast("Couldn't enable Face ID"); }
         } else {
-          localStorage.removeItem(KEY_LOCK_BIO); toast("Face ID off");
+          forget(KEY_LOCK_BIO); toast("Face ID off");
         }
       });
     }
@@ -3353,7 +3376,9 @@ function pinField() {
 // PWA can only deliver notifications while it's open, so the in-app banner
 // is the reliable part.
 function hasActivityToday() {
-  const t = isoLocal(new Date());
+  // the session day, not the wall-clock one — between midnight and 4am those
+  // differ, and a day logged at 1am would otherwise look unlogged
+  const t = sessionDate();
   return taps > 0 || today > 0 || history.some((d) => d.date === t);
 }
 function checkReminder() {
@@ -3746,6 +3771,32 @@ function openWeeklyRecap() {
   });
 }
 
+// Per-second refresh of just the numbers that move. The panel used to be
+// rebuilt outright every second, which detached every button in it — a tap
+// landing on the swap hit a dead node and did nothing. Same idea as
+// tickSinceStrip. Anything structural (a reset, a plan added or deleted)
+// still calls renderSince(); this only retimes what's already on screen.
+function tickSince() {
+  const cards = el.sinceList.querySelectorAll(".since-card");
+  if (cards.length !== since.length) { renderSince(); return; }   // shape changed — rebuild
+  since.forEach((it, i) => {
+    const card = cards[i];
+    const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
+    const p = partsMs(elapsed), b = bigSince(p);
+    const big = card.querySelector(".since-big");
+    if (big) big.innerHTML = `${b.n}<span class="since-unit">${b.u}</span>`;
+    const det = card.querySelector(".since-detail");
+    if (det) det.textContent = `${p.d}d ${p.h}h ${p.m}m ${p.s}s`;
+    const val = card.querySelector(".since-saved-val");
+    if (val && it.rate > 0) val.textContent = savedText(it.rate, it.unit, elapsed);
+    const next = nextMile(elapsed), prev = prevMileMs(elapsed);
+    const head = card.querySelector(".since-prog-head");
+    if (head) head.innerHTML = `<span>Next: ${next.label}</span><span>${durLabel(next.ms - elapsed)} left</span>`;
+    const fill = card.querySelector(".since-bar i");
+    if (fill) fill.style.width = (Math.min(1, Math.max(0, (elapsed - prev) / (next.ms - prev))) * 100) + "%";
+  });
+}
+
 function renderSince() {
   const list = el.sinceList;
   list.textContent = "";
@@ -3951,7 +4002,7 @@ function openSince() {
   staggerIn(el.sinceList, 60, 6);
   growBars(el.sinceList, ".since-bar i", "width");
   clearInterval(sinceTimer);
-  sinceTimer = setInterval(() => { if (el.sinceOverlay.classList.contains("show")) renderSince(); }, 1000);
+  sinceTimer = setInterval(() => { if (el.sinceOverlay.classList.contains("show")) tickSince(); }, 1000);
 }
 function closeSince() {
   el.sinceOverlay.classList.remove("show");
@@ -3972,7 +4023,7 @@ async function journalPinMatches(pin) {
   return (await sha256(pin + load(KEY_JOURNAL_SALT, ""))) === load(KEY_JOURNAL_PIN, null);
 }
 function clearJournalPin() {
-  [KEY_JOURNAL_PIN, KEY_JOURNAL_SALT, KEY_JOURNAL_BIO].forEach((k) => localStorage.removeItem(k));
+  [KEY_JOURNAL_PIN, KEY_JOURNAL_SALT, KEY_JOURNAL_BIO].forEach(forget);
   journalUnlocked = false;
 }
 // Face ID / Touch ID for the journal, via a separate WebAuthn credential.
@@ -4062,7 +4113,7 @@ function openJournalPinSettings() {
         const bt = makeToggle(s, "Unlock with Face ID", journalBioSet());
         bt.addEventListener("change", async () => {
           if (bt.checked) { try { await journalBioRegister(); toast("Face ID on"); } catch (e) { bt.checked = false; toast("Couldn't set up Face ID"); } }
-          else { localStorage.removeItem(KEY_JOURNAL_BIO); toast("Face ID off"); }
+          else { forget(KEY_JOURNAL_BIO); toast("Face ID off"); }
         });
       }
       s.appendChild(makeBtn("Change passcode", "primary", promptJournalSetup));

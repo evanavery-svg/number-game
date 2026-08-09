@@ -253,6 +253,17 @@ test("isFutureDate / futureDays catch days that cannot exist yet", () => {
   assert.deepEqual(core.futureDays(null, "2026-08-08"), []);
 });
 
+test("dateTaken spots a clash without counting the entry against itself", () => {
+  const a = { date: "2026-08-01", total: 3 }, b = { date: "2026-08-02", total: 5 };
+  const hist = [a, b];
+  assert.equal(core.dateTaken(hist, "2026-08-02", a), true);    // moving a onto b's day
+  assert.equal(core.dateTaken(hist, "2026-08-01", a), false);   // a keeping its own day
+  assert.equal(core.dateTaken(hist, "2026-08-03", a), false);   // a free day
+  assert.equal(core.dateTaken(hist, "2026-08-02", undefined), true);
+  assert.equal(core.dateTaken([], "2026-08-02", a), false);
+  assert.equal(core.dateTaken(null, "2026-08-02", a), false);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

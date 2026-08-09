@@ -284,10 +284,18 @@ function futureDays(history, todayStr) {
   return (history || []).filter((d) => d && isFutureDate(d.date, todayStr));
 }
 
+// Does another entry already hold this date? `except` is the entry being
+// edited, which must not count as a clash with itself. Two rows sharing a date
+// break the calendar (only one is reachable) while both still count toward
+// averages and streaks, so a move onto an occupied day has to be refused.
+function dateTaken(history, date, except) {
+  return (history || []).some((d) => d && d !== except && d.date === date);
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    planFor, upsertDay, isFutureDate, futureDays,
+    planFor, upsertDay, isFutureDate, futureDays, dateTaken,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
