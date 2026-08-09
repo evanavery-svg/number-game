@@ -241,7 +241,26 @@ let goalOn = load(KEY_GOAL_ON, null);
 if (goalOn === null) { goalOn = goal > 0; save(KEY_GOAL_ON, goalOn); }
 let goalLog = load(KEY_GOAL_LOG, []);       // the taper ladder: every goal change
 if (!goalLog.length && goalOn) { goalLog = [{ at: new Date().toISOString(), goal: goal }]; save(KEY_GOAL_LOG, goalLog); }
-let taper = Object.assign({ on: false, step: 1, everyDays: 30 }, load(KEY_TAPER, {}));
+// Smart mode sizes each drop from levels you already reach and paces it by how
+// long your rungs have held. New installs get it; an existing install keeps its
+// typed step/cadence until it opts in, so nobody's ladder changes silently.
+const savedTaper = load(KEY_TAPER, null);
+let taper = Object.assign(
+  { on: false, step: 1, everyDays: 30, smart: savedTaper === null, pace: "balanced" },
+  savedTaper || {}
+);
+const TAPER_PACES = [
+  { key: "gentle",    label: "Gentle",    pct: 0.85, blurb: "a level you already clear almost every day" },
+  { key: "balanced",  label: "Balanced",  pct: 0.70, blurb: "a level you already clear most days" },
+  { key: "ambitious", label: "Ambitious", pct: 0.55, blurb: "a level you clear just over half the time" },
+];
+function taperPace() { return TAPER_PACES.find((p) => p.key === taper.pace) || TAPER_PACES[1]; }
+// The live recommendation, or null. Shared by the offer and the Journey tab so
+// both say the same thing.
+function currentSuggestion() {
+  if (!taper.smart || !hasGoal() || goal <= 0) return null;
+  return suggestTaper(history, goal, { pct: taperPace().pct, roundTo: step, goalLog: goalLog });
+}
 // Is a daily goal active? (0 counts — it's the finish line.)
 function hasGoal() { return !!goalOn; }
 // Record a goal change so the ladder and the zero projection can see it.
@@ -404,19 +423,32 @@ function runTaperPrompts() {
 function maybeTaperOffer() {
   if (!taper.on || !hasGoal() || goal <= 0) return false;
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const sug = currentSuggestion();
+  // smart mode paces by how long your own rungs have held; manual by the
+  // number you typed
+  const gapDays = sug ? sug.everyDays : taper.everyDays;
   const last = load(KEY_TAPER_ASK, null);
-  if (last && Date.now() - new Date(last).getTime() < taper.everyDays * 864e5) return false;
+  if (last && Date.now() - new Date(last).getTime() < gapDays * 864e5) return false;
+  if (taper.smart) {
+    if (!sug) return false;
+    save(KEY_TAPER_ASK, new Date().toISOString());
+    openTaperOffer(sug);
+    return true;
+  }
   const perf = goalPerformance(history, goal, 30);
   if (!taperReady(perf, goal, taper.step)) return false;
   save(KEY_TAPER_ASK, new Date().toISOString());
-  openTaperOffer(perf);
+  openTaperOffer(null, perf);
   return true;
 }
-function openTaperOffer(perf) {
-  const next = Math.max(0, round2(goal - taper.step));
+function openTaperOffer(sug, perf) {
+  const next = sug ? sug.next : Math.max(0, round2(goal - taper.step));
   openSheet((s) => {
     addEl(s, "h3", next === 0 ? "Ready for zero?" : "Ready to drop your goal?");
-    addEl(s, "p", `You've been under ${fmt(goal)} on ${perf.under} of the last ${perf.n} days, averaging ${fmt(round2(perf.avg))}. You've outgrown this limit.`, "sub");
+    // say what the number is based on, so it can be argued with
+    addEl(s, "p", sug
+      ? `${sug.metDays} of your last ${sug.n} days were already at or under ${fmt(sug.next)}, averaging ${fmt(sug.avg)}. This is a limit you're mostly already keeping.`
+      : `You've been under ${fmt(goal)} on ${perf.under} of the last ${perf.n} days, averaging ${fmt(round2(perf.avg))}. You've outgrown this limit.`, "sub");
     const card = document.createElement("div"); card.className = "taper-card";
     addEl(card, "div", fmt(goal), "taper-from");
     addEl(card, "div", "→", "taper-arrow");
@@ -1268,6 +1300,31 @@ function renderLadder() {
     eta.innerHTML = `🎯 On pace to reach <b>zero</b> around <b>${zp.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</b> — about ${days} day${days === 1 ? "" : "s"} away`;
     card.appendChild(eta);
   }
+  appendSuggestion(card);
+}
+
+// The live suggestion, readable here rather than only when the app interrupts
+// you with it — the opening budget means the offer may not surface for days.
+function appendSuggestion(card) {
+  const sug = currentSuggestion();
+  if (!sug) return;
+  const box = document.createElement("div");
+  box.className = "ladder-sug";
+  box.innerHTML = `Suggested next rung: <b>${fmt(goal)} → ${fmt(sug.next)}</b>` +
+    `<span class="ladder-sug-sub">${sug.metDays} of your last ${sug.n} days were already at or under ${fmt(sug.next)} · ${taperPace().label.toLowerCase()} pace</span>`;
+  const go = document.createElement("button");
+  go.type = "button"; go.className = "plan-add";
+  go.textContent = sug.next === 0 ? "Go to zero" : `Make it ${fmt(sug.next)}`;
+  go.addEventListener("click", () => {
+    goal = sug.next; goalOn = true;
+    save(KEY_GOAL, goal); save(KEY_GOAL_ON, true); noteGoalChange(goal);
+    save(KEY_TAPER_ASK, new Date().toISOString());   // don't also interrupt about it
+    buzz([0, 40, 60, 40, 60, 90]);
+    render();
+    toast(sug.next === 0 ? "Goal is now zero 🎯" : `New goal: ${fmt(sug.next)} — nicely done`, 3600);
+  });
+  box.appendChild(go);
+  card.appendChild(box);
 }
 
 // All-time highlights.
@@ -2820,15 +2877,65 @@ function openTaperSettings() {
     addEl(s, "h3", "Taper to zero");
     const taperToggle = makeToggle(s, "Suggest step-downs", taper.on);
     taperToggle.addEventListener("change", () => { taper.on = taperToggle.checked; save(KEY_TAPER, taper); buzz(8); });
-    addEl(s, "label", "Drop the goal by");
+
+    // Smart mode: the size and timing of each drop come from your own history
+    // rather than numbers you type.
+    const manualWrap = document.createElement("div");
+    const smartWrap = document.createElement("div");
+    const syncMode = () => {
+      smartWrap.style.display = taper.smart ? "" : "none";
+      manualWrap.style.display = taper.smart ? "none" : "";
+    };
+    const smartToggle = makeToggle(s, "Size drops from my data", taper.smart);
+    smartToggle.addEventListener("change", () => {
+      taper.smart = smartToggle.checked; save(KEY_TAPER, taper); buzz(8); syncMode();
+    });
+
+    addEl(smartWrap, "label", "Pace");
+    const paceRow = document.createElement("div");
+    paceRow.className = "seg-row";
+    TAPER_PACES.forEach((p) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "seg-btn" + (taper.pace === p.key ? " on" : "");
+      b.textContent = p.label;
+      b.addEventListener("click", () => {
+        taper.pace = p.key; save(KEY_TAPER, taper); buzz(8);
+        paceRow.querySelectorAll(".seg-btn").forEach((x) => x.classList.toggle("on", x === b));
+        syncMode();
+      });
+      paceRow.appendChild(b);
+    });
+    smartWrap.appendChild(paceRow);
+    const paceNote = addEl(smartWrap, "p", "", "sub");
+    const sugNote = addEl(smartWrap, "p", "", "sub");
+    s.appendChild(smartWrap);
+
+    addEl(manualWrap, "label", "Drop the goal by");
     const stepDown = numInput(fmt(taper.step), "0.01");
     stepDown.addEventListener("change", () => { const v = parseFloat(stepDown.value); if (v > 0) { taper.step = round2(v); save(KEY_TAPER, taper); } });
-    s.appendChild(stepDown);
-    addEl(s, "label", "No more often than every (days)");
+    manualWrap.appendChild(stepDown);
+    addEl(manualWrap, "label", "No more often than every (days)");
     const everyIn = numInput(String(taper.everyDays), "1");
     everyIn.addEventListener("change", () => { const v = parseInt(everyIn.value, 10); if (v >= 1) { taper.everyDays = v; save(KEY_TAPER, taper); } });
-    s.appendChild(everyIn);
-    addEl(s, "p", "When you've held your limit for a while and are living below it, the app offers the next rung down. It never suggests one while you're struggling.", "sub");
+    manualWrap.appendChild(everyIn);
+    s.appendChild(manualWrap);
+
+    // keep the copy in step with the mode, and show what it would suggest now
+    const refreshNotes = () => {
+      paceNote.textContent = `Each drop lands on ${taperPace().blurb}, worked out from your last 30 days.`;
+      const sug = currentSuggestion();
+      sugNote.textContent = sug
+        ? `Right now that would be ${fmt(goal)} → ${fmt(sug.next)} — ${sug.metDays} of your last ${sug.n} days already qualify.`
+        : "Nothing to suggest yet — it waits until you've held your limit for a couple of weeks and aren't sliding.";
+    };
+    const origSync = syncMode;
+    const syncAll = () => { origSync(); refreshNotes(); };
+    smartToggle.addEventListener("change", syncAll);
+    paceRow.addEventListener("click", () => setTimeout(refreshNotes, 0));
+    syncAll();
+
+    addEl(s, "p", "The app only offers a rung down when you've been holding the current one and aren't sliding. It never suggests one while you're struggling.", "sub");
     const zp = hasGoal() ? projectZero(goalLog) : null;
     if (zp && !zp.done) addEl(s, "p", `At your current pace you'd reach 0 around ${zp.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`, "sub");
     s.appendChild(makeBtn("Back", "ghost", backToSettings));

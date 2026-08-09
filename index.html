@@ -394,6 +394,19 @@
     .seg-row { display: flex; gap: var(--sp-1); padding: var(--sp-1); margin: 0 var(--sp-4) 10px; background: var(--surface); border-radius: 12px; }
     .seg-btn { flex: 1; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: var(--fs-small); font-weight: 700; border-radius: 9px; padding: 9px 0; transition: background var(--dur-base) ease, color var(--dur-base) ease; }
     .seg-btn.on { background: var(--surface-2); color: var(--text); }
+    /* the same control inside a sheet: no panel side-margins, and inverted
+       fills so the selected segment still reads against the sheet surface */
+    #sheet .seg-row { margin: var(--sp-2) 0 var(--sp-3); background: var(--surface-2); }
+    #sheet .seg-btn.on { background: var(--surface); color: var(--text); }
+    /* the live suggestion on the Journey tab */
+    .ladder-sug {
+      margin-top: var(--sp-3); padding: var(--sp-3);
+      background: var(--surface-2); border-radius: 12px;
+      border-left: 3px solid var(--accent);
+      font-size: var(--fs-small); color: var(--text); line-height: 1.4;
+    }
+    .ladder-sug b { color: var(--accent); }
+    .ladder-sug-sub { display: block; margin-top: 3px; font-size: var(--fs-micro); color: var(--muted); }
     .seg-page { animation: itemIn 0.32s var(--ease-out); }
     /* "more stats" reveal keeps the headline grid scannable */
     .more-stats { display: block; width: 100%; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: var(--fs-small); font-weight: 700; padding: 2px 0 var(--sp-3); }
@@ -1319,7 +1332,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v9.8 · © Avery LLC</div>
+  <div class="version">v9.9 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

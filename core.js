@@ -195,6 +195,86 @@ function projectZero(goalLog, now) {
   const perDay = dropped / spanDays;
   return { date: new Date(t + (last.goal / perDay) * DAY), perDay, done: false };
 }
+// ---- data-driven taper suggestions ----
+// The manual taper drops by a number you typed, on a fixed clock, neither of
+// which comes from how you actually log. These size the next rung from levels
+// you already reach, and pace it by how long your previous rungs held.
+// It's percentiles and a trend check over your own history — arithmetic, not a
+// clinical protocol — so every suggestion is shown with what it's based on.
+
+// Recent daily totals, oldest first.
+function dailyTotals(entries, days, now) {
+  const cutoff = (now == null ? Date.now() : now) - days * DAY;
+  return (entries || [])
+    .filter((d) => d && new Date(d.endedAt || d.date).getTime() >= cutoff)
+    .sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date))
+    .map((d) => d.total);
+}
+
+// The lowest level at least `pct` of these days already sit at or under,
+// snapped to `roundTo` (the user's tap step) so the goal is a number they can
+// actually land on. Snapping up keeps the "met on pct of days" promise true.
+function levelMetOn(totals, pct, roundTo) {
+  if (!totals || !totals.length) return null;
+  const sorted = totals.slice().sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(pct * sorted.length) - 1));
+  const raw = sorted[idx];
+  const step = roundTo > 0 ? roundTo : 1;
+  return round2(Math.ceil(raw / step) * step);
+}
+
+// Is the recent window flat or falling? A drop should never be suggested while
+// things are getting worse, however good the older half of the window looks.
+function trendFlat(totals) {
+  if (!totals || totals.length < 6) return false;
+  const mid = Math.floor(totals.length / 2);
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  const first = mean(totals.slice(0, mid)), second = mean(totals.slice(mid));
+  if (first === 0) return second === 0;
+  return second <= first * 1.1;
+}
+
+// How long your rungs actually hold, as the pacing for the next suggestion —
+// in place of a fixed "every 30 days". Clamped so it stays sane either way.
+function medianRungDays(goalLog) {
+  const pts = (goalLog || [])
+    .map((g) => new Date(g.at).getTime())
+    .filter((t) => !isNaN(t))
+    .sort((a, b) => a - b);
+  if (pts.length < 2) return 21;
+  const gaps = [];
+  for (let i = 1; i < pts.length; i++) gaps.push((pts[i] - pts[i - 1]) / DAY);
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  const med = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+  return Math.round(Math.min(60, Math.max(14, med)));
+}
+
+// The whole recommendation, or null when a drop shouldn't be offered at all.
+// `pct` is the pace: gentler = a rung you already clear more often.
+function suggestTaper(entries, goal, opts) {
+  const o = opts || {};
+  const days = o.days || 30, pct = o.pct || 0.7, roundTo = o.roundTo || 0.5;
+  if (!(goal > 0)) return null;                       // already at zero, or no goal
+  const totals = dailyTotals(entries, days, o.now);
+  if (totals.length < 14) return null;                // not enough to reason from
+  const perf = goalPerformance(entries, goal, days, o.now);
+  if (perf.underPct < 0.8) return null;               // not holding the current limit yet
+  if (!trendFlat(totals)) return null;                // going the wrong way — leave them alone
+  const next = levelMetOn(totals, pct, roundTo);
+  if (next == null || next >= goal) return null;      // no honest room below the current goal
+  const metDays = totals.filter((t) => t <= next).length;
+  return {
+    next,
+    drop: round2(goal - next),
+    metDays,
+    n: totals.length,
+    pct: metDays / totals.length,
+    avg: round2(perf.avg),
+    everyDays: medianRungDays(o.goalLog),
+  };
+}
+
 // The mirror of taperReady: the current limit has become too tight to hold.
 // Going back up a rung is a legitimate move, not a failure — noticing it early
 // beats letting someone rack up red days until they abandon the app.
@@ -347,6 +427,7 @@ function dayStamp(dateStr, now) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
+    dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

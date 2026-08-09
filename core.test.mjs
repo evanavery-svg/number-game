@@ -324,6 +324,112 @@ test("dayStamp refuses a future date and always labels the day", () => {
   ["2026-07-28", null, "2026-08-31"].forEach((d) => assert.ok(core.dayStamp(d, now).label.length > 0));
 });
 
+// Build `n` day entries ending today, from a totals array (oldest first).
+const days = (totals, now) => totals.map((t, i) => ({
+  total: t,
+  endedAt: new Date((now || Date.now()) - (totals.length - 1 - i) * core.DAY).toISOString(),
+}));
+
+test("levelMetOn picks a rung the given share of days already clears", () => {
+  const totals = [0, 0, 1, 1, 1, 2, 2, 2, 3, 4];
+  // 70% of 10 days -> the 7th smallest value = 2
+  assert.equal(core.levelMetOn(totals, 0.7, 0.5), 2);
+  // gentler pace -> a higher, easier rung
+  assert.ok(core.levelMetOn(totals, 0.85, 0.5) >= core.levelMetOn(totals, 0.7, 0.5));
+  // more ambitious -> lower
+  assert.ok(core.levelMetOn(totals, 0.55, 0.5) <= core.levelMetOn(totals, 0.7, 0.5));
+  // snapped up to the tap step, so the "met on pct of days" claim stays true
+  assert.equal(core.levelMetOn([0.3, 0.3, 0.3, 0.3], 0.7, 0.5), 0.5);
+  assert.equal(core.levelMetOn([1.2, 1.2, 1.2], 0.7, 1), 2);
+  assert.equal(core.levelMetOn([], 0.7, 0.5), null);
+  // an all-zero history proposes zero
+  assert.equal(core.levelMetOn([0, 0, 0, 0], 0.7, 0.5), 0);
+});
+
+test("trendFlat refuses a window that's getting worse", () => {
+  assert.equal(core.trendFlat([1, 1, 1, 1, 1, 1]), true);
+  assert.equal(core.trendFlat([3, 3, 3, 1, 1, 1]), true);        // improving
+  assert.equal(core.trendFlat([1, 1, 1, 3, 3, 3]), false);       // deteriorating
+  assert.equal(core.trendFlat([0, 0, 0, 0, 0, 0]), true);
+  assert.equal(core.trendFlat([0, 0, 0, 1, 1, 1]), false);       // off zero is still worse
+  assert.equal(core.trendFlat([1, 1]), false);                   // too short to judge
+});
+
+test("medianRungDays paces from how long past rungs held", () => {
+  const at = (d) => new Date(2026, 0, d).toISOString();
+  assert.equal(core.medianRungDays([{ at: at(1) }, { at: at(21) }, { at: at(41) }]), 20);
+  assert.equal(core.medianRungDays([{ at: at(1) }]), 21);        // not enough history
+  assert.equal(core.medianRungDays([]), 21);
+  assert.equal(core.medianRungDays(null), 21);
+  // clamped both ways so a freak gap can't set the pace
+  assert.equal(core.medianRungDays([{ at: at(1) }, { at: at(3) }]), 14);
+  assert.equal(core.medianRungDays([{ at: new Date(2026, 0, 1).toISOString() }, { at: new Date(2026, 6, 1).toISOString() }]), 60);
+});
+
+test("suggestTaper only fires when a drop is genuinely earned", () => {
+  const now = new Date(2026, 6, 30, 12).getTime();
+  const opts = (o) => Object.assign({ now, pct: 0.7, roundTo: 0.5, days: 30 }, o);
+  // 20 steady days well under a goal of 4 -> a real suggestion
+  const steady = days(Array(20).fill(0).map((_, i) => (i % 4 === 0 ? 2 : 1)), now);
+  const s = core.suggestTaper(steady, 4, opts());
+  assert.ok(s, "expected a suggestion");
+  assert.ok(s.next < 4 && s.next >= 0);
+  assert.equal(s.drop, core.round2(4 - s.next));
+  assert.equal(s.n, 20);
+  assert.equal(s.metDays, steady.filter((d) => d.total <= s.next).length);
+  assert.ok(s.pct >= 0.7);
+
+  // too little data
+  assert.equal(core.suggestTaper(days([1, 1, 1, 1, 1], now), 4, opts()), null);
+  // not holding the current limit
+  assert.equal(core.suggestTaper(days(Array(20).fill(9), now), 4, opts()), null);
+  // deteriorating, even though the window still averages under the goal
+  assert.equal(core.suggestTaper(days([0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2], now), 4, opts()), null);
+  // no honest room below the goal — must be null, never a zero drop
+  assert.equal(core.suggestTaper(days(Array(20).fill(1), now), 1, opts()), null);
+  // already at zero
+  assert.equal(core.suggestTaper(steady, 0, opts()), null);
+  // an all-zero history proposes zero itself
+  const z = core.suggestTaper(days(Array(20).fill(0), now), 1, opts());
+  assert.equal(z && z.next, 0);
+});
+
+test("suggestTaper never fires on someone who is struggling", () => {
+  const now = new Date(2026, 6, 30, 12).getTime();
+  // every shape of history that backslideReady flags must produce no suggestion
+  [
+    Array(20).fill(9),
+    [1,1,1,1,1,1,1,1,1,1,8,8,8,8,8,8,8,8,8,8],
+    Array(20).fill(0).map((_, i) => (i % 2 ? 7 : 6)),
+  ].forEach((totals, i) => {
+    const entries = days(totals, now);
+    const perf = core.goalPerformance(entries, 4, 30, now);
+    if (!core.backslideReady(perf, 4)) return;   // only assert where it applies
+    assert.equal(core.suggestTaper(entries, 4, { now, pct: 0.7, roundTo: 0.5, days: 30 }), null,
+      `case ${i} suggested a drop to someone who is over their limit`);
+  });
+});
+
+test("suggestTaper walks a ladder down to zero without oscillating", () => {
+  // replay 120 days, applying each accepted drop, and watch the ladder
+  const now = new Date(2026, 6, 30, 12).getTime();
+  let goal = 6;
+  const seen = [goal];
+  const entries = [];
+  for (let d = 0; d < 120; d++) {
+    // someone genuinely improving: their daily total drifts down over time
+    const base = Math.max(0, 4 - Math.floor(d / 30));
+    entries.push({ total: d % 5 === 0 ? base : Math.max(0, base - 1),
+      endedAt: new Date(now - (120 - d) * core.DAY).toISOString() });
+    const s = core.suggestTaper(entries, goal, { now: now - (120 - d) * core.DAY, pct: 0.7, roundTo: 0.5, days: 30 });
+    if (s) { goal = s.next; seen.push(goal); }
+  }
+  // monotonically down, never negative, and it settles rather than flapping
+  for (let i = 1; i < seen.length; i++) assert.ok(seen[i] < seen[i - 1], `ladder went up: ${seen}`);
+  assert.ok(seen.every((g) => g >= 0), `negative goal: ${seen}`);
+  assert.ok(goal < 6, `ladder never moved: ${seen}`);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };
