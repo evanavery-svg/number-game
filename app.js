@@ -18,6 +18,7 @@ const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id f
 const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
 const KEY_TL = "count.tl";                    // hidden flag for the optional tracker extras
 const KEY_RECAP_LAST = "count.recapLast";     // week key of the last recap shown
+const KEY_RECAP_SEEN = "count.recapSeen";     // week key of the last recap actually opened
 const KEY_REMIND = "count.remind";          // bool
 const KEY_REMIND_TIME = "count.remindTime"; // "HH:MM"
 const KEY_REMIND_DISMISS = "count.remindDismiss"; // YYYY-MM-DD last dismissed
@@ -125,6 +126,7 @@ const el = {
   treeBody: document.getElementById("treeBody"),
   dayGate: document.getElementById("dayGate"),
   dgText: document.getElementById("dgText"),
+  mgGreet: document.getElementById("mgGreet"),
   moodGate: document.getElementById("moodGate"),
   mgFaces: document.getElementById("mgFaces"),
   mgTimer: document.getElementById("mgTimer"),
@@ -331,15 +333,16 @@ function moodGateKey() { return sessionDate(); }
 // device and iOS can evict PWA storage that goes unused.
 const BACKUP_STALE_MS = 30 * 864e5;
 function maybeBackupNudge() {
-  if (history.length < 5) return;                 // nothing much to lose yet
-  if (el.overlay.classList.contains("show")) return;
+  if (history.length < 5) return false;                 // nothing much to lose yet
+  if (el.overlay.classList.contains("show")) return false;
   const today = isoLocal(new Date());
-  if (load(KEY_BACKUP_NUDGE, "") === today) return;   // at most once a day
+  if (load(KEY_BACKUP_NUDGE, "") === today) return false;   // at most once a day
   const last = load(KEY_BACKUP_AT, 0) || 0;
-  if (last && Date.now() - last < BACKUP_STALE_MS) return;
+  if (last && Date.now() - last < BACKUP_STALE_MS) return false;
   save(KEY_BACKUP_NUDGE, today);
   const days = last ? Math.floor((Date.now() - last) / 864e5) : null;
   toast(days ? `💾 Last backup was ${days} days ago — back up in ⚙ Settings` : "💾 Back up your data — it only lives on this device (⚙ Settings)", 5000);
+  return true;
 }
 
 // First-run intro — returns true if it took over (so the caller skips the
@@ -392,10 +395,10 @@ function openOnboarding(step) {
 // One arbiter for the taper-related prompts, so two never stack on each other.
 // Order matters: celebrate first, then help, then adjust the limit.
 function runTaperPrompts() {
-  if (maybeZeroWin()) return;
-  if (maybeZeroHandoff()) return;
-  if (maybeRaiseOffer()) return;
-  maybeTaperOffer();
+  if (maybeZeroWin()) return true;
+  if (maybeZeroHandoff()) return true;
+  if (maybeRaiseOffer()) return true;
+  return !!maybeTaperOffer();
 }
 
 // ---- taper: offer the next rung down once it's been earned ----
@@ -562,15 +565,76 @@ function hideDayGreeting() {
   setTimeout(done, 420);
 }
 
-function runDailyGates() {
+// At most one full-screen interruption per open. Greeting, then mood, then the
+// game used to run back to back — three screens before you could log a single
+// tap. Now the greeting rides along with the mood check-in, and whatever loses
+// simply comes back next time you open the app; nothing is dropped.
+let blockingSpent = false;
+function resetInterruptBudget() { blockingSpent = false; }
+
+// Everything the app wants to say when you open it, on a budget: one screen or
+// sheet, and one quiet notice. Anything that doesn't get a turn is not thrown
+// away — it re-evaluates next time, and the recap keeps a dot on ⋯ until read.
+function openingSequence() {
+  resetInterruptBudget();
+  handleQuickAdd();                       // a shortcut tap logs regardless
+  if (maybeOnboard()) return;             // first run owns the screen outright
+  runDailyGates();
+  // the taper family opens a sheet, so it only gets a turn if nothing else did
+  setTimeout(() => {
+    if (blockingSpent || gatesUp() || el.overlay.classList.contains("show")) return;
+    if (runTaperPrompts()) blockingSpent = true;
+  }, 1400);
+  setTimeout(runPassiveNotice, 2200);
+  refreshNoticeDot();
+}
+
+// One quiet notice per open, most important first. None of these mark them-
+// selves as done unless they actually speak, so a skipped one simply comes
+// back next time rather than being lost.
+function runPassiveNotice() {
+  if (gatesUp() || el.overlay.classList.contains("show")) return;
+  [announceRestore, checkMilestones, checkRiskyTimes, maybeWeeklyRecap, maybeBackupNudge]
+    .some((fn) => fn() === true);
+  refreshNoticeDot();
+}
+
+// The weekly recap is the one deferred item with somewhere to live, so it gets
+// a dot on ⋯ rather than relying on a toast you might have missed.
+function markNotice() { save(KEY_RECAP_SEEN, ""); refreshNoticeDot(); }
+function refreshNoticeDot() {
+  if (!el.moreBtn) return;
+  const pending = timelineOn && load(KEY_RECAP_LAST, null) === weekKey() && load(KEY_RECAP_SEEN, "") !== weekKey();
+  el.moreBtn.classList.toggle("has-notice", !!pending);
+}
+
+function runDailyGates(force) {
   if (el.dayGate.classList.contains("show")) return;
   if (el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show")) return;
   if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
-  if (maybeDayGreeting()) return;   // say hello first
-  if (features.mood && moodDaily[moodGateKey()] == null) { showMoodGate(); return; }
-  if (gameOn && gamePlayed !== moodGateKey()) { showGameGate(); return; }
+  if (blockingSpent && !force) return;                       // already interrupted once
+
+  const greetLine = greetDue() ? pickAffirmation(affirms, AFFIRMATIONS, monthDayIndex(new Date())) : null;
+  if (features.mood && moodDaily[moodGateKey()] == null) {
+    // the greeting becomes this screen's header rather than a screen of its own
+    if (greetLine) save(KEY_GREET_SHOWN, moodGateKey());
+    blockingSpent = true;
+    showMoodGate(greetLine);
+    return;
+  }
+  // no mood check-in due, so the greeting still gets its own moment
+  if (greetLine) { blockingSpent = true; maybeDayGreeting(); return; }
+  if (gameOn && gamePlayed !== moodGateKey()) { blockingSpent = true; showGameGate(); return; }
 }
-function showMoodGate() {
+function greetDue() {
+  return greetOn && load(KEY_GREET_SHOWN, "") !== moodGateKey();
+}
+function showMoodGate(greetLine) {
+  // the morning affirmation, folded into this screen instead of its own
+  if (el.mgGreet) {
+    el.mgGreet.textContent = greetLine || "";
+    el.mgGreet.style.display = greetLine ? "" : "none";
+  }
   const faces = el.mgFaces;
   faces.textContent = "";
   faces.classList.remove("nudge");
@@ -1006,12 +1070,34 @@ function click() {
     o.start(); o.stop(audioCtx.currentTime + 0.1);
   } catch (e) {}
 }
+// Toasts queue instead of overwriting each other. There's one toast element,
+// and it used to be that whoever spoke last won — so on a busy app open the
+// weekly recap could be wiped by the risky-time notice 2.5s later and never be
+// read at all. Now each waits its turn.
 let toastTimer = null;
+const toastQ = [];
+let toastBusy = false;
+const TOAST_MAX = 3;        // a burst shouldn't hold the screen hostage
+const TOAST_GAP = 260;      // breath between messages, so two don't read as one
+
 function toast(msg, ms) {
-  el.toast.textContent = msg;
+  toastQ.push({ msg, ms: ms || 2000 });
+  // keep the newest — an old notice matters less than what just happened
+  while (toastQ.length > TOAST_MAX) toastQ.shift();
+  if (!toastBusy) drainToasts();
+}
+
+function drainToasts() {
+  const next = toastQ.shift();
+  if (!next) { toastBusy = false; return; }
+  toastBusy = true;
+  el.toast.textContent = next.msg;
   el.toast.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.toast.classList.remove("show"), ms || 2000);
+  toastTimer = setTimeout(() => {
+    el.toast.classList.remove("show");
+    setTimeout(drainToasts, TOAST_GAP);
+  }, next.ms);
 }
 
 // ---- render ----
@@ -2139,12 +2225,13 @@ function handleQuickAdd() {
 // message rides across in sessionStorage and is shown once.
 function announceRestore() {
   let at = null;
-  try { at = sessionStorage.getItem("count.restored"); } catch (e) { return; }
-  if (!at) return;
+  try { at = sessionStorage.getItem("count.restored"); } catch (e) { return false; }
+  if (!at) return false;
   try { sessionStorage.removeItem("count.restored"); } catch (e) { /* shown either way */ }
   const days = Math.floor((Date.now() - Number(at)) / 864e5);
   const when = !isFinite(days) || days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
   toast(`Your data was missing — restored from this device's backup (${when}) 🛟`, 6000);
+  return true;
 }
 
 // expanding ripple from the tap point on the big button
@@ -3486,14 +3573,14 @@ function gatesUp() {
 // Celebrate when a run crosses a new milestone. First sight of a tracker just
 // records where it is (so old milestones aren't re-announced).
 function checkMilestones() {
-  if (gatesUp()) return;
-  let changed = false;
+  if (gatesUp()) return false;
+  let changed = false, celebrated = false;
   since.forEach((it) => {
     const elapsed = Math.max(0, Date.now() - new Date(it.start).getTime());
     const cur = highestMile(elapsed);
     if (it.seenMile == null) { it.seenMile = cur; changed = true; return; }
     if (cur > it.seenMile) {
-      it.seenMile = cur; changed = true;
+      it.seenMile = cur; changed = true; celebrated = true;
       buzz([0, 40, 60, 40, 60, 90]);
       toast(`🎉 ${it.name} · ${mileLabelFor(cur)}!`, 3600);
       const cx = window.innerWidth / 2, cy = window.innerHeight / 3;
@@ -3501,13 +3588,14 @@ function checkMilestones() {
     }
   });
   if (changed) save(KEY_SINCE, since);
+  return celebrated;
 }
 // A gentle heads-up if right now is an hour you've slipped in before.
 function checkRiskyTimes() {
-  if (!since.length || gatesUp()) return;
+  if (!since.length || gatesUp()) return false;
   const now = new Date();
   const key = isoLocal(now) + "-" + now.getHours();
-  if (load(KEY_RISKY_LAST, "") === key) return;   // at most once per clock-hour
+  if (load(KEY_RISKY_LAST, "") === key) return false;   // at most once per clock-hour
   const hr = now.getHours();
   for (const it of since) {
     const n = (it.log || []).filter((e) => { const d = new Date(e.at); return !isNaN(d.getTime()) && d.getHours() === hr; }).length;
@@ -3517,9 +3605,10 @@ function checkRiskyTimes() {
       const p = planFor(plans, null, hr);
       if (p) toast(`🫶 Around now is when "${it.name}" has tripped you up. Your plan: ${p.action}`, 6000);
       else toast(`🫶 Around now is when "${it.name}" has tripped you up before. You've got this.`, 4600);
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 // Opt-in timeline of how you're doing as the run grows — stages fill in as you
@@ -3731,16 +3820,20 @@ function openCravingTimer(it) {
 // A gentle weekly recap — mentioned once a week when the combo is active.
 // (weekKey lives in core.js)
 function maybeWeeklyRecap() {
-  if (!timelineOn || gatesUp()) return;
+  if (!timelineOn || gatesUp()) return false;
   const wk = weekKey();
   const last = load(KEY_RECAP_LAST, null);
-  if (last == null) { save(KEY_RECAP_LAST, wk); return; }   // first sight — arm, don't show
-  if (last === wk) return;
+  if (last == null) { save(KEY_RECAP_LAST, wk); return false; }   // first sight — arm, don't show
+  if (last === wk) return false;
   save(KEY_RECAP_LAST, wk);
   // don't interrupt — just mention it; the recap lives in the ⋯ menu
   toast("📊 Your weekly recap is ready — it's in ⋯", 4200);
+  markNotice();
+  return true;
 }
 function openWeeklyRecap() {
+  save(KEY_RECAP_SEEN, weekKey());   // read — clear the dot on ⋯
+  refreshNoticeDot();
   const weekAgo = Date.now() - 7 * DAY;
   const wkHist = history.filter((d) => new Date(d.endedAt || d.date).getTime() >= weekAgo);
   const total = wkHist.reduce((sum, d) => sum + d.total, 0);
@@ -4743,16 +4836,8 @@ if (!reduceMotion() && today > 0) {
 // Lock on launch and on return — but only if the grace window (LOCK_GRACE_MS)
 // since the last unlock has lapsed, so quick trips out don't re-prompt.
 maybeLock();
-if (!maybeOnboard()) runDailyGates();   // first-run intro takes priority over the daily gates
-checkMilestones();
 restoreIfWiped();
-setTimeout(announceRestore, 900);
-handleQuickAdd();
-// the heads-up waits a beat so it never lands on top of the lock/daily gates
-setTimeout(checkRiskyTimes, 2500);
-maybeWeeklyRecap();
-setTimeout(runTaperPrompts, 1800);
-setTimeout(maybeBackupNudge, 3200);
+openingSequence();
 // The app open in two places (a tab and the installed app, say) would other-
 // wise each hold stale state and overwrite the other on the next save. This
 // fires only in the *other* copy, so pick the new values up and re-render.
@@ -4770,11 +4855,11 @@ window.addEventListener("storage", (e) => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
-  runDailyGates();
   checkReminder();
-  checkMilestones();
-  setTimeout(checkRiskyTimes, 2500);
-  maybeWeeklyRecap();
+  // coming back is an "open" too — same budget, or everything stacks again
+  resetInterruptBudget();
+  runDailyGates();
+  setTimeout(runPassiveNotice, 1200);
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
 });
 

@@ -243,6 +243,13 @@
       background: none; border: none; color: var(--muted);
       cursor: pointer; padding: 7px; display: flex; align-items: center;
       transition: opacity var(--dur-base) ease, transform var(--dur-base) ease;
+      position: relative;
+    }
+    /* something was deferred rather than shouted at you — it's waiting in here */
+    .iconbtn.has-notice::after {
+      content: ""; position: absolute; top: 4px; right: 4px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
     }
     .iconbtn:active { opacity: 0.5; transform: scale(0.88); }
     .gear {
@@ -1100,6 +1107,14 @@
     }
     .mg-timer.tick { animation: mgTick 0.5s ease; }
     @keyframes mgTick { 0% { transform: scale(1); } 40% { transform: scale(1.16); } 100% { transform: scale(1); } }
+    /* the morning affirmation, now the header of the check-in rather than a
+       screen of its own — larger than the question, because it's the message */
+    .mg-greet {
+      font-size: var(--fs-title); font-weight: 700; line-height: 1.25;
+      letter-spacing: -0.5px; margin: 0 0 var(--sp-5); color: var(--text);
+      animation: mgGreetIn var(--dur-slow) var(--ease-out) both;
+    }
+    @keyframes mgGreetIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     .mg-title { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.6px; margin: 0; }
     .mg-sub { font-size: 14px; color: var(--muted); margin: 9px 0 32px; }
     .mg-faces { display: flex; gap: var(--sp-2); justify-content: center; }
@@ -1312,7 +1327,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v9.5 · © Avery LLC</div>
+  <div class="version">v9.6 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1340,6 +1355,7 @@
   <div class="mood-gate" id="moodGate" style="display:none">
     <div class="mg-inner">
       <div class="mg-timer" id="mgTimer"><span id="mgCount">10</span></div>
+      <p class="mg-greet" id="mgGreet" role="status" aria-live="polite" style="display:none"></p>
       <h2 class="mg-title" id="mgTitle">How are you feeling?</h2>
       <p class="mg-sub">A quick daily check-in — tap a face</p>
       <div class="mg-faces" id="mgFaces"></div>
