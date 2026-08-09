@@ -84,7 +84,6 @@ const el = {
   addSub: document.querySelector("#addBtn small"),
   history: document.getElementById("history"),
   histEmpty: document.getElementById("histEmpty"),
-  quote: document.getElementById("quote"),
   toast: document.getElementById("toast"),
   overlay: document.getElementById("overlay"),
   sheet: document.getElementById("sheet"),
@@ -852,38 +851,6 @@ const AFFIRMATIONS = [
 let greetOn = load(KEY_GREET_ON, true);
 let affirms = load(KEY_AFFIRMS, []);
 
-// ---- daily encouragement ----
-const QUOTES = [
-  "Small steps, every day.",
-  "Show up. That's the whole secret.",
-  "Progress, not perfection.",
-  "Consistency beats intensity.",
-  "One more is enough.",
-  "You're building something.",
-  "A little today is a lot over time.",
-  "Begin again, as many times as it takes.",
-  "Quietly keep going.",
-  "Done is better than perfect.",
-  "The streak is built one day at a time.",
-  "Today counts.",
-  "Slow is smooth. Smooth is fast.",
-  "Discipline is a kind of self-respect.",
-  "Trust the process you can't yet see.",
-  "Make it easy to start.",
-  "Tiny gains compound.",
-  "Be patient with the work.",
-  "Showing up is already winning.",
-  "Keep the promise you made yourself.",
-  "Momentum loves a single step.",
-  "You don't have to be fast, just faithful.",
-  "Better today than yesterday.",
-  "Earn it once more.",
-];
-function quoteOfTheDay() {
-  const d = new Date();
-  const seed = d.getFullYear() * 366 + monthDayIndex(d);
-  return QUOTES[((seed % QUOTES.length) + QUOTES.length) % QUOTES.length];
-}
 function monthDayIndex(d) {
   const start = new Date(d.getFullYear(), 0, 0);
   return Math.floor((d - start) / 86400000); // day of year, local
@@ -1105,7 +1072,6 @@ function drainToasts() {
 function render() {
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   if (el.eyebrow) el.eyebrow.textContent = countLabel || "Today";
-  el.quote.textContent = quoteOfTheDay();
   renderTop();
   renderInsights();
   renderHistory();
@@ -2669,9 +2635,8 @@ function commitDay(note, dateStr, extras) {
     confettiBurst(r.left + r.width / 2, r.top + r.height / 2, prestiged ? 28 : 18);
   }
 
-  // refresh the header/quote, then let the number roll down to 0 and the ring drain
+  // refresh the header, then let the number roll down to 0 and the ring drain
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  el.quote.textContent = quoteOfTheDay();
   el.total.textContent = fmt(total);   // seed the count-down start value
   renderTop(true);
   renderHistory();

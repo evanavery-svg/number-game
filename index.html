@@ -17,8 +17,8 @@
       --surface-2: #2c2c2e;
       --hair: rgba(255,255,255,0.08);
       --text: #ffffff;
-      --muted: #8e8e93;
-      --faint: #5a5a5e;
+      --muted: #939397;
+      --faint: #67676b;
       --accent: #ff9500;
       --accent-2: #ffb340;
       --safe: #30d158;   /* comfortably under the goal */
@@ -117,7 +117,7 @@
     }
     :root[data-theme="blue"] {   /* Mono — simple black & white */
       --bg: #000000; --surface: #161616; --surface-2: #242424;
-      --text: #ffffff; --muted: #9a9a9a; --faint: #5e5e5e;
+      --text: #ffffff; --muted: #9a9a9a; --faint: #636363;
       --accent: #ffffff; --accent-2: #ffffff; --r-acc-1: #f2f2f2; --r-acc-2: #cfcfcf;
       --btn-glow: rgba(255,255,255,0.18); --btn-text: #000000;
       /* greyscale status + ring so nothing is coloured */
@@ -137,7 +137,7 @@
     }
     :root[data-theme="teal"] {   /* Spidey — Advanced Suit red & white (light, white-forward) */
       --bg: #edeef2; --surface: #ffffff; --surface-2: #e2e4ec;
-      --text: #17181d; --muted: #6c7280; --faint: #a9afbb;
+      --text: #17181d; --muted: #606572; --faint: #848992;
       --accent: #e01f2b; --accent-2: #f23b45; --r-acc-1: #f23b45; --r-acc-2: #e01f2b;
       --btn-glow: rgba(224,31,43,0.30); --btn-text: #ffffff;
       --hair: rgba(0,0,0,0.08);
@@ -153,7 +153,7 @@
     }
     :root[data-theme="grove"] {    /* Grove — forest green & burnt orange */
       --bg: #12210f; --surface: #1c2e1b; --surface-2: #2c4531;
-      --text: #eaf0e6; --muted: #93a68f; --faint: #5e7059;
+      --text: #eaf0e6; --muted: #9eaf9a; --faint: #667761;
       --accent: #a9531f; --accent-2: #c96c31; --r-acc-1: #c96c31; --r-acc-2: #a9531f;
       --btn-glow: rgba(169,83,31,0.42);
       /* the palette's teal-green carries "safe" so the ring stays in-family */
@@ -163,19 +163,19 @@
     }
     :root[data-theme="dusk"] {     /* Dusk — navy, mauve & terracotta */
       --bg: #151e3c; --surface: #1e2a52; --surface-2: #2a3868;
-      --text: #e7ebef; --muted: #9e93b4; --faint: #6b6483;
+      --text: #e7ebef; --muted: #aaa0bd; --faint: #78728e;
       --accent: #b55f4e; --accent-2: #d0785f; --r-acc-1: #d0785f; --r-acc-2: #b55f4e;
       --btn-glow: rgba(181,95,78,0.42);
     }
     :root[data-theme="nocturne"] { /* Nocturne — midnight navy & pale lavender */
       --bg: #080908; --surface: #14192b; --surface-2: #1d2a47;
-      --text: #d5d8ec; --muted: #7e88a8; --faint: #6b5f69;
+      --text: #d5d8ec; --muted: #8790ae; --faint: #6e626c;
       --accent: #c6cbe8; --accent-2: #d5d8ec; --r-acc-1: #d5d8ec; --r-acc-2: #9aa3c9;
       --btn-glow: rgba(213,216,236,0.28); --btn-text: #12172a;   /* light accent ⇒ dark label */
     }
     :root[data-theme="roast"] {    /* Roast — coffee, navy & sand */
       --bg: #141315; --surface: #241914; --surface-2: #3e2c25;
-      --text: #edebe9; --muted: #a6968b; --faint: #6b5a4f;
+      --text: #edebe9; --muted: #a6968b; --faint: #74645a;
       --accent: #e5bc93; --accent-2: #f0d0af; --r-acc-1: #f0d0af; --r-acc-2: #e5bc93;
       --btn-glow: rgba(229,188,147,0.34); --btn-text: #2a1d16;   /* light accent ⇒ dark label */
       --water: #3c64a0; --water-2: #6e93cc;                      /* the palette's navy */
@@ -323,15 +323,6 @@
     .goal-label { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; letter-spacing: 0.2px; min-height: 14px; transition: color var(--dur-slow) ease; }
     .goal-label.hint { color: var(--accent); }
 
-    .quote {
-      text-align: center;
-      color: var(--faint);
-      font-size: 13px;
-      line-height: 1.4;
-      padding: 14px var(--sp-4) var(--sp-3);
-      min-height: 16px;
-      font-style: italic;
-    }
 
     /* ---- big button ---- */
     .add-btn {
@@ -424,14 +415,18 @@
     .hist-empty { padding: var(--sp-5); color: var(--faint); font-size: 14px; text-align: center; }
 
     /* ---- toast ---- */
+    /* Anchored to the top: every primary action in this app sits at the bottom
+       (the tap button, Undo / End Day, sheet buttons), and a bottom-anchored
+       toast covered them — a long one wrapped to three lines right over
+       End Day. Nothing important lives up here. */
     .toast {
-      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
-      transform: translateX(-50%) translateY(20px);
+      position: fixed; left: 50%; top: calc(66px + env(safe-area-inset-top));
+      transform: translateX(-50%) translateY(-14px);
       background: var(--surface-2); color: var(--text);
-      padding: 13px var(--sp-5); border-radius: 999px; font-size: 14px; font-weight: 600;
+      padding: 12px var(--sp-5); border-radius: 18px; font-size: 14px; font-weight: 600;
       opacity: 0; pointer-events: none; transition: opacity var(--dur-base), transform var(--dur-base) var(--ease-out);
       box-shadow: 0 12px 34px rgba(0,0,0,0.45); border: 1px solid var(--hair);
-      z-index: 50; max-width: 88%; text-align: center;
+      z-index: 50; max-width: min(88%, 420px); text-align: center; line-height: 1.35;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
@@ -570,12 +565,12 @@
     .ladder-path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
     .ladder-zero { stroke: var(--safe); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: 0.8; }
     /* reaching-zero celebration */
-    .win-card { text-align: center; background: var(--bg); border-radius: 18px; padding: 26px 20px var(--sp-5); margin: 10px 0 6px; box-shadow: inset 0 0 0 1.5px var(--safe); }
+    .win-card { text-align: center; background: var(--bg); border-radius: 18px; padding: var(--sp-6) var(--sp-5) var(--sp-5); margin: var(--sp-3) 0 var(--sp-2); box-shadow: inset 0 0 0 1.5px var(--safe); }
     .win-emoji { font-size: 54px; line-height: 1; }
     .win-big { font-size: var(--fs-hero); font-weight: 300; letter-spacing: -3px; line-height: 1; color: var(--safe); font-variant-numeric: tabular-nums; margin-top: var(--sp-2); }
     .win-cap { font-size: var(--fs-small); font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); margin-top: var(--sp-2); }
     /* step-down offer */
-    .taper-card { display: flex; align-items: center; justify-content: center; gap: 18px; background: var(--bg); border-radius: 16px; padding: 20px; margin: 10px 0 var(--sp-1); box-shadow: inset 0 0 0 1px var(--surface-2); }
+    .taper-card { display: flex; align-items: center; justify-content: center; gap: var(--sp-5); background: var(--bg); border-radius: 16px; padding: var(--sp-5); margin: var(--sp-3) 0 var(--sp-1); box-shadow: inset 0 0 0 1px var(--surface-2); }
     .taper-from { font-size: 34px; font-weight: 300; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
     .taper-arrow { font-size: 22px; color: var(--faint); }
     .taper-to { font-size: var(--fs-display); font-weight: 300; color: var(--safe); font-variant-numeric: tabular-nums; letter-spacing: -1.5px; }
@@ -649,7 +644,7 @@
     .chip:active { transform: scale(0.95); }
     .chip.on { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
 
-    .win-row { display: flex; align-items: center; gap: 9px; margin-top: var(--sp-2); }
+    .win-row { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
     .win-row .win-n { color: var(--faint); font-size: 15px; font-weight: 700; width: 12px; text-align: center; flex: none; }
     .win-row input { margin: 0; }
 
@@ -707,7 +702,7 @@
     .mood-corr .mc-up { color: var(--safe); font-weight: 700; }
     .mood-corr .mc-down { color: var(--over); font-weight: 700; }
     .mood-hint { font-size: 12px; color: var(--faint); margin-top: 10px; line-height: 1.4; }
-    .win-item { display: flex; gap: 10px; align-items: baseline; padding: 10px 2px; border-top: 1px solid var(--hair); font-size: 14px; line-height: 1.35; }
+    .win-item { display: flex; gap: var(--sp-3); align-items: baseline; padding: var(--sp-3) 2px; border-top: 1px solid var(--hair); font-size: 14px; line-height: 1.35; }
     .win-item:first-of-type { border-top: none; }
     .win-item .win-check { color: var(--safe); flex: none; font-weight: 700; }
     .win-item .win-day { color: var(--faint); font-size: 12px; margin-left: auto; flex: none; white-space: nowrap; }
@@ -807,7 +802,7 @@
     .pat-line { font-size: 13px; color: var(--muted); line-height: 1.5; }
     .pat-line.good { color: var(--safe); font-weight: 700; }
     /* pause-before-reset card */
-    .pause-card { background: var(--bg); border-radius: 16px; padding: var(--sp-4); box-shadow: inset 0 0 0 1px var(--surface-2); margin: var(--sp-1) 0 6px; text-align: center; }
+    .pause-card { background: var(--bg); border-radius: 16px; padding: var(--sp-4); box-shadow: inset 0 0 0 1px var(--surface-2); margin: var(--sp-1) 0 var(--sp-2); text-align: center; }
     .pause-name { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
     .pause-run { font-size: 30px; font-weight: 300; letter-spacing: -1px; color: var(--accent); margin: var(--sp-1) 0 var(--sp-2); font-variant-numeric: tabular-nums; }
     .pause-line { font-size: 13px; color: var(--muted); line-height: 1.5; }
@@ -970,7 +965,7 @@
     .plan-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
     .plan-row {
       display: flex; align-items: flex-start; gap: var(--sp-2);
-      background: var(--surface-2); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface-2); border-radius: 12px; padding: var(--sp-3);
     }
     .plan-body { flex: 1; min-width: 0; }
     .plan-cue { font-size: var(--fs-micro); color: var(--muted); }
@@ -984,13 +979,13 @@
       display: block; width: 100%; margin-top: var(--sp-2);
       background: none; border: 1px dashed var(--hair); border-radius: 12px;
       color: var(--accent); font-size: var(--fs-small); font-weight: 600;
-      padding: 10px; cursor: pointer; font-family: inherit; text-align: center;
+      padding: var(--sp-3); cursor: pointer; font-family: inherit; text-align: center;
       transition: background var(--dur-fast) var(--ease-out);
     }
     .plan-add:active { background: var(--key); }
     .plan-recall {
       background: var(--surface-2); border-left: 3px solid var(--accent);
-      border-radius: 8px; padding: 10px 12px; margin-top: var(--sp-3);
+      border-radius: 8px; padding: var(--sp-3); margin-top: var(--sp-3);
       font-size: var(--fs-small); color: var(--text);
     }
     .cal-legend { display: flex; gap: 14px; margin-top: var(--sp-3); font-size: 11px; color: var(--muted); }
@@ -1202,7 +1197,6 @@
     header { animation: bootIn 0.5s var(--ease-out) backwards; }
     .since-strip { animation: bootIn 0.5s var(--ease-out) 0.05s backwards; }
     .total { animation: bootIn 0.55s var(--ease-out) 0.08s backwards; }
-    .quote { animation: bootIn 0.5s var(--ease-out) 0.14s backwards; }
     .row { animation: bootIn 0.5s var(--ease-out) 0.24s backwards; }
     .version { animation: bootIn 0.5s ease 0.3s backwards; }
     /* celebration confetti (under-goal End Day) */
@@ -1225,7 +1219,6 @@
       .total { padding: 2px 0 0; }
       .ring-wrap { width: 220px; }
       .total .value { font-size: 58px; }
-      .quote { padding: 6px var(--sp-4) 2px; min-height: 0; }
       .add-btn { min-height: 108px; margin: 2px 0 10px; font-size: 28px; }
       .row { margin-bottom: 10px; }
       .row button { padding: var(--sp-3); }
@@ -1236,7 +1229,7 @@
     @media (prefers-reduced-motion: reduce) {
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
-      .stg-in, .confetti-bit, header, .since-strip, .total, .quote, .add-btn, .row, .version,
+      .stg-in, .confetti-bit, header, .since-strip, .total, .add-btn, .row, .version,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
@@ -1315,7 +1308,6 @@
     <div class="goal-label" id="goalText"></div>
   </div>
 
-  <div class="quote" id="quote"></div>
 
   <button class="add-btn" id="addBtn" aria-label="Add one">
     <span class="add-label">+ 0.50</span>
@@ -1327,7 +1319,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v9.7 · © Avery LLC</div>
+  <div class="version">v9.8 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
