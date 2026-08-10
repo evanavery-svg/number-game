@@ -16,6 +16,7 @@ const KEY_JOURNAL_PIN = "count.journalPin";   // separate passcode for the priva
 const KEY_JOURNAL_SALT = "count.journalSalt";
 const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id for journal Face ID
 const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
+const KEY_RISK_LAST = "count.riskLast";       // session day of the last "day to watch" read
 const KEY_TL = "count.tl";                    // hidden flag for the optional tracker extras
 const KEY_RECAP_LAST = "count.recapLast";     // week key of the last recap shown
 const KEY_RECAP_SEEN = "count.recapSeen";     // week key of the last recap actually opened
@@ -101,6 +102,8 @@ const el = {
   moreStats: document.getElementById("moreStats"),
   rangeRow: document.getElementById("rangeRow"),
   paceLine: document.getElementById("paceLine"),
+  compareLine: document.getElementById("compareLine"),
+  riskLine: document.getElementById("riskLine"),
   ladderCard: document.getElementById("ladderCard"),
   recordsCard: document.getElementById("recordsCard"),
   trendCard: document.getElementById("trendCard"),
@@ -625,7 +628,7 @@ function openingSequence() {
 // back next time rather than being lost.
 function runPassiveNotice() {
   if (gatesUp() || el.overlay.classList.contains("show")) return;
-  [announceRestore, checkMilestones, checkRiskyTimes, maybeWeeklyRecap, maybeBackupNudge]
+  [announceRestore, checkMilestones, checkRiskyTimes, checkDayRisk, maybeWeeklyRecap, maybeBackupNudge]
     .some((fn) => fn() === true);
   refreshNoticeDot();
 }
@@ -1206,6 +1209,8 @@ function renderInsights() {
   el.moreStats.textContent = moreStatsOpen ? "Fewer stats" : "More stats";
 
   renderPace();
+  renderCompare();
+  renderRisk();
   renderLadder();
   renderRecords();
   renderTapLog();
@@ -1217,6 +1222,75 @@ function renderInsights() {
   renderMood();
   renderConnections();
   renderWins();
+}
+
+// Turn a dayRisk reading into plain sentences. Kept in one place so the quiet
+// notice and the Insights line always say the same thing.
+function riskPhrases(risk) {
+  return (risk.reasons || []).map((r) => {
+    if (r.key === "weekday") return `${WK_NAME[r.day]} tend to run higher for you`;   // WK_NAME is already plural
+    if (r.key === "mood") return "you rated today a rough one";
+    if (r.key === "drift") return `this week is running above last (${fmt(r.now)} vs ${fmt(r.before)})`;
+    if (r.key === "yesterday") return "yesterday went over";
+    return "";
+  }).filter(Boolean);
+}
+// Today's reading, or null. Built only from the counter, the daily mood
+// check-in and the goal — never from the private journal.
+function todayRisk() {
+  return dayRisk(history, moodDaily, hasGoal() ? goal : 0);
+}
+
+// A heads-up at most once a day, sitting inside the one-notice-per-open budget.
+function checkDayRisk() {
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const key = sessionDate();
+  if (load(KEY_RISK_LAST, "") === key) return false;
+  const risk = todayRisk();
+  if (!risk) return false;
+  save(KEY_RISK_LAST, key);
+  const bits = riskPhrases(risk).slice(0, 2);
+  const plan = planFor(plans, null, new Date().getHours());
+  const tail = plan ? ` Your plan: ${plan.action}` : " Worth having a plan.";
+  toast(`🫧 ${bits.join(", and ")}.${tail}`, 6000);
+  return true;
+}
+
+// The same reading, readable on demand rather than only when it interrupts.
+function renderRisk() {
+  const line = el.riskLine;
+  if (!line) return;
+  const risk = todayRisk();
+  if (!risk) { line.style.display = "none"; return; }
+  const bits = riskPhrases(risk);
+  line.style.display = "block";
+  line.innerHTML = `<b>Today looks like a day to watch.</b> ${bits.join(", and ")}.` +
+    `<span class="risk-sub">Based on your last ${risk.basis.days} logged days — it's a nudge, not a prediction.</span>`;
+}
+
+// This window against the one immediately before it, so the numbers above
+// mean something. Follows whichever range chip is selected.
+function renderCompare() {
+  const line = el.compareLine;
+  if (!line) return;
+  const c = hasGoal() ? comparePeriods(history, insightRange, goal) : comparePeriods(history, insightRange, Infinity);
+  if (!c) { line.style.display = "none"; return; }
+  const span = insightRange === 7 ? "week" : insightRange === 30 ? "30 days" : `${insightRange} days`;
+  const dAvg = c.delta.avg;
+  const same = Math.abs(dAvg) < 0.05;
+  const dir = dAvg < 0 ? "good" : "bad";
+  let html;
+  if (same) {
+    html = `Averaging <b>${fmt(c.current.avg)}</b> — about the same as the previous ${span}.`;
+  } else {
+    html = `Averaging <b class="${dir}">${fmt(c.current.avg)}</b>, ${dAvg < 0 ? "down" : "up"} from <b>${fmt(c.previous.avg)}</b> the previous ${span}.`;
+  }
+  if (hasGoal() && c.delta.under !== 0) {
+    const ud = c.delta.under;
+    html += ` <b class="${ud > 0 ? "good" : "bad"}">${c.current.under}</b> of ${c.current.n} days under goal, ${ud > 0 ? "up" : "down"} from ${c.previous.under}.`;
+  }
+  line.style.display = "block";
+  line.innerHTML = html;
 }
 
 // On-pace projection for the current calendar month.

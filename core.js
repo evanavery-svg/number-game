@@ -195,6 +195,107 @@ function projectZero(goalLog, now) {
   const perDay = dropped / spanDays;
   return { date: new Date(t + (last.goal / perDay) * DAY), perDay, done: false };
 }
+// ---- looking forward instead of back ----
+// Everything else here reports what already happened. This asks whether today
+// resembles the days that have historically gone worse, and says why. It is a
+// nudge built from your own counter, mood check-ins and goal — never a
+// prediction, and never a percentage.
+//
+// Deliberately reads no private journal data, so nothing derived from behind
+// that passcode can surface in a message shown outside it.
+function dayRisk(entries, moods, goal, now) {
+  const t = now == null ? Date.now() : now;
+  const days = (entries || []).filter((d) => d && typeof d.total === "number");
+  if (days.length < 14) return null;                 // too little to say anything honest
+  const when = (d) => new Date(d.endedAt || d.date);
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  const all = mean(days.map((d) => d.total));
+  if (!(all > 0)) return null;                       // nothing but zeros — nothing to warn about
+  const reasons = [];
+  const today = new Date(t);
+
+  // 1. this weekday historically runs high
+  const sameDay = days.filter((d) => when(d).getDay() === today.getDay());
+  if (sameDay.length >= 3) {
+    const wd = mean(sameDay.map((d) => d.total));
+    if (wd >= all * 1.25) reasons.push({ key: "weekday", day: today.getDay(), avg: round2(wd) });
+  }
+
+  // 2. today's mood is low, and low-mood days have historically run higher
+  const todayMood = moods ? moods[sessionDate(today)] : null;
+  if (todayMood != null && todayMood <= 2) {
+    const lows = days.filter((d) => d.mood != null && d.mood <= 2).map((d) => d.total);
+    const highs = days.filter((d) => d.mood != null && d.mood >= 4).map((d) => d.total);
+    if (lows.length >= 2 && highs.length >= 2 && mean(lows) >= mean(highs) * 1.2) {
+      reasons.push({ key: "mood", mood: todayMood });
+    }
+  }
+
+  // 3. the last week is drifting up on the week before
+  const inWindow = (from, to) => days.filter((d) => { const x = when(d).getTime(); return x >= from && x < to; }).map((d) => d.total);
+  const wk1 = inWindow(t - 7 * DAY, t), wk2 = inWindow(t - 14 * DAY, t - 7 * DAY);
+  if (wk1.length >= 3 && wk2.length >= 3 && mean(wk1) >= mean(wk2) * 1.25) {
+    reasons.push({ key: "drift", now: round2(mean(wk1)), before: round2(mean(wk2)) });
+  }
+
+  // 4. yesterday went over
+  if (goal > 0) {
+    const yday = sessionDate(new Date(t - DAY));
+    const y = days.find((d) => d.date === yday);
+    if (y && y.total > goal) reasons.push({ key: "yesterday", total: round2(y.total) });
+  }
+
+  if (reasons.length < 2) return null;               // one signal is noise — say nothing
+  return { level: reasons.length >= 3 ? "high" : "elevated", reasons, basis: { days: days.length } };
+}
+
+// ---- period comparison ----
+// goalPerformance only takes an open-ended trailing window, so this is the
+// bounded version it lacks — needed to put one stretch beside another.
+function periodStats(entries, from, to, goal) {
+  const inRange = (entries || []).filter((d) => {
+    if (!d || typeof d.total !== "number") return false;
+    const t = new Date(d.endedAt || d.date).getTime();
+    return t >= from && t < to;
+  }).sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
+  const n = inRange.length;
+  if (!n) return { n: 0, avg: 0, under: 0, underPct: 0, total: 0, bestStreak: 0 };
+  const totals = inRange.map((d) => d.total);
+  const under = goal > 0 || goal === 0 ? totals.filter((x) => x <= goal).length : 0;
+  let best = 0, run = 0;
+  totals.forEach((x) => { if (x <= goal) { run++; if (run > best) best = run; } else run = 0; });
+  return {
+    n,
+    avg: round2(totals.reduce((s, x) => s + x, 0) / n),
+    under, underPct: under / n,
+    total: round2(totals.reduce((s, x) => s + x, 0)),
+    bestStreak: best,
+  };
+}
+
+// This window against the one immediately before it. Returns null when there
+// isn't enough of a previous stretch to make an honest comparison.
+function comparePeriods(entries, days, goal, now) {
+  const t = now == null ? Date.now() : now;
+  if (!isFinite(days)) return null;                  // "all time" has nothing to sit beside
+  const span = days * DAY;
+  // half-open on the left so today's entry lands in the current window and the
+  // boundary day can't be counted in both
+  const current = periodStats(entries, t - span + 1, t + 1, goal);
+  const previous = periodStats(entries, t - 2 * span + 1, t - span + 1, goal);
+  if (current.n < 3 || previous.n < 3) return null;
+  return {
+    current, previous,
+    delta: {
+      avg: round2(current.avg - previous.avg),
+      under: current.under - previous.under,
+      underPct: round2(current.underPct - previous.underPct),
+      total: round2(current.total - previous.total),
+      bestStreak: current.bestStreak - previous.bestStreak,
+    },
+  };
+}
+
 // ---- data-driven taper suggestions ----
 // The manual taper drops by a number you typed, on a fixed clock, neither of
 // which comes from how you actually log. These size the next rung from levels
@@ -428,6 +529,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
+    dayRisk, periodStats, comparePeriods,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

@@ -430,6 +430,108 @@ test("suggestTaper walks a ladder down to zero without oscillating", () => {
   assert.ok(goal < 6, `ladder never moved: ${seen}`);
 });
 
+// day entries ending at `now`, one per day, oldest first
+const hist = (totals, now, extra) => totals.map((t, i) => {
+  const d = new Date(now - (totals.length - 1 - i) * core.DAY);
+  return Object.assign({
+    total: t,
+    date: core.sessionDate(d),
+    endedAt: d.toISOString(),
+  }, extra ? extra(i, t, d) : null);
+});
+
+test("dayRisk stays quiet unless at least two signals line up", () => {
+  // a Saturday at noon, so "today" has a stable weekday
+  const now = new Date(2026, 7, 1, 12).getTime();
+  assert.equal(new Date(now).getDay(), 6);
+
+  // 28 calm days, everything under a goal of 4 → nothing to say
+  const calm = hist(Array(28).fill(1), now);
+  assert.equal(core.dayRisk(calm, {}, 4, now), null);
+
+  // too little data, even if it looks bad
+  assert.equal(core.dayRisk(hist(Array(8).fill(9), now), {}, 4, now), null);
+
+  // all zeros — nothing to warn about, and no divide-by-zero
+  assert.equal(core.dayRisk(hist(Array(28).fill(0), now), {}, 4, now), null);
+
+  // one signal only (Saturdays run high) → still null
+  const satHigh = hist(Array(28).fill(0).map((_, i) => {
+    const d = new Date(now - (27 - i) * core.DAY);
+    return d.getDay() === 6 ? 6 : 1;
+  }), now);
+  const one = core.dayRisk(satHigh, {}, 4, now);
+  assert.equal(one, null, "a single signal should not produce a warning");
+
+  // two signals: the weekday effect plus a low mood on a history where low-mood
+  // days really do run higher
+  const withMood = hist(Array(28).fill(0).map((_, i) => {
+    const d = new Date(now - (27 - i) * core.DAY);
+    return d.getDay() === 6 ? 6 : 1;
+  }), now, (i) => ({ mood: i % 3 === 0 ? 1 : 5, total: i % 3 === 0 ? 7 : 1 }));
+  const moods = { [core.sessionDate(new Date(now))]: 1 };
+  const two = core.dayRisk(withMood, moods, 4, now);
+  assert.ok(two, "expected a reading when two signals line up");
+  assert.equal(two.level, "elevated");
+  assert.ok(two.reasons.length >= 2);
+  assert.equal(two.basis.days, 28);
+});
+
+test("dayRisk never warns on a day that is going well", () => {
+  const now = new Date(2026, 7, 1, 12).getTime();
+  // flat, all under goal, good mood today and historically
+  const good = hist(Array(30).fill(1), now, () => ({ mood: 5 }));
+  const moods = { [core.sessionDate(new Date(now))]: 5 };
+  assert.equal(core.dayRisk(good, moods, 4, now), null);
+  // improving, and still nothing alarming to say
+  const improving = hist([4,4,4,4,4,3,3,3,3,3,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1], now, () => ({ mood: 4 }));
+  assert.equal(core.dayRisk(improving, moods, 4, now), null);
+});
+
+test("periodStats measures a bounded window", () => {
+  const now = new Date(2026, 7, 1, 12).getTime();
+  const h = hist([1, 5, 1, 1, 5, 1], now);            // 6 days ending today
+  const s = core.periodStats(h, now - 6 * core.DAY, now + 1, 4);
+  assert.equal(s.n, 6);
+  assert.equal(s.total, 14);
+  assert.equal(core.round2(s.avg), 2.33);
+  assert.equal(s.under, 4);                            // the four 1s
+  assert.equal(s.bestStreak, 2);                       // 1,1 in the middle
+  // an empty window is zeroed, not NaN
+  const empty = core.periodStats(h, now - 100 * core.DAY, now - 90 * core.DAY, 4);
+  assert.deepEqual(empty, { n: 0, avg: 0, under: 0, underPct: 0, total: 0, bestStreak: 0 });
+  // the upper bound is exclusive, so windows can't double-count a boundary day
+  const a = core.periodStats(h, now - 6 * core.DAY, now - 3 * core.DAY, 4);
+  const b = core.periodStats(h, now - 3 * core.DAY, now + 1, 4);
+  assert.equal(a.n + b.n, 6);
+});
+
+test("comparePeriods puts one stretch beside the one before it", () => {
+  const now = new Date(2026, 7, 1, 12).getTime();
+  // 14 days: the older week ran over a goal of 4, the recent week well under
+  const improving = hist([6,6,6,6,6,6,6, 1,1,1,1,1,1,1], now);
+  const c = core.comparePeriods(improving, 7, 4, now);
+  assert.ok(c);
+  assert.equal(c.current.avg, 1);
+  assert.equal(c.previous.avg, 6);
+  assert.equal(c.delta.avg, -5);
+  assert.equal(c.current.under, 7);
+  assert.equal(c.previous.under, 0);
+  assert.equal(c.delta.under, 7);                      // seven more days under goal
+  assert.equal(c.delta.bestStreak, 7);
+  // the reverse reads as a regression
+  const worse = core.comparePeriods(hist([1,1,1,1,1,1,1, 6,6,6,6,6,6,6], now), 7, 4, now);
+  assert.equal(worse.delta.avg, 5);
+  assert.equal(worse.delta.under, -7);
+  // flat is a legitimate answer, not a null
+  const flat = core.comparePeriods(hist(Array(14).fill(2), now), 7, 4, now);
+  assert.equal(flat.delta.avg, 0);
+  // not enough previous data to be honest
+  assert.equal(core.comparePeriods(hist([1,1,1,1], now), 7, 4, now), null);
+  // "all time" has nothing to sit beside
+  assert.equal(core.comparePeriods(improving, Infinity, 4, now), null);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };
