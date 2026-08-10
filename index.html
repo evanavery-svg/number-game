@@ -180,6 +180,60 @@
       --btn-glow: rgba(229,188,147,0.34); --btn-text: #2a1d16;   /* light accent ⇒ dark label */
       --water: #3c64a0; --water-2: #6e93cc;                      /* the palette's navy */
     }
+    :root[data-theme="plum"] {     /* Plum — deep aubergine & magenta */
+      --bg: #17101f; --surface: #221630; --surface-2: #33224a;
+      --text: #f1e9f8; --muted: #a493b4; --faint: #706181;
+      --accent: #e05fa8; --accent-2: #f07fbe; --r-acc-1: #f07fbe; --r-acc-2: #e05fa8;
+      --btn-glow: rgba(224,95,168,0.40); --btn-text: #1d1226;   /* bright accent ⇒ dark label */
+      --num-lo: #b79ac9;
+    }
+    :root[data-theme="abyss"] {    /* Abyss — near-black & cyan */
+      --bg: #06090c; --surface: #0e151b; --surface-2: #18242e;
+      --text: #dce9f0; --muted: #8ba2b0; --faint: #5b7280;
+      --accent: #22c4d6; --accent-2: #5adbe9; --r-acc-1: #5adbe9; --r-acc-2: #22c4d6;
+      --btn-glow: rgba(34,196,214,0.34); --btn-text: #04191d;   /* bright accent ⇒ dark label */
+      --water: #22c4d6; --water-2: #7ae3ef;
+      --num-lo: #7fc9bf;
+    }
+    /* ---- light themes ----
+       The shared :root[data-theme] block above assumes a dark ground, so each
+       of these has to re-invert hairlines, shadows, key fills, the button
+       label and the whole status/ring/glow set. Scarlet is the template. */
+    :root[data-theme="paper"] {    /* Paper — warm cream & deep teal-green */
+      --bg: #f6f1e7; --surface: #fffdf8; --surface-2: #ebe3d4;
+      --text: #221e18; --muted: #6b6357; --faint: #948a7e;
+      --accent: #0f6b57; --accent-2: #178a71; --r-acc-1: #178a71; --r-acc-2: #0f6b57;
+      --btn-glow: rgba(15,107,87,0.26); --btn-text: #ffffff;
+      --hair: rgba(0,0,0,0.10);
+      --card-shadow: 0 1px 2px rgba(80,60,30,0.05), 0 12px 26px rgba(80,60,30,0.09);
+      --key: rgba(0,0,0,0.05); --key-press: rgba(0,0,0,0.12);
+      --safe: #1a7a52; --warn: #a8710f; --over: #b23b2c;
+      --r-safe-1: #35a271; --r-safe-2: #1a7a52;
+      --r-warn-1: #d19a3a; --r-warn-2: #a8710f;
+      --r-over-1: #d4614f; --r-over-2: #b23b2c;
+      --halo-safe: rgba(26,122,82,0.16); --halo-warn: rgba(168,113,15,0.18); --halo-over: rgba(178,59,44,0.18);
+      --glow-safe: rgba(26,122,82,0.32); --glow-warn: rgba(168,113,15,0.32); --glow-over: rgba(178,59,44,0.36);
+      --num-lo: #1a7a52; --num-mid: #a8710f; --num-hi: #b23b2c;
+      --water: #1f6f8b; --water-2: #3d95b3;
+    }
+    :root[data-theme="clarity"] {  /* Clarity — built for glare and tired eyes;
+                                      every text pair aims past AA, body past AAA */
+      --bg: #ffffff; --surface: #ffffff; --surface-2: #ebedf0;
+      --text: #000000; --muted: #4a4f57; --faint: #6b7178;
+      --accent: #0b4fd8; --accent-2: #2668ee; --r-acc-1: #2668ee; --r-acc-2: #0b4fd8;
+      --btn-glow: rgba(11,79,216,0.24); --btn-text: #ffffff;
+      --hair: rgba(0,0,0,0.18);                                  /* stronger — definition matters more than subtlety here */
+      --card-shadow: 0 1px 2px rgba(0,0,0,0.10), 0 10px 22px rgba(0,0,0,0.10);
+      --key: rgba(0,0,0,0.07); --key-press: rgba(0,0,0,0.16);
+      --safe: #0a6b3d; --warn: #8a5600; --over: #b3261e;
+      --r-safe-1: #128a51; --r-safe-2: #0a6b3d;
+      --r-warn-1: #b57200; --r-warn-2: #8a5600;
+      --r-over-1: #d2382e; --r-over-2: #b3261e;
+      --halo-safe: rgba(10,107,61,0.14); --halo-warn: rgba(138,86,0,0.16); --halo-over: rgba(179,38,30,0.16);
+      --glow-safe: rgba(10,107,61,0.30); --glow-warn: rgba(138,86,0,0.30); --glow-over: rgba(179,38,30,0.34);
+      --num-lo: #0a6b3d; --num-mid: #8a5600; --num-hi: #b3261e;
+      --water: #0b4fd8; --water-2: #2668ee;
+    }
     /* SVG ring gradient stops read from variables so themes retint them */
     #gradAccent stop:nth-child(1) { stop-color: var(--r-acc-1); }
     #gradAccent stop:nth-child(2) { stop-color: var(--r-acc-2); }
@@ -1267,7 +1321,7 @@
   <script>
     // Apply the saved (or auto-rotated) theme before first paint — no colour flash.
     try {
-      var order = ["default","blue","forest","teal","grove","dusk","nocturne","roast"];
+      var order = ["default","blue","forest","teal","grove","dusk","nocturne","roast","plum","abyss","paper","clarity"];
       var t;
       if (JSON.parse(localStorage.getItem("count.themeAuto"))) {
         var d = new Date();
@@ -1346,7 +1400,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.0 · © Avery LLC</div>
+  <div class="version">v10.1 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

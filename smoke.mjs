@@ -85,7 +85,7 @@ await page.waitForTimeout(300);
   await page.waitForTimeout(500);
   const keys = await page.evaluate(() => THEMES.map((t) => t.key));
   const swatches = (await page.$$("#sheet .theme-swatch")).length;
-  check("theme picker renders every theme", swatches === keys.length && keys.length === 8);
+  check("theme picker renders every theme", swatches === keys.length && keys.length === 12);
   const html = await (await fetch(BASE)).text();
   const m = html.match(/var order = \[([^\]]*)\]/);
   const order = m ? m[1].split(",").map((s) => s.trim().replace(/^"|"$/g, "")) : [];
