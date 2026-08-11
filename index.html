@@ -1032,6 +1032,14 @@
     .cal-detail { font-size: 13px; color: var(--muted); margin-top: var(--sp-3); min-height: 18px; text-align: center; }
     .cal-detail b { color: var(--text); font-weight: 700; }
     .cal-note { font-size: 12px; color: var(--faint); font-style: italic; margin-top: 3px; }
+    .hist-more {
+      display: block; width: 100%; margin-top: var(--sp-2);
+      background: none; border: 1px dashed var(--hair); border-radius: 12px;
+      color: var(--accent); font-size: var(--fs-small); font-weight: 600;
+      padding: var(--sp-3); cursor: pointer; font-family: inherit; text-align: center;
+      transition: background var(--dur-fast) var(--ease-out);
+    }
+    .hist-more:active { background: var(--key); }
     .cal-edit {
       margin-top: var(--sp-2); background: var(--key); border: none; border-radius: 8px;
       color: var(--accent); font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.02em;
@@ -1400,7 +1408,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.1 · © Avery LLC</div>
+  <div class="version">v10.2 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

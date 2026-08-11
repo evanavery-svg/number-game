@@ -110,6 +110,9 @@ check("end day appends a history entry", histLenAfter === histLenBefore + 1);
 {
   await page.click("#statsBtn");
   await page.waitForTimeout(500);
+  // the calendar lives on the Journey tab — go there the way a user would
+  await page.evaluate(() => [...document.querySelectorAll("#segRow .seg-btn")].find((b) => b.textContent === "Journey")?.click());
+  await page.waitForTimeout(500);
   const picked = await page.evaluate(() => {
     const c = [...document.querySelectorAll(".cal-day.today")][0] || [...document.querySelectorAll(".cal-day:not(.blank):not(.empty)")][0];
     if (!c) return false;

@@ -1112,8 +1112,7 @@ function render() {
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   if (el.eyebrow) el.eyebrow.textContent = countLabel || "Today";
   renderTop();
-  renderInsights();
-  renderHistory();
+  renderInsights();   // no-ops while the panel is closed
   renderSinceStrip();
 }
 
@@ -1146,7 +1145,6 @@ function renderSegRow() {
     b.addEventListener("click", () => { insightSeg = sg.key; showSegment(); buzz(6); });
     row.appendChild(b);
   });
-  showSegment();
 }
 function showSegment() {
   SEGMENTS.forEach((sg) => {
@@ -1158,6 +1156,7 @@ function showSegment() {
   el.rangeRow.style.display = insightSeg === "overview" ? "flex" : "none";
   const body = el.insightsOverlay.querySelector(".panel-body");
   if (body) body.scrollTop = 0;
+  renderSegment();   // build only the tab now on screen
 }
 function renderRangeRow() {
   const row = el.rangeRow;
@@ -1174,9 +1173,24 @@ function renderRangeRow() {
 
 // Insights panel: four headline stats, the rest behind a reveal, then the
 // cards for the currently selected view.
+// Each tab's cards, so only the one you're looking at gets built. Rebuilding
+// all three on every render meant a 371-cell year grid and every history row
+// were reconstructed for panels nobody had open.
+const SEG_RENDER = {
+  overview: () => { renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
+  journey:  () => { renderLadder(); renderRecords(); renderCalendar(); renderYear(); renderHistory(); },
+  patterns: () => { renderWeekday(); renderTimeOfDay(); renderMood(); renderConnections(); renderWins(); },
+};
+function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
+
 function renderInsights() {
-  renderRangeRow();
+  // nothing to draw behind a closed panel — openInsights renders on the way in
+  if (!el.insightsOverlay.classList.contains("show")) return;
   renderSegRow();
+  showSegment();          // toggles the pages, then renders the active one
+}
+
+function renderStatTiles() {
   const g = el.insightsGrid, g2 = el.insightsGrid2;
   g.textContent = ""; g2.textContent = "";
   const inRange = histInRange(insightRange);
@@ -1211,21 +1225,6 @@ function renderInsights() {
   el.moreStats.style.display = g2.childNodes.length ? "block" : "none";
   el.insightsGrid2.style.display = moreStatsOpen ? "grid" : "none";
   el.moreStats.textContent = moreStatsOpen ? "Fewer stats" : "More stats";
-
-  renderPace();
-  renderCompare();
-  renderRisk();
-  renderLadder();
-  renderRecords();
-  renderTapLog();
-  renderTrend();
-  renderCalendar();
-  renderYear();
-  renderWeekday();
-  renderTimeOfDay();
-  renderMood();
-  renderConnections();
-  renderWins();
 }
 
 // Turn a dayRisk reading into plain sentences. Kept in one place so the quiet
@@ -2130,8 +2129,8 @@ function openInsights() {
   calOffset = 0;
   insightSeg = "overview";   // always land on Overview
   moreStatsOpen = false;
+  el.insightsOverlay.classList.add("show");   // before rendering — renderInsights guards on it
   renderInsights();
-  el.insightsOverlay.classList.add("show");
   // entrance choreography: tiles + cards rise in, bars grow to height
   staggerIn(el.insightsGrid, 30);
   const page = document.getElementById("segOverview");
@@ -2225,12 +2224,21 @@ function renderTop(animate) {
   announceTotal();
 }
 
+// How many history rows to build. A year of use is 365 rows, and nobody
+// scrolls that far — the rest are one tap away.
+const HIST_PAGE = 30;
+let histShown = HIST_PAGE;
+
 function renderHistory() {
   el.history.querySelectorAll(".hist-row").forEach((n) => n.remove());
+  const moreBtn = el.history.querySelector(".hist-more");
+  if (moreBtn) moreBtn.remove();
   if (history.length === 0) { el.histEmpty.style.display = "block"; return; }
   el.histEmpty.style.display = "none";
 
-  history.slice().reverse().forEach((day, i) => {
+  // newest first, capped — indices still count back from the end of `history`,
+  // so the row you tap opens that day and not its neighbour
+  history.slice().reverse().slice(0, histShown).forEach((day, i) => {
     const idx = history.length - 1 - i;
     const row = document.createElement("div");
     row.className = "hist-row";
@@ -2254,6 +2262,15 @@ function renderHistory() {
     row.addEventListener("click", () => openHistorySheet(idx));
     el.history.appendChild(row);
   });
+
+  if (history.length > histShown) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "hist-more";
+    more.textContent = `Show all ${history.length} days`;
+    more.addEventListener("click", () => { histShown = Infinity; renderHistory(); buzz(8); });
+    el.history.appendChild(more);
+  }
 }
 
 // ---- core actions ----
