@@ -364,6 +364,42 @@
     .total.zone-warn .goal-label { color: var(--warn); }
     .total.zone-over .goal-label { color: var(--over); }
 
+    /* ---- bar style (Appearance ‣ Progress) ----
+       Same fraction, same zone colours, same number — only the geometry
+       differs, so nothing about reading it has to be relearned. */
+    .bar-wrap { display: none; width: min(78vw, 300px); height: 14px; margin: var(--sp-4) auto 0;
+      background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+    .bar-wrap i { display: block; height: 100%; width: 0%; border-radius: 999px;
+      background: linear-gradient(90deg, var(--r-acc-1), var(--r-acc-2));
+      transition: width 0.55s var(--ease-out), background var(--dur-slow) ease; }
+    .total.zone-safe .bar-wrap i { background: linear-gradient(90deg, var(--r-safe-1), var(--r-safe-2)); }
+    .total.zone-warn .bar-wrap i { background: linear-gradient(90deg, var(--r-warn-1), var(--r-warn-2)); }
+    .total.zone-over .bar-wrap i { background: linear-gradient(90deg, var(--r-over-1), var(--r-over-2)); }
+    .total.style-bar .bar-wrap { display: block; }
+    .total.style-bar .ring { display: none; }
+    .total.style-bar .ring-wrap { aspect-ratio: auto; width: auto; height: auto; margin-top: var(--sp-5); cursor: pointer; }
+    /* the ring's radial aura has no ring to sit behind here and reads as a
+       smudge — the bar carries the zone colour on its own */
+    .total.style-bar .ring-wrap::before { display: none; }
+
+    /* ---- milestone day ----
+       A thin sheen outside the ring, nothing that changes the reading. The
+       caption underneath says which milestone, so it is never a mystery. */
+    .ring-wrap::after {
+      content: ""; position: absolute; inset: -5px;
+      border-radius: 50%; opacity: 0; pointer-events: none;
+      background: conic-gradient(from 0deg, transparent 0 62%, var(--accent-2) 78%, transparent 92% 100%);
+      -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 48.5%, #000 50%, transparent 51%);
+      mask: radial-gradient(circle, transparent 0 47%, #000 48.5%, #000 50%, transparent 51%);
+      transition: opacity var(--dur-slow) ease;
+    }
+    .total.milestone .ring-wrap::after { opacity: 0.85; animation: mileSpin 8s linear infinite; }
+    .total.milestone .ring-wrap::before { opacity: 1; filter: saturate(1.25); }
+    @keyframes mileSpin { to { transform: rotate(360deg); } }
+    /* in bar style the sheen has no ring to hug — give the bar a soft glow instead */
+    .total.style-bar.milestone .ring-wrap::after { display: none; }
+    .total.style-bar.milestone .bar-wrap { box-shadow: 0 0 0 1.5px var(--accent-2), 0 0 14px var(--btn-glow); }
+
     .ring-wrap.nudge { animation: nudge .42s ease; }
     @keyframes nudge {
       0%, 100% { transform: translateX(0); } 20% { transform: translateX(-5px); }
@@ -1319,6 +1355,7 @@
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .add-btn, .row, .version,
+      .total.milestone .ring-wrap::after,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
@@ -1393,6 +1430,8 @@
       </svg>
       <div class="ring-center"><span class="value" id="total">0</span></div>
     </div>
+    <!-- the same reading as the ring, for anyone who prefers a bar -->
+    <div class="bar-wrap" id="barWrap"><i id="barFill"></i></div>
     <div class="meta" id="meta"></div>
     <div class="goal-label" id="goalText"></div>
   </div>
@@ -1408,7 +1447,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.2 · © Avery LLC</div>
+  <div class="version">v10.3 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

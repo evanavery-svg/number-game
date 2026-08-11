@@ -532,6 +532,46 @@ test("comparePeriods puts one stretch beside the one before it", () => {
   assert.equal(core.comparePeriods(improving, Infinity, 4, now), null);
 });
 
+test("milestoneToday marks only the days worth marking", () => {
+  const now = new Date(2026, 7, 10, 12).getTime();
+  const zeros = (n) => Array(n).fill(0);
+
+  // exactly at a zero-day milestone
+  [7, 30, 100, 365].forEach((w) => {
+    const m = core.milestoneToday(zeros(w), [], now);
+    assert.ok(m, `streak of ${w} should be a milestone`);
+    assert.equal(m.kind, "zero");
+    assert.ok(m.label.includes(String(w)));
+  });
+  // a day past it is ordinary again — this is what keeps it meaningful
+  assert.equal(core.milestoneToday(zeros(8), [], now), null);
+  assert.equal(core.milestoneToday(zeros(31), [], now), null);
+  // and an ordinary run of good days is not a milestone
+  assert.equal(core.milestoneToday([1, 1, 1, 0, 0, 0], [], now), null);
+  assert.equal(core.milestoneToday([], [], now), null);
+  assert.equal(core.milestoneToday(null, null, now), null);
+
+  // a Time Since run that crossed a milestone today
+  const crossedToday = { name: "Clear", start: new Date(now - 7 * core.DAY - 3600e3).getTime() };
+  const t = core.milestoneToday([], [crossedToday], now);
+  assert.ok(t, "a run crossing 1 week today should be a milestone");
+  assert.equal(t.kind, "since");
+  assert.ok(t.label.includes("1 week"));
+
+  // the same milestone crossed yesterday is not today's news
+  const crossedYesterday = { name: "Clear", start: new Date(now - 7 * core.DAY - 30 * 3600e3).getTime() };
+  assert.equal(core.milestoneToday([], [crossedYesterday], now), null);
+
+  // a run too young to have reached anything
+  assert.equal(core.milestoneToday([], [{ name: "x", start: now - 60e3 }], now), null);
+  // a start in the future can't crash or qualify
+  assert.equal(core.milestoneToday([], [{ name: "x", start: now + core.DAY }], now), null);
+
+  // zero-day wins when both land on the same day
+  const both = core.milestoneToday(zeros(30), [crossedToday], now);
+  assert.equal(both.kind, "zero");
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

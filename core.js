@@ -195,6 +195,34 @@ function projectZero(goalLog, now) {
   const perDay = dropped / spanDays;
   return { date: new Date(t + (last.goal / perDay) * DAY), perDay, done: false };
 }
+// Is today worth marking? Used to give the ring a distinct treatment on
+// milestone days only — an ordinary good day should still look ordinary, or
+// the special one stops meaning anything.
+//
+// "Exactly at" rather than "past", so the ring is special for the whole day
+// you're on 7 / 30 / 100 / 365 and then goes back to normal.
+function milestoneToday(totals, sinceItems, now) {
+  const t = now == null ? Date.now() : now;
+  const streak = zeroStreak(totals || []);
+  if (ZERO_WINS.indexOf(streak) !== -1) {
+    return { kind: "zero", label: `${streak} days at zero` };
+  }
+  // a Time Since run that crossed a milestone during today's session day
+  const todayKey = sessionDate(new Date(t));
+  for (const it of sinceItems || []) {
+    if (!it || !it.start) continue;
+    const started = new Date(it.start).getTime();
+    if (isNaN(started)) continue;
+    const elapsed = t - started;
+    if (elapsed < 0) continue;
+    const m = highestMile(elapsed);
+    if (!m) continue;                                   // nothing reached yet
+    if (sessionDate(new Date(started + m)) !== todayKey) continue;
+    return { kind: "since", label: `${it.name || "your run"} · ${mileLabelFor(m)}` };
+  }
+  return null;
+}
+
 // ---- looking forward instead of back ----
 // Everything else here reports what already happened. This asks whether today
 // resembles the days that have historically gone worse, and says why. It is a
@@ -529,7 +557,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
-    dayRisk, periodStats, comparePeriods,
+    dayRisk, periodStats, comparePeriods, milestoneToday,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

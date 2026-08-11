@@ -17,6 +17,7 @@ const KEY_JOURNAL_SALT = "count.journalSalt";
 const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id for journal Face ID
 const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
 const KEY_RISK_LAST = "count.riskLast";       // session day of the last "day to watch" read
+const KEY_RING_STYLE = "count.ringStyle";     // "ring" (default) or "bar"
 const KEY_TL = "count.tl";                    // hidden flag for the optional tracker extras
 const KEY_RECAP_LAST = "count.recapLast";     // week key of the last recap shown
 const KEY_RECAP_SEEN = "count.recapSeen";     // week key of the last recap actually opened
@@ -68,6 +69,8 @@ const el = {
   total: document.getElementById("total"),
   totalWrap: document.getElementById("totalWrap"),
   ringWrap: document.getElementById("ringWrap"),
+  barWrap: document.getElementById("barWrap"),
+  barFill: document.getElementById("barFill"),
   ringProg: document.getElementById("ringProg"),
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
@@ -235,6 +238,7 @@ let gameOn = load(KEY_GAME_ON, true);       // daily focus game (toggle in Setti
 let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
 let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let plans = load(KEY_PLANS, []);            // if-then plans
+let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
@@ -2173,6 +2177,13 @@ function renderTop(animate) {
   const zone = zoneOf();
   setValue(today, animate);
 
+  // ring or bar — the same reading either way, just your preference
+  el.totalWrap.classList.toggle("style-bar", ringStyle === "bar");
+  // a milestone day gets a distinct treatment; every other day stays ordinary,
+  // which is the only reason the special one reads as special
+  const mile = milestoneToday(history.map((d) => d.total), since);
+  el.totalWrap.classList.toggle("milestone", !!mile);
+
   // colour the today area by how close we are to the goal
   el.totalWrap.classList.remove("zone-safe", "zone-warn", "zone-over");
   if (zone !== "none") el.totalWrap.classList.add("zone-" + zone);
@@ -2181,7 +2192,10 @@ function renderTop(animate) {
   // streak line — tinted green while alive (Feature 2); a warm hello on a blank first run (Feature 7)
   const streak = underStreak();
   const firstRun = history.length === 0 && taps === 0 && today === 0;
-  if (streak > 0) {
+  if (mile) {
+    el.meta.textContent = `🎉 ${mile.label}`;
+    el.meta.classList.add("streak");
+  } else if (streak > 0) {
     el.meta.textContent = `✓ ${streak} ${streak === 1 ? "day" : "days"} under goal`;
     el.meta.classList.add("streak");
   } else {
@@ -2197,6 +2211,7 @@ function renderTop(animate) {
     const frac = goal > 0 ? Math.min(1, today / goal) : (today > 0 ? 1 : 0);
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
     updateRingCap(frac);
+    if (el.barFill) el.barFill.style.width = (frac * 100) + "%";
     // progress is already shown by the ring, the number's colour and the
     // button's "X left today" — no separate goal caption needed
     el.goalText.style.display = "none";
@@ -2204,6 +2219,7 @@ function renderTop(animate) {
     el.totalWrap.classList.remove("has-goal");
     el.ringProg.style.strokeDashoffset = RING_C;   // just the grey frame
     updateRingCap(0);
+    if (el.barFill) el.barFill.style.width = "0%";
     el.goalText.style.display = "";
     el.goalText.classList.add("hint");
     el.goalText.textContent = "Tap to set a daily goal →";
@@ -3092,6 +3108,24 @@ function openAppearanceSettings() {
     };
     buildSwatches();
     s.appendChild(themeGrid);
+    // ring or bar — your call, not the app's
+    addEl(s, "label", "Progress");
+    const styleRow = document.createElement("div");
+    styleRow.className = "seg-row";
+    [{ k: "ring", n: "Ring" }, { k: "bar", n: "Bar" }].forEach((o) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "seg-btn" + (ringStyle === o.k ? " on" : "");
+      btn.textContent = o.n;
+      btn.addEventListener("click", () => {
+        ringStyle = o.k; save(KEY_RING_STYLE, ringStyle); buzz(8);
+        styleRow.querySelectorAll(".seg-btn").forEach((x) => x.classList.toggle("on", x === btn));
+        renderTop();
+      });
+      styleRow.appendChild(btn);
+    });
+    s.appendChild(styleRow);
+
     autoInput = makeToggle(s, "Switch theme every day", themeAuto);
     autoInput.addEventListener("change", () => {
       themeAuto = autoInput.checked;
