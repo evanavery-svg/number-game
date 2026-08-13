@@ -18,6 +18,7 @@ const KEY_JOURNAL_BIO = "count.journalBio";   // base64 WebAuthn credential id f
 const KEY_RISKY_LAST = "count.riskyLast";     // "YYYY-MM-DD-HH" of the last risky-time heads-up
 const KEY_RISK_LAST = "count.riskLast";       // session day of the last "day to watch" read
 const KEY_RING_STYLE = "count.ringStyle";     // "ring" (default) or "bar"
+const KEY_SHEEN = "count.sheen";              // bool — the rotating ring sheen
 const KEY_TL = "count.tl";                    // hidden flag for the optional tracker extras
 const KEY_RECAP_LAST = "count.recapLast";     // week key of the last recap shown
 const KEY_RECAP_SEEN = "count.recapSeen";     // week key of the last recap actually opened
@@ -239,6 +240,11 @@ let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
 let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let plans = load(KEY_PLANS, []);            // if-then plans
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
+let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
+// One per day, picked by date like the theme rotation — holds still while
+// you're using the app, different tomorrow. "crown" is reserved for milestone
+// days and deliberately never appears in this pool.
+const RING_SPINS = ["comet", "trail", "twin", "drift", "reverse", "breath"];
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
@@ -2183,6 +2189,9 @@ function renderTop(animate) {
   // which is the only reason the special one reads as special
   const mile = milestoneToday(history.map((d) => d.total), since);
   el.totalWrap.classList.toggle("milestone", !!mile);
+  // today's sheen: the reserved one on a milestone, otherwise the day's turn
+  RING_SPINS.concat("crown").forEach((v) => el.totalWrap.classList.remove("spin-" + v));
+  if (sheenOn) el.totalWrap.classList.add("spin-" + (mile ? "crown" : variantForDay(dayIndex(), RING_SPINS)));
 
   // colour the today area by how close we are to the goal
   el.totalWrap.classList.remove("zone-safe", "zone-warn", "zone-over");
@@ -2844,6 +2853,20 @@ function openSheet(builder) {
   staggerIn(el.sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
 }
 function closeSheet() { clearWorryTimer(); if (cravingTimer) { clearInterval(cravingTimer); cravingTimer = null; } el.overlay.classList.remove("show"); }
+
+// The ring sheen runs continuously, so pause it whenever something covers the
+// ring. Watching the overlays for class changes is one hook that can't drift,
+// rather than remembering to call this from every open/close site.
+function syncOverlayFlag() {
+  const up = [...document.querySelectorAll(".overlay, .panel-overlay")].some((o) => o.classList.contains("show"));
+  document.body.classList.toggle("overlay-up", up);
+}
+(function watchOverlays() {
+  const obs = new MutationObserver(syncOverlayFlag);
+  document.querySelectorAll(".overlay, .panel-overlay").forEach((o) =>
+    obs.observe(o, { attributes: true, attributeFilter: ["class"] }));
+  syncOverlayFlag();
+})();
 function addEl(parent, tag, text, cls) {
   const e = document.createElement(tag);
   if (text != null) e.textContent = text;
@@ -3125,6 +3148,12 @@ function openAppearanceSettings() {
       styleRow.appendChild(btn);
     });
     s.appendChild(styleRow);
+
+    const sheenToggle = makeToggle(s, "Ring shimmer", sheenOn);
+    sheenToggle.addEventListener("change", () => {
+      sheenOn = sheenToggle.checked; save(KEY_SHEEN, sheenOn); buzz(8); renderTop();
+    });
+    addEl(s, "p", "A slow sheen around the ring — a different one each day.", "sub");
 
     autoInput = makeToggle(s, "Switch theme every day", themeAuto);
     autoInput.addEventListener("change", () => {

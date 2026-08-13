@@ -393,12 +393,54 @@
       mask: radial-gradient(circle, transparent 0 47%, #000 48.5%, #000 50%, transparent 51%);
       transition: opacity var(--dur-slow) ease;
     }
-    .total.milestone .ring-wrap::after { opacity: 0.85; animation: mileSpin 8s linear infinite; }
-    .total.milestone .ring-wrap::before { opacity: 1; filter: saturate(1.25); }
     @keyframes mileSpin { to { transform: rotate(360deg); } }
-    /* in bar style the sheen has no ring to hug — give the bar a soft glow instead */
-    .total.style-bar.milestone .ring-wrap::after { display: none; }
+    @keyframes mileSpinRev { to { transform: rotate(-360deg); } }
+    @keyframes sheenBreath { 0%, 100% { opacity: 0.30; } 50% { opacity: 0.85; } }
+
+    /* ---- the daily sheen ----
+       One variant per day, chosen by date the way the theme rotation is, so it
+       holds still while you're using the app and turns over at midnight. Each
+       is the same conic ring differing only in arc, speed and direction. */
+    .total[class*="spin-"] .ring-wrap::after { opacity: 0.7; animation: mileSpin 8s linear infinite; }
+
+    .total.spin-comet .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 62%, var(--accent-2) 78%, transparent 92% 100%);
+      animation-duration: 8s;
+    }
+    .total.spin-trail .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 40%, var(--accent-2) 82%, transparent 96% 100%);
+      animation-duration: 11s; opacity: 0.55;
+    }
+    .total.spin-twin .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 6%, var(--accent-2) 14%, transparent 22% 56%, var(--accent-2) 64%, transparent 72% 100%);
+      animation-duration: 14s; opacity: 0.5;
+    }
+    .total.spin-drift .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 20%, var(--accent-2) 60%, transparent 98% 100%);
+      animation-duration: 20s; opacity: 0.38;
+    }
+    .total.spin-reverse .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 62%, var(--accent-2) 78%, transparent 92% 100%);
+      animation-name: mileSpinRev; animation-duration: 9s;
+    }
+    .total.spin-breath .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 50%, var(--accent-2) 80%, transparent 94% 100%);
+      animation: mileSpin 10s linear infinite, sheenBreath 4.5s ease-in-out infinite;
+    }
+    /* reserved for milestone days — never in the daily pool, so seeing it means
+       something. Brighter, doubled, faster, over a lifted halo. */
+    .total.spin-crown .ring-wrap::after {
+      background: conic-gradient(from 0deg, transparent 0 4%, var(--accent-2) 12%, transparent 20% 34%, var(--accent) 44%, transparent 54% 70%, var(--accent-2) 80%, transparent 90% 100%);
+      animation-duration: 5.5s; opacity: 0.95;
+    }
+    .total.spin-crown .ring-wrap::before { opacity: 1; filter: saturate(1.3); }
+
+    /* nothing to spin around in bar style — deliberately left clean, except
+       that a milestone still gets its glow */
+    .total.style-bar .ring-wrap::after { display: none; }
     .total.style-bar.milestone .bar-wrap { box-shadow: 0 0 0 1.5px var(--accent-2), 0 0 14px var(--btn-glow); }
+    /* invisible behind a sheet or panel — don't burn cycles animating it */
+    body.overlay-up .total[class*="spin-"] .ring-wrap::after { animation-play-state: paused; }
 
     .ring-wrap.nudge { animation: nudge .42s ease; }
     @keyframes nudge {
@@ -1355,7 +1397,7 @@
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .add-btn, .row, .version,
-      .total.milestone .ring-wrap::after,
+      .total[class*="spin-"] .ring-wrap::after,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
@@ -1447,7 +1489,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.3 · © Avery LLC</div>
+  <div class="version">v10.4 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

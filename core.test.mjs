@@ -572,6 +572,23 @@ test("milestoneToday marks only the days worth marking", () => {
   assert.equal(both.kind, "zero");
 });
 
+test("variantForDay cycles a pool by day, like the theme rotation", () => {
+  const pool = ["a", "b", "c"];
+  assert.equal(core.variantForDay(0, pool), "a");
+  assert.equal(core.variantForDay(1, pool), "b");
+  assert.equal(core.variantForDay(2, pool), "c");
+  assert.equal(core.variantForDay(3, pool), "a");        // wraps
+  assert.equal(core.variantForDay(-1, pool), "c");       // negative index behaves
+  assert.equal(core.variantForDay(0, ["only"]), "only"); // single-entry pool
+  assert.equal(core.variantForDay(99, ["only"]), "only");
+  assert.equal(core.variantForDay(0, []), null);
+  assert.equal(core.variantForDay(0, null), null);
+  // stable for a given day, and every entry is reachable across one cycle
+  assert.equal(core.variantForDay(7, pool), core.variantForDay(7, pool));
+  const seen = new Set([0, 1, 2].map((i) => core.variantForDay(i, pool)));
+  assert.equal(seen.size, pool.length);
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

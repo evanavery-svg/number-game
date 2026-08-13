@@ -195,6 +195,15 @@ function projectZero(goalLog, now) {
   const perDay = dropped / spanDays;
   return { date: new Date(t + (last.goal / perDay) * DAY), perDay, done: false };
 }
+// Pick one of a pool by day, the way the theme rotation does — stable for the
+// whole day, different tomorrow. Handles a negative day index the same way.
+function variantForDay(dayIdx, pool) {
+  const n = (pool || []).length;
+  if (!n) return null;
+  const i = Math.floor(dayIdx || 0);
+  return pool[((i % n) + n) % n];
+}
+
 // Is today worth marking? Used to give the ring a distinct treatment on
 // milestone days only — an ordinary good day should still look ordinary, or
 // the special one stops meaning anything.
@@ -557,7 +566,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
-    dayRisk, periodStats, comparePeriods, milestoneToday,
+    dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
