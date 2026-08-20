@@ -442,6 +442,29 @@
     /* invisible behind a sheet or panel — don't burn cycles animating it */
     body.overlay-up .total[class*="spin-"] .ring-wrap::after { animation-play-state: paused; }
 
+    /* ---- the pulse strip ----
+       How you're doing, on the home screen. It animates in so it reads as
+       arriving, but it never has to be dismissed — the app already asks enough
+       of you on open. Tap to move to the next insight. */
+    .pulse {
+      display: block; margin: var(--sp-3) auto 0; max-width: 92%;
+      background: none; border: none; padding: 6px var(--sp-3);
+      font-family: inherit; font-size: var(--fs-small); font-weight: 600;
+      color: var(--muted); line-height: 1.35; cursor: pointer; text-align: center;
+      border-radius: 10px;
+      animation: pulseIn var(--dur-slow) var(--ease-out) both;
+      transition: opacity var(--dur-base) ease, background var(--dur-fast) var(--ease-out);
+    }
+    .pulse:active { background: var(--key); }
+    .pulse b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .pulse.swap { opacity: 0; }
+    @keyframes pulseIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* the trend line draws itself rather than simply appearing — the bars
+       already grow in, the line was the odd one out */
+    .trend-poly.draw { animation: trendDraw 0.9s var(--ease-out) both; }
+    @keyframes trendDraw { from { stroke-dashoffset: var(--dash, 400); } to { stroke-dashoffset: 0; } }
+
     .ring-wrap.nudge { animation: nudge .42s ease; }
     @keyframes nudge {
       0%, 100% { transform: translateX(0); } 20% { transform: translateX(-5px); }
@@ -1397,7 +1420,7 @@
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .add-btn, .row, .version,
-      .total[class*="spin-"] .ring-wrap::after,
+      .total[class*="spin-"] .ring-wrap::after, .pulse, .trend-poly.draw,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
@@ -1475,6 +1498,8 @@
     <!-- the same reading as the ring, for anyone who prefers a bar -->
     <div class="bar-wrap" id="barWrap"><i id="barFill"></i></div>
     <div class="meta" id="meta"></div>
+    <!-- one insight at a time; tap to cycle. Always present, never dismissed. -->
+    <button class="pulse" id="pulse" style="display:none" aria-live="polite"></button>
     <div class="goal-label" id="goalText"></div>
   </div>
 
@@ -1489,7 +1514,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.4 · © Avery LLC</div>
+  <div class="version">v10.5 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1577,6 +1602,7 @@
           <div class="chart-card" id="recordsCard" style="display:none"></div>
           <div class="chart-card" id="calCard" style="display:none"></div>
           <div class="chart-card" id="yearCard" style="display:none"></div>
+          <div class="chart-card" id="lifeCard" style="display:none"></div>
           <div class="history" id="history">
             <div class="section-title">History</div>
             <div class="hist-empty" id="histEmpty">No previous days yet.</div>
@@ -1585,6 +1611,7 @@
 
         <!-- PATTERNS: what correlates with what -->
         <div class="seg-page" id="segPatterns" style="display:none">
+          <div class="chart-card" id="shapeCard" style="display:none"></div>
           <div class="chart-card" id="weekdayCard" style="display:none"></div>
           <div class="chart-card" id="timeCard" style="display:none"></div>
           <div class="chart-card" id="moodCard" style="display:none"></div>

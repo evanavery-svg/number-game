@@ -589,6 +589,101 @@ test("variantForDay cycles a pool by day, like the theme rotation", () => {
   assert.equal(seen.size, pool.length);
 });
 
+test("dayShape reads the timestamps nothing else has used", () => {
+  const at = (h, m) => new Date(2026, 7, 12, h, m || 0).getTime();
+  const now = at(23, 30);
+  const taps = [at(20, 0), at(21, 0), at(21, 30), at(22, 0)].map((t) => ({ t, amt: 0.5, total: 1 }));
+  const s = core.dayShape(taps, now);
+  assert.equal(s.n, 4);
+  assert.equal(s.firstAt, at(20, 0));
+  assert.equal(s.lastAt, at(22, 0));
+  assert.equal(s.longestGapMs, core.HR);              // 20:00 → 21:00
+  assert.equal(s.sinceLast, 90 * 60e3);               // 22:00 → 23:30
+  assert.ok(s.peakHour >= 20 && s.peakHour <= 22);
+
+  // a single tap has no gap to measure and must not produce NaN
+  const one = core.dayShape([{ t: at(9, 0) }], at(10, 0));
+  assert.equal(one.n, 1);
+  assert.equal(one.longestGapMs, 0);
+  assert.equal(one.sinceLast, core.HR);
+  // an evening that runs past midnight keeps its real clock hours
+  const late = core.dayShape([{ t: at(23, 0) }, { t: new Date(2026, 7, 13, 1, 0).getTime() }], new Date(2026, 7, 13, 2, 0).getTime());
+  assert.equal(late.n, 2);
+  assert.equal(late.longestGapMs, 2 * core.HR);
+  // nothing logged
+  assert.equal(core.dayShape([], now), null);
+  assert.equal(core.dayShape(null, now), null);
+  // junk entries are ignored rather than crashing
+  assert.equal(core.dayShape([{ t: NaN }, { t: at(9, 0) }], at(10, 0)).n, 1);
+});
+
+test("consistency measures steadiness, not level", () => {
+  // same average, very different experience
+  assert.ok(core.consistency([2, 2, 2, 2, 2]) > core.consistency([0, 6, 0, 6, 0]));
+  assert.equal(core.consistency([2, 2, 2, 2, 2]), 100);      // identical days
+  assert.equal(core.consistency([0, 0, 0, 0]), 100);         // all zero — no divide by zero
+  const swingy = core.consistency([0, 6, 0, 6]);
+  assert.ok(swingy >= 0 && swingy <= 100);
+  assert.equal(core.consistency([1, 2]), null);              // too little to judge
+  assert.equal(core.consistency([]), null);
+  assert.equal(core.consistency(null), null);
+});
+
+test("lifetime rolls up everything since day one", () => {
+  const days = [
+    { date: "2026-01-05", total: 3 }, { date: "2026-01-03", total: 0 }, { date: "2026-01-04", total: 2 },
+  ];
+  const l = core.lifetime(days);
+  assert.equal(l.days, 3);
+  assert.equal(l.total, 5);
+  assert.equal(l.zeroDays, 1);
+  assert.equal(l.best, 3);
+  assert.equal(l.first, "2026-01-03");                       // earliest, not first in the array
+  assert.deepEqual(core.lifetime([]), { days: 0, total: 0, zeroDays: 0, best: 0, first: null });
+  assert.equal(core.lifetime(null).days, 0);
+});
+
+test("nextTarget points at the nearest thing still ahead", () => {
+  // 3 days at zero, chasing 7
+  const z = core.nextTarget([1, 0, 0, 0], 0, []);
+  assert.equal(z.kind, "zeroWin");
+  assert.equal(z.at, 7);
+  assert.equal(z.need, 4);
+  // one already celebrated is skipped
+  assert.equal(core.nextTarget([1, 0, 0, 0], 0, [7]).at, 30);
+  // with a goal above zero, chase the best under-goal streak
+  const b = core.nextTarget([1, 1, 1, 1, 9, 1, 1], 4, []);
+  assert.equal(b.kind, "bestStreak");
+  assert.equal(b.at, 4);                                     // the earlier run of four
+  assert.equal(b.need, 3);                                   // current run is 2, so 3 more
+  // already on the best run — nothing to chase
+  assert.equal(core.nextTarget([1, 1, 1], 4, []), null);
+  assert.equal(core.nextTarget([], 4, []), null);
+});
+
+test("pulseLines phrases the numbers without contradicting them", () => {
+  const lines = core.pulseLines({
+    compare: { current: { avg: 1.8 }, previous: { avg: 2.4, n: 20 }, delta: { avg: -0.6 } },
+    consistency: 80,
+    shape: { n: 5, peakHour: 20, sinceLast: 2 * core.HR },
+    next: { kind: "zeroWin", need: 4, at: 7 },
+    life: { days: 412, zeroDays: 12 },
+  });
+  assert.ok(lines.some((l) => /Averaging 1.8, down from 2.4/.test(l)));
+  assert.ok(lines.some((l) => /Very steady/.test(l)));
+  assert.ok(lines.some((l) => /8 PM and 11 PM/.test(l)));
+  assert.ok(lines.some((l) => /4 days to 7 at zero/.test(l)));
+  assert.ok(lines.some((l) => /412 days logged/.test(l)));
+  // the running streak has its own line and must not be duplicated here
+  assert.ok(!lines.some((l) => /under goal/.test(l)));
+  // nothing to say is an empty list, never a broken sentence
+  assert.deepEqual(core.pulseLines({}), []);
+  assert.deepEqual(core.pulseLines(null), []);
+  // singular/plural
+  assert.ok(core.pulseLines({ next: { kind: "zeroWin", need: 1, at: 7 } })[0].includes("1 day to"));
+  assert.ok(core.pulseLines({ life: { days: 1, zeroDays: 0 } })[0].includes("1 day logged"));
+});
+
 test("resetPatterns links slips to lower-mood days when given moods", () => {
   const mk = (y, mo, d) => new Date(y, mo, d, 12).toISOString();
   const item = { log: [ { at: mk(2026, 5, 3), ran: 1 }, { at: mk(2026, 5, 10), ran: 1 } ] };

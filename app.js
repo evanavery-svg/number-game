@@ -70,6 +70,7 @@ const el = {
   total: document.getElementById("total"),
   totalWrap: document.getElementById("totalWrap"),
   ringWrap: document.getElementById("ringWrap"),
+  pulse: document.getElementById("pulse"),
   barWrap: document.getElementById("barWrap"),
   barFill: document.getElementById("barFill"),
   ringProg: document.getElementById("ringProg"),
@@ -111,6 +112,8 @@ const el = {
   ladderCard: document.getElementById("ladderCard"),
   recordsCard: document.getElementById("recordsCard"),
   trendCard: document.getElementById("trendCard"),
+  shapeCard: document.getElementById("shapeCard"),
+  lifeCard: document.getElementById("lifeCard"),
   yearCard: document.getElementById("yearCard"),
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
@@ -245,6 +248,50 @@ let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way 
 // you're using the app, different tomorrow. "crown" is reserved for milestone
 // days and deliberately never appears in this pool.
 const RING_SPINS = ["comet", "trail", "twin", "drift", "reverse", "breath"];
+
+// The home strip: one line at a time about how you're doing. Which one it
+// starts on rotates by day so it isn't the same sentence every morning; a tap
+// moves through the rest. Rebuilt on render, so it always matches the numbers.
+let pulseIdx = null;
+// The history-derived half is four full scans of every day ever logged, and it
+// can't change on a tap — only when a day is logged or the goal moves. Cache it
+// on that, or renderTop pays for a year of history on every press.
+let pulseCache = { key: null, ctx: null };
+function pulseContext() {
+  const key = history.length + ":" + goal + ":" + goalOn;
+  if (pulseCache.key !== key) {
+    const totals = history.map((d) => d.total);
+    pulseCache = { key, ctx: {
+      compare: hasGoal() ? comparePeriods(history, 30, goal) : comparePeriods(history, 30, Infinity),
+      consistency: consistency(totals.slice(-30)),
+      next: hasGoal() ? nextTarget(totals, goal, load(KEY_ZERO_WINS, [])) : null,
+      life: lifetime(history),
+    } };
+  }
+  // today's shape is only today's taps — cheap enough to redo each time
+  return Object.assign({ shape: dayShape(tapLog) }, pulseCache.ctx);
+}
+function renderPulse(animate) {
+  const el0 = el.pulse;
+  if (!el0) return;
+  const lines = pulseLines(pulseContext());
+  if (!lines.length) { el0.style.display = "none"; return; }
+  if (pulseIdx == null) pulseIdx = variantForDay(dayIndex(), lines.map((_, i) => i)) || 0;
+  const line = lines[((pulseIdx % lines.length) + lines.length) % lines.length];
+  el0.style.display = "block";
+  // bold the numbers so the line scans without being read word by word
+  el0.innerHTML = line.replace(/(\d[\d.,]*%?)/g, "<b>$1</b>");
+  el0.setAttribute("aria-label", line);
+  if (animate) { el0.classList.remove("swap"); }
+}
+function cyclePulse() {
+  const n = pulseLines(pulseContext()).length;
+  if (n < 2) return;
+  pulseIdx = (pulseIdx == null ? 0 : pulseIdx + 1) % n;
+  el.pulse.classList.add("swap");
+  setTimeout(() => { renderPulse(); el.pulse.classList.remove("swap"); }, reduceMotion() ? 0 : 180);
+  buzz(6);
+}
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
@@ -922,6 +969,21 @@ function staggerIn(container, step, cap) {
 }
 // Replay a bar/fill growth: shrink to nothing, force reflow, restore —
 // the element's existing CSS transition animates it back to size.
+// The bars grow in; the trend line used to simply appear. Sweep it on with a
+// dash offset so the shape reads as a progression rather than a picture.
+function drawLine(container) {
+  if (reduceMotion() || !container) return;
+  const line = container.querySelector(".trend-poly");
+  if (!line || !line.getTotalLength) return;
+  const len = Math.ceil(line.getTotalLength());
+  if (!len) return;
+  line.style.strokeDasharray = len;
+  line.style.setProperty("--dash", len);
+  line.classList.remove("draw");
+  void line.getBoundingClientRect();
+  line.classList.add("draw");
+}
+
 function growBars(container, sel, prop) {
   if (reduceMotion() || !container) return;
   prop = prop || "height";
@@ -1188,8 +1250,8 @@ function renderRangeRow() {
 // were reconstructed for panels nobody had open.
 const SEG_RENDER = {
   overview: () => { renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
-  journey:  () => { renderLadder(); renderRecords(); renderCalendar(); renderYear(); renderHistory(); },
-  patterns: () => { renderWeekday(); renderTimeOfDay(); renderMood(); renderConnections(); renderWins(); },
+  journey:  () => { renderLadder(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
+  patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderMood(); renderConnections(); renderWins(); },
 };
 function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
 
@@ -1219,6 +1281,8 @@ function renderStatTiles() {
     // the rest on demand
     g2.appendChild(statTile(String(bestStreak()), "Best streak"));
     g2.appendChild(statTile(String(n), "Days logged"));
+    const cons = consistency(inRange.map((d) => d.total));
+    if (cons != null) g2.appendChild(statTile(cons + "%", "Consistency", { good: cons >= 70 }));
     // once you're near/at the finish line, days at zero is the number that counts
     const zs = zeroStreak(history.map((d) => d.total));
     const zeroDays = history.filter((d) => d.total === 0).length;
@@ -1304,6 +1368,49 @@ function renderCompare() {
   }
   line.style.display = "block";
   line.innerHTML = html;
+}
+
+// How today has unfolded — built from the tap timestamps, which nothing else
+// has ever read this way.
+function renderShape() {
+  const card = el.shapeCard;
+  const s = dayShape(tapLog);
+  if (!s || s.n < 2) { card.style.display = "none"; return; }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "How today went", "section-title");
+  const line = document.createElement("div"); line.className = "wk-callout";
+  line.innerHTML = `Mostly between <b>${hourLabel(s.peakHour)}</b> and <b>${hourLabel((s.peakHour + 3) % 24)}</b>`;
+  card.appendChild(line);
+  const rows = [
+    ["First", new Date(s.firstAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })],
+    ["Last", new Date(s.lastAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })],
+    ["Longest gap", durLabel(s.longestGapMs)],
+    ["Since the last", durLabel(s.sinceLast)],
+  ];
+  rows.forEach(([k, v]) => {
+    const r = document.createElement("div"); r.className = "win-item";
+    addEl(r, "span", k, "since-log-date");
+    const b = document.createElement("b"); b.textContent = v; b.style.marginLeft = "auto";
+    r.appendChild(b); card.appendChild(r);
+  });
+}
+
+// Everything since day one — the long view the rolling windows can't show.
+function renderLife() {
+  const card = el.lifeCard;
+  const l = lifetime(history);
+  if (!l.days) { card.style.display = "none"; return; }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "Since day one", "section-title");
+  if (l.first) {
+    addEl(card, "div", `Tracking since ${new Date(l.first + "T12:00:00").toLocaleDateString(undefined, { month: "long", year: "numeric" })}`, "mood-corr");
+  }
+  const grid = document.createElement("div"); grid.className = "insights-grid";
+  grid.appendChild(statTile(String(l.days), "Days logged"));
+  grid.appendChild(statTile(fmt(l.total), "Total logged"));
+  grid.appendChild(statTile(String(l.zeroDays), "Days at zero", { good: l.zeroDays > 0 }));
+  grid.appendChild(statTile(fmt(l.best), "Highest day"));
+  card.appendChild(grid);
 }
 
 // On-pace projection for the current calendar month.
@@ -1976,7 +2083,7 @@ function openDayFix(ds) {
         save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
       } else {
         history = upsertDay(history, ds, v);
-        save(KEY_HISTORY, history);
+        save(KEY_HISTORY, history); invalidatePulse();
       }
       buzz(12);
       closeSheet(); render();
@@ -2145,6 +2252,7 @@ function openInsights() {
   staggerIn(el.insightsGrid, 30);
   const page = document.getElementById("segOverview");
   if (page) staggerIn(page, 55, 8);
+  drawLine(el.trendCard);
   growBars(el.weekdayCard, ".wk-bar");
   growBars(el.timeCard, ".tod-bar");
   growBars(el.moodCard, ".ms-bar");
@@ -2179,6 +2287,8 @@ function updateRingCap(frac) {
 
 // Cheap render for the today area only — used on every tap so rapid
 // tapping never rebuilds the history list.
+function invalidatePulse() { pulseCache.key = null; }
+
 function renderTop(animate) {
   const zone = zoneOf();
   setValue(today, animate);
@@ -2245,6 +2355,7 @@ function renderTop(animate) {
     el.addSub.textContent = "tap to add";
   }
 
+  renderPulse();
   el.undo.disabled = taps === 0;
   announceTotal();
 }
@@ -2816,7 +2927,9 @@ function commitDay(note, dateStr, extras) {
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   el.total.textContent = fmt(total);   // seed the count-down start value
   renderTop(true);
-  renderHistory();
+  // history lives inside the Journey tab and renders with it — rebuilding it
+  // here was a leftover from before the panel became render-on-open
+  render();
 
   // animate the freshly logged day sliding into the list (only when it's the
   // most recent entry — a back-dated day lands further down, not at the top)
@@ -3318,7 +3431,7 @@ function openHistorySheet(idx) {
       }
       // keep chronological order so charts/streaks/calendar stay correct
       history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
-      save(KEY_HISTORY, history);
+      save(KEY_HISTORY, history); invalidatePulse();
       closeSheet(); render();
     }));
     s.appendChild(makeBtn("Delete this day", "danger", () => {
@@ -4985,6 +5098,7 @@ el.undo.addEventListener("click", undo);
 el.end.addEventListener("click", openEndDay);
 el.gear.addEventListener("click", openSettings);
 el.moreBtn.addEventListener("click", openMore);
+el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
 el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSettings(); } });
 

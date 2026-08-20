@@ -232,6 +232,119 @@ function milestoneToday(totals, sinceItems, now) {
   return null;
 }
 
+// ---- the shape of a day ----
+// Every tap has carried a timestamp all along and nothing has ever read them
+// for *when* in the day you log. Buckets by session hour so a late night after
+// midnight belongs to the evening it came from, not to the next morning.
+function dayShape(taps, now) {
+  const list = (taps || []).filter((t) => t && isFinite(t.t)).sort((a, b) => a.t - b.t);
+  const n = list.length;
+  if (!n) return null;
+  const hours = new Array(24).fill(0);
+  list.forEach((t) => { hours[new Date(t.t).getHours()]++; });
+  // the busiest 3-hour window reads better than a single spiky hour
+  let peakHour = 0, peakN = -1;
+  for (let h = 0; h < 24; h++) {
+    const win = hours[h] + hours[(h + 1) % 24] + hours[(h + 2) % 24];
+    if (win > peakN) { peakN = win; peakHour = h; }
+  }
+  let longestGapMs = 0;
+  for (let i = 1; i < n; i++) longestGapMs = Math.max(longestGapMs, list[i].t - list[i - 1].t);
+  // and the gap since the last one, which is the streak that's still running
+  const sinceLast = Math.max(0, (now == null ? Date.now() : now) - list[n - 1].t);
+  return { n, peakHour, peakN, firstAt: list[0].t, lastAt: list[n - 1].t, longestGapMs, sinceLast };
+}
+
+// How steady you are, not how low. Averaging 2 with days of 0 and 6 is a
+// different place from a level 2. 100 = identical every day.
+function consistency(totals) {
+  const xs = (totals || []).filter((x) => typeof x === "number");
+  if (xs.length < 3) return null;
+  const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
+  if (mean === 0) return 100;                       // every day at zero is perfectly steady
+  const variance = xs.reduce((s, x) => s + (x - mean) * (x - mean), 0) / xs.length;
+  const cv = Math.sqrt(variance) / mean;            // coefficient of variation
+  return Math.max(0, Math.min(100, Math.round((1 - cv) * 100)));
+}
+
+// Everything since day one, for the "look how far you've come" view.
+function lifetime(entries) {
+  const days = (entries || []).filter((d) => d && typeof d.total === "number");
+  if (!days.length) return { days: 0, total: 0, zeroDays: 0, best: 0, first: null };
+  const totals = days.map((d) => d.total);
+  return {
+    days: days.length,
+    total: round2(totals.reduce((s, x) => s + x, 0)),
+    zeroDays: totals.filter((x) => x === 0).length,
+    best: Math.max(...totals),
+    first: days.map((d) => d.date).filter(Boolean).sort()[0] || null,
+  };
+}
+
+// The nearest thing still ahead of you, so the records read forwards as well
+// as backwards. Returns null once there's nothing left to chase.
+function nextTarget(totals, goal, seenWins) {
+  const xs = totals || [];
+  const streak = zeroStreak(xs);
+  // the next zero-day milestone, if zero is the target
+  if (goal === 0 || streak > 0) {
+    const seen = seenWins || [];
+    for (const w of ZERO_WINS) {
+      if (streak < w && seen.indexOf(w) === -1) {
+        return { kind: "zeroWin", need: w - streak, at: w };
+      }
+    }
+  }
+  // otherwise: beating the longest run of days at or under the goal
+  if (!(goal >= 0)) return null;
+  let best = 0, run = 0, cur = 0;
+  xs.forEach((x) => { if (x <= goal) { run++; if (run > best) best = run; } else run = 0; });
+  for (let i = xs.length - 1; i >= 0 && xs[i] <= goal; i--) cur++;
+  if (best > 0 && cur < best) return { kind: "bestStreak", need: best - cur + 1, at: best };
+  return null;
+}
+
+// The home strip's lines, built here rather than in the DOM code so the
+// wording is testable and can't quietly disagree with the numbers behind it.
+// The running streak is deliberately absent — it already has its own line.
+function pulseLines(ctx) {
+  const c = ctx || {};
+  const out = [];
+
+  if (c.compare && c.compare.previous && c.compare.previous.n >= 3) {
+    const d = c.compare.delta.avg, cur = c.compare.current.avg, prev = c.compare.previous.avg;
+    if (Math.abs(d) < 0.05) out.push(`Averaging ${fmt(cur)} — steady on the previous stretch`);
+    else out.push(`Averaging ${fmt(cur)}, ${d < 0 ? "down" : "up"} from ${fmt(prev)}`);
+  }
+
+  if (c.consistency != null) {
+    if (c.consistency >= 75) out.push(`Very steady lately — ${c.consistency}% consistent`);
+    else if (c.consistency >= 45) out.push(`Fairly steady — ${c.consistency}% consistent`);
+    else out.push(`Swingy lately — ${c.consistency}% consistent`);
+  }
+
+  if (c.shape && c.shape.n >= 3) {
+    const a = c.shape.peakHour, b = (a + 3) % 24;
+    out.push(`You mostly log between ${hourLabel(a)} and ${hourLabel(b)}`);
+  }
+  if (c.shape && c.shape.sinceLast > HR) {
+    out.push(`${durLabel(c.shape.sinceLast)} since your last one`);
+  }
+
+  if (c.next) {
+    out.push(c.next.kind === "zeroWin"
+      ? `${c.next.need} day${c.next.need === 1 ? "" : "s"} to ${c.next.at} at zero`
+      : `${c.next.need} day${c.next.need === 1 ? "" : "s"} to beat your best streak`);
+  }
+
+  if (c.life && c.life.days > 0) {
+    out.push(`${c.life.days} day${c.life.days === 1 ? "" : "s"} logged since you started`);
+    if (c.life.zeroDays > 0) out.push(`${c.life.zeroDays} day${c.life.zeroDays === 1 ? "" : "s"} at zero so far`);
+  }
+
+  return out;
+}
+
 // ---- looking forward instead of back ----
 // Everything else here reports what already happened. This asks whether today
 // resembles the days that have historically gone worse, and says why. It is a
@@ -567,6 +680,7 @@ if (typeof module !== "undefined" && module.exports) {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
+    dayShape, consistency, lifetime, nextTarget, pulseLines,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
