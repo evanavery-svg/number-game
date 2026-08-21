@@ -232,6 +232,63 @@ function milestoneToday(totals, sinceItems, now) {
   return null;
 }
 
+// ---- data health ----
+// Every streak, average and taper decision is computed from history, and there
+// has never been a way to ask whether it's sound. Each check below corresponds
+// to a bug that actually shipped in this app, found by accident at the time.
+//
+// A false positive is worse than no tool at all — a check that complains about
+// healthy data trains you to ignore it — so each rule flags only what is
+// genuinely wrong, and backfilled days (a legitimate, deliberate shape) pass.
+function auditHistory(history, todayStr) {
+  const days = (history || []).filter(Boolean);
+  const out = [];
+  const add = (kind, severity, dates, detail) => out.push({ kind, severity, dates, detail });
+
+  // two entries on one date: the calendar reaches only one, both count to averages
+  const byDate = {};
+  days.forEach((d) => { if (d.date) (byDate[d.date] = byDate[d.date] || []).push(d); });
+  const dupes = Object.keys(byDate).filter((k) => byDate[k].length > 1).sort();
+  if (dupes.length) add("duplicateDate", "error", dupes, "Two entries share this date");
+
+  // dated after today — impossible, and it can't be reached from the calendar
+  if (todayStr) {
+    const future = days.filter((d) => d.date && String(d.date) > String(todayStr)).map((d) => d.date).sort();
+    if (future.length) add("futureDate", "error", future, "This day hasn't happened yet");
+  }
+
+  // unparseable or missing dates break every chart that groups by day
+  const bad = days.filter((d) => {
+    if (!d.date || !/^\d{4}-\d{2}-\d{2}$/.test(String(d.date))) return true;
+    const t = new Date(d.endedAt || d.date).getTime();
+    return isNaN(t);
+  }).map((d) => String(d.date || "(no date)"));
+  if (bad.length) add("badDate", "error", bad.sort(), "The date on this entry can't be read");
+
+  // a total that isn't a usable number poisons averages and streaks
+  const badTotal = days.filter((d) => typeof d.total !== "number" || !isFinite(d.total) || d.total < 0)
+    .map((d) => String(d.date || "(no date)"));
+  if (badTotal.length) add("badTotal", "error", badTotal.sort(), "The total on this entry isn't a number");
+
+  // no label — the day editor titles itself with it and would open blank
+  const noLabel = days.filter((d) => !d.label && d.date).map((d) => d.date).sort();
+  if (noLabel.length) add("missingLabel", "fixable", noLabel, "Missing its name — can be rebuilt from the date");
+
+  // out of order: charts and streak counting both read history front to back
+  const dated = days.filter((d) => d.date && /^\d{4}-\d{2}-\d{2}$/.test(String(d.date)));
+  let disordered = false;
+  for (let i = 1; i < dated.length; i++) if (dated[i].date < dated[i - 1].date) { disordered = true; break; }
+  if (disordered) add("outOfOrder", "fixable", [], "Entries aren't in date order");
+
+  // recorded tap times disagreeing with the tap count. Only flagged when times
+  // exist — a backfilled day has none and that's correct, not broken.
+  const mismatch = days.filter((d) => Array.isArray(d.tapTimes) && d.tapTimes.length > 0 &&
+    typeof d.taps === "number" && d.taps !== d.tapTimes.length).map((d) => d.date).sort();
+  if (mismatch.length) add("tapMismatch", "fixable", mismatch, "Tap count doesn't match the times recorded");
+
+  return out;
+}
+
 // ---- the shape of a day ----
 // Every tap has carried a timestamp all along and nothing has ever read them
 // for *when* in the day you log. Buckets by session hour so a late night after
@@ -680,7 +737,7 @@ if (typeof module !== "undefined" && module.exports) {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
-    dayShape, consistency, lifetime, nextTarget, pulseLines,
+    dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,

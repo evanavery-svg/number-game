@@ -324,6 +324,8 @@ test("dayStamp refuses a future date and always labels the day", () => {
   ["2026-07-28", null, "2026-08-31"].forEach((d) => assert.ok(core.dayStamp(d, now).label.length > 0));
 });
 
+const auditKinds = (h, today) => core.auditHistory(h, today).map((f) => f.kind);
+
 // Build `n` day entries ending today, from a totals array (oldest first).
 const days = (totals, now) => totals.map((t, i) => ({
   total: t,
@@ -682,6 +684,63 @@ test("pulseLines phrases the numbers without contradicting them", () => {
   // singular/plural
   assert.ok(core.pulseLines({ next: { kind: "zeroWin", need: 1, at: 7 } })[0].includes("1 day to"));
   assert.ok(core.pulseLines({ life: { days: 1, zeroDays: 0 } })[0].includes("1 day logged"));
+});
+
+test("auditHistory stays quiet on healthy data", () => {
+  // A check that complains about good data trains you to ignore it, so this
+  // is the assertion that matters most.
+  const clean = [
+    { date: "2026-08-01", label: "Aug 1, 2026", total: 2, taps: 4, endedAt: "2026-08-01T21:00:00.000Z", tapTimes: [1, 2, 3, 4] },
+    { date: "2026-08-02", label: "Aug 2, 2026", total: 0, taps: 0, endedAt: "2026-08-02T21:00:00.000Z", tapTimes: [] },
+    // backfilled: no tap times, taps 0 — a deliberate shape, not a fault
+    { date: "2026-08-03", label: "Aug 3, 2026", total: 3, taps: 0, endedAt: "2026-08-03T12:00:00.000Z", backfilled: true },
+    // a day logged before tap times were ever recorded
+    { date: "2026-08-04", label: "Aug 4, 2026", total: 1, taps: 2, endedAt: "2026-08-04T21:00:00.000Z" },
+  ];
+  assert.deepEqual(auditKinds(clean, "2026-08-10"), []);
+  assert.deepEqual(auditKinds([], "2026-08-10"), []);
+  assert.deepEqual(auditKinds(null, "2026-08-10"), []);
+  // today itself is not the future
+  assert.deepEqual(auditKinds([{ date: "2026-08-10", label: "x", total: 1, taps: 0, endedAt: "2026-08-10T09:00:00.000Z" }], "2026-08-10"), []);
+});
+
+test("auditHistory catches each bug that actually shipped", () => {
+  const ok = (d, extra) => Object.assign({ date: d, label: "L", total: 1, taps: 0, endedAt: d + "T21:00:00.000Z" }, extra);
+
+  // v9.5: two rows on one date
+  let f = core.auditHistory([ok("2026-08-01"), ok("2026-08-01")], "2026-08-10");
+  assert.equal(f.length, 1);
+  assert.equal(f[0].kind, "duplicateDate");
+  assert.deepEqual(f[0].dates, ["2026-08-01"]);
+
+  // v9.4: a day in the future
+  f = core.auditHistory([ok("2026-08-31")], "2026-08-10");
+  assert.equal(f[0].kind, "futureDate");
+  assert.deepEqual(f[0].dates, ["2026-08-31"]);
+
+  // v9.3: an entry with no label
+  f = core.auditHistory([ok("2026-08-01", { label: undefined })], "2026-08-10");
+  assert.equal(f[0].kind, "missingLabel");
+  assert.equal(f[0].severity, "fixable");
+
+  // v9.5: tap count contradicting the recorded times
+  f = core.auditHistory([ok("2026-08-01", { taps: 9, tapTimes: [1, 2] })], "2026-08-10");
+  assert.equal(f[0].kind, "tapMismatch");
+
+  // entries out of order
+  f = core.auditHistory([ok("2026-08-05"), ok("2026-08-01")], "2026-08-10");
+  assert.ok(f.some((x) => x.kind === "outOfOrder"));
+
+  // unreadable dates and totals
+  assert.ok(auditKinds([ok("nonsense")], "2026-08-10").includes("badDate"));
+  assert.ok(auditKinds([ok("2026-08-01", { total: "many" })], "2026-08-10").includes("badTotal"));
+  assert.ok(auditKinds([ok("2026-08-01", { total: -3 })], "2026-08-10").includes("badTotal"));
+
+  // several at once, all reported
+  const messy = [ok("2026-08-05"), ok("2026-08-01"), ok("2026-08-01"), ok("2026-09-30"), ok("2026-08-02", { label: undefined })];
+  const kinds = auditKinds(messy, "2026-08-10");
+  ["duplicateDate", "futureDate", "missingLabel", "outOfOrder"].forEach((k) =>
+    assert.ok(kinds.includes(k), `expected ${k} in ${kinds.join()}`));
 });
 
 test("resetPatterns links slips to lower-mood days when given moods", () => {

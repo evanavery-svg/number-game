@@ -3305,8 +3305,64 @@ function openReminderSettings() {
       }
       closeSheet(); checkReminder();
     }));
+    s.appendChild(makeBtn("Reminders when the app is closed", "", () => { closeSheet(); setTimeout(openClosedAppGuide, 300); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
+}
+
+// The honest workaround for the app's oldest limitation. iOS won't wake a
+// home-screen web app to notify you, and no amount of code here changes that —
+// but Shortcuts can, and the ?add= URL already exists. This explains how,
+// without pretending the app gained push notifications.
+function openClosedAppGuide() {
+  const base = location.origin + location.pathname;
+  openSheet((s) => {
+    addEl(s, "h3", "Reminders when the app is closed");
+    addEl(s, "p", "iPhone won't let a home-screen web app notify you while it isn't running, so this app can't do it on its own. Apple's Shortcuts app can, and it takes about two minutes to set up once.", "sub");
+
+    addEl(s, "label", "In the Shortcuts app");
+    const steps = document.createElement("ol");
+    steps.className = "guide-steps";
+    [
+      "Open Shortcuts, go to the Automation tab, and tap +",
+      "Choose Time of Day, pick your reminder time, and set it to Daily",
+      'Turn off "Ask Before Running" so it fires on its own',
+      'Add the action "Show Notification" and write whatever you want it to say',
+      'Optionally add "Open URL" and paste the link below, so tapping it opens the app',
+    ].forEach((t) => addEl(steps, "li", t));
+    s.appendChild(steps);
+
+    addEl(s, "label", "Your app link");
+    const link = document.createElement("input");
+    link.type = "text"; link.readOnly = true; link.value = base;
+    link.addEventListener("focus", () => link.select());
+    s.appendChild(link);
+    s.appendChild(makeBtn("Copy link", "", () => copyText(base, "Link copied")));
+
+    addEl(s, "label", "Bonus: log without opening the app");
+    addEl(s, "p", `A second shortcut with "Open URL" pointed at the link below adds ${fmt(step)} and closes again — handy from the home screen or Siri.`, "sub");
+    const quick = document.createElement("input");
+    quick.type = "text"; quick.readOnly = true; quick.value = base + "?add=" + fmt(step);
+    quick.addEventListener("focus", () => quick.select());
+    s.appendChild(quick);
+    s.appendChild(makeBtn("Copy quick-add link", "", () => copyText(base + "?add=" + fmt(step), "Quick-add link copied")));
+
+    addEl(s, "p", "On Android the same thing works with any automation app that can open a URL at a set time.", "sub");
+    s.appendChild(makeBtn("Back", "ghost", () => { closeSheet(); setTimeout(openReminderSettings, 300); }));
+  });
+}
+
+// Clipboard with a graceful fallback — the field above stays selectable either
+// way, so copying never becomes a dead end.
+function copyText(text, okMsg) {
+  const done = () => { buzz(10); toast(okMsg); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => toast("Select the field above and copy"));
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  toast("Select the field above and copy");
 }
 
 function openPrivacySettings() {
@@ -3319,6 +3375,82 @@ function openPrivacySettings() {
   });
 }
 
+// Everything you see in this app is computed from `history`, and until now
+// there was no way to ask whether it's sound. Each check maps to a bug that
+// really shipped. Deterministic problems can be fixed in place; anything that
+// needs a judgement call opens the day editor instead — the totals are yours.
+const HEALTH_TITLES = {
+  duplicateDate: "Two entries on one day",
+  futureDate: "Days in the future",
+  badDate: "Unreadable dates",
+  badTotal: "Unreadable totals",
+  missingLabel: "Days with no name",
+  outOfOrder: "Entries out of order",
+  tapMismatch: "Tap counts that don't match",
+};
+
+function openHealthCheck() {
+  const findings = auditHistory(history, sessionDate());
+  openSheet((s) => {
+    addEl(s, "h3", "Check my data");
+    if (!findings.length) {
+      addEl(s, "p", `Everything looks right — ${history.length} day${history.length === 1 ? "" : "s"} checked, nothing out of place.`, "sub");
+      s.appendChild(makeBtn("Done", "primary", closeSheet));
+      return;
+    }
+    addEl(s, "p", `${findings.length} thing${findings.length === 1 ? "" : "s"} worth a look across ${history.length} days. Nothing is changed unless you choose it.`, "sub");
+
+    findings.forEach((f) => {
+      const row = document.createElement("div");
+      row.className = "health-row";
+      addEl(row, "div", HEALTH_TITLES[f.kind] || f.kind, "health-title");
+      const n = f.dates.length;
+      addEl(row, "div", f.detail + (n ? ` · ${n} day${n === 1 ? "" : "s"}` : ""), "health-detail");
+      if (n) addEl(row, "div", f.dates.slice(0, 6).join(", ") + (n > 6 ? ` +${n - 6} more` : ""), "health-dates");
+
+      const act = document.createElement("button");
+      act.type = "button"; act.className = "health-fix";
+      if (f.severity === "fixable") {
+        act.textContent = "Fix this";
+        act.addEventListener("click", () => { applyHealthFix(f); });
+      } else {
+        // a judgement call — show the day rather than guessing on your behalf
+        act.textContent = n ? "Open the first one" : "Review";
+        act.addEventListener("click", () => {
+          const i = history.findIndex((d) => d.date === f.dates[0]);
+          closeSheet();
+          setTimeout(() => { if (i >= 0) openHistorySheet(i); else toast("Couldn't find that day"); }, 300);
+        });
+      }
+      row.appendChild(act);
+      s.appendChild(row);
+    });
+    s.appendChild(makeBtn("Done", "ghost", closeSheet));
+  });
+}
+
+// Only the deterministic repairs live here. Anything ambiguous never reaches
+// this function.
+function applyHealthFix(f) {
+  if (f.kind === "missingLabel") {
+    history.forEach((d) => {
+      if (!d.label && d.date) d.label = dayLabel(new Date(d.date + "T12:00:00"));
+    });
+  } else if (f.kind === "outOfOrder") {
+    history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
+  } else if (f.kind === "tapMismatch") {
+    history.forEach((d) => {
+      if (Array.isArray(d.tapTimes) && d.tapTimes.length > 0 && d.taps !== d.tapTimes.length) d.taps = d.tapTimes.length;
+    });
+  } else { return; }
+  save(KEY_HISTORY, history);
+  invalidatePulse();
+  buzz(12); render();
+  closeSheet();
+  setTimeout(openHealthCheck, 320);   // show what's left
+  toast("Fixed — re-checking");
+}
+
 function openDataSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Data & backup");
@@ -3327,6 +3459,7 @@ function openDataSettings() {
     s.appendChild(makeBtn("Full backup (everything)", "primary", () => { closeSheet(); startFullBackup(); }));
     s.appendChild(makeBtn("Restore from backup", "", () => { closeSheet(); startRestore(); }));
     s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
+    s.appendChild(makeBtn("Check my data", "", () => { closeSheet(); setTimeout(openHealthCheck, 300); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
