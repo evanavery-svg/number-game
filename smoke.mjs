@@ -106,6 +106,17 @@ await page.waitForTimeout(400);
 const histLenAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("count.history") || "[]").length);
 check("end day appends a history entry", histLenAfter === histLenBefore + 1);
 
+// regression: End Day adds a transient "pulse" class to the ring-wrap, which
+// once collided with the home strip's .pulse rule and knocked the centred
+// number out of flex. Assert the number stays centred in the ring after logging.
+await page.waitForTimeout(600);   // let the count-down settle
+const centred = await page.evaluate(() => {
+  const num = document.getElementById("total").getBoundingClientRect();
+  const wrap = document.getElementById("ringWrap").getBoundingClientRect();
+  return Math.abs((num.top + num.height / 2) - (wrap.top + wrap.height / 2)) <= 4;
+});
+check("number stays centred in the ring after End Day", centred);
+
 // a logged calendar day opens the full editor, not the light backfill sheet
 {
   await page.click("#statsBtn");
