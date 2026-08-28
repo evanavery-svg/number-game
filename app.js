@@ -2413,6 +2413,13 @@ function renderHistory() {
       row.appendChild(note);
     }
 
+    if (day.vitamins && Object.keys(day.vitamins).length) {
+      const vLine = document.createElement("div");
+      vLine.className = "hist-vitamins";
+      vLine.textContent = "💊 " + Object.entries(day.vitamins).map(([n, c]) => n + (c > 1 ? " ×" + c : "")).join(", ");
+      row.appendChild(vLine);
+    }
+
     row.addEventListener("click", () => openHistorySheet(idx));
     el.history.appendChild(row);
   });
@@ -2978,6 +2985,10 @@ function commitDay(note, dateStr, extras) {
       .map((w) => ({ text: w.text.trim(), control: w.control || null, action: (w.action || "").trim() }));
     if (worries.length) entry.worries = worries;
   }
+  // snapshot today's vitamins onto the history entry so it's tracked
+  const dayVits = vitaminsForDay(vitaminsLog, stamp.date);
+  if (Object.keys(dayVits).length) entry.vitamins = dayVits;
+
   history.push(entry);
   // keep chronological order so the chart, streaks and calendar stay correct
   // even when a day is logged under an earlier date
@@ -3589,6 +3600,16 @@ function openHistorySheet(idx) {
     const ta = document.createElement("textarea");
     ta.rows = 3; ta.value = day.note || ""; ta.placeholder = "No note";
     s.appendChild(ta);
+
+    if (day.vitamins && Object.keys(day.vitamins).length) {
+      addEl(s, "label", "Vitamins");
+      const vList = document.createElement("div");
+      vList.className = "day-recap";
+      Object.entries(day.vitamins).forEach(([name, count]) => {
+        addEl(vList, "div", `💊 ${name}${count > 1 ? " × " + count : ""}`);
+      });
+      s.appendChild(vList);
+    }
 
     // tap times for this day, if they were recorded when it was logged
     if (day.tapTimes && day.tapTimes.length) {

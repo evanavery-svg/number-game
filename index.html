@@ -583,6 +583,7 @@
     .hist-top .date { color: var(--text); font-weight: 500; }
     .hist-top .amt { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); background: var(--surface-2); padding: 3px 11px; border-radius: 999px; font-size: 14px; }
     .hist-note { font-size: 13px; color: var(--faint); margin-top: 5px; line-height: 1.35; }
+    .hist-vitamins { font-size: 12px; color: var(--muted); margin-top: 4px; }
     .hist-empty { padding: var(--sp-5); color: var(--faint); font-size: 14px; text-align: center; }
 
     /* ---- toast ---- */
@@ -1178,6 +1179,12 @@
       background: var(--surface-2); border-radius: 12px; padding: var(--sp-3);
     }
     .plan-body { flex: 1; min-width: 0; }
+    button.plan-body {
+      background: none; border: none; padding: 0; text-align: left;
+      font-family: inherit; cursor: pointer; color: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button.plan-body:active { opacity: .7; }
     .plan-cue { font-size: var(--fs-micro); color: var(--muted); }
     .plan-action { font-size: var(--fs-small); color: var(--text); font-weight: 600; margin-top: 2px; }
     .plan-del {
@@ -1535,7 +1542,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.9 · © Avery LLC</div>
+  <div class="version">v10.10 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
