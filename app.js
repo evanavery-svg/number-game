@@ -38,8 +38,10 @@ const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hy
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
 const KEY_WATER_PRESETS = "count.waterPresets"; // [oz, …] quick glass-size buttons
-const KEY_FEATURES = "count.features";    // { mood, water, tree, since, meds } — which extras are on
-const KEY_MEDS = "count.meds";            // [{ id, name, dose, at }] medication log
+const KEY_FEATURES = "count.features";    // { mood, water, tree, since, vitamins } — which extras are on
+const KEY_MEDS_LEGACY = "count.meds";     // [{ id, name, dose, at }] — old medication log, read once to seed the vitamins list, then unused
+const KEY_VITAMINS_LIST = "count.vitaminsList"; // [name, …] — permanent, user-managed, added once and kept
+const KEY_VITAMINS_LOG = "count.vitaminsLog";   // { [sessionDate]: { [name]: count } } — today's tallies auto-reset because today is a fresh key
 const KEY_BACKUP_AT = "count.backupAt";   // timestamp of the last full backup
 const KEY_BACKUP_NUDGE = "count.backupNudge"; // YYYY-MM-DD of the last backup nudge
 const KEY_ONBOARDED = "count.onboarded";  // bool — first-run intro completed
@@ -80,7 +82,7 @@ const el = {
   add: document.getElementById("addBtn"),
   moreBtn: document.getElementById("moreBtn"),
   undo: document.getElementById("undoBtn"),
-  medsBtn: document.getElementById("medsBtn"),
+  vitaminsBtn: document.getElementById("vitaminsBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
   statsBtn: document.getElementById("statsBtn"),
@@ -295,8 +297,21 @@ function cyclePulse() {
   buzz(6);
 }
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
-let features = Object.assign({ mood: true, water: true, tree: true, since: true, meds: true }, load(KEY_FEATURES, {}));
-let meds = load(KEY_MEDS, []);              // medication log
+const savedFeatures = load(KEY_FEATURES, {});
+let features = Object.assign({ mood: true, water: true, tree: true, since: true, vitamins: true }, savedFeatures);
+if (savedFeatures.vitamins === undefined && savedFeatures.meds !== undefined) features.vitamins = savedFeatures.meds;
+let vitaminsList = load(KEY_VITAMINS_LIST, null);
+if (vitaminsList === null) {
+  // first run of the redesign: carry over any names already used in the old log
+  const seen = [];
+  for (const m of load(KEY_MEDS_LEGACY, [])) {
+    const n = (m.name || "").trim();
+    if (n && !seen.includes(n)) seen.push(n);
+  }
+  vitaminsList = seen;
+  save(KEY_VITAMINS_LIST, vitaminsList);
+}
+let vitaminsLog = load(KEY_VITAMINS_LOG, {});   // { [sessionDate]: { [name]: count } }
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
 // A goal of 0 is the destination, not "off" — so track "is there a goal" apart
 // from its value. Older installs stored 0 to mean "none": migrate on first run.
@@ -2510,97 +2525,76 @@ function warnOver() {
   el.ringWrap.classList.remove("nudge"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("nudge");
   toast("Over your goal for today");
 }
-// ---- medication log ----
-// A name, an optional dose/note, and a timestamp. Visible (not behind the
-// journal passcode), same tier as the Water tracker. Which day an entry
-// belongs to always goes through sessionDate() via medsForDay() in core.js —
-// re-deriving that cutoff inline is exactly how three separate midnight bugs
-// happened earlier in this app.
-function syncMedsBtn() {
-  if (el.medsBtn) el.medsBtn.style.display = features.meds ? "" : "none";
+// ---- vitamins ----
+// A permanent list of names, added once and kept — no dose, no timestamps.
+// Each tap just increments today's count for that name. Which day a tap
+// belongs to goes through sessionDate() (the same 4am cutoff used everywhere
+// else), and the reset is automatic: today's tally lives at vitaminsLog[today],
+// a key that simply doesn't exist yet on a new day, so there's no separate
+// reset step to get wrong.
+function syncVitaminsBtn() {
+  if (el.vitaminsBtn) el.vitaminsBtn.style.display = features.vitamins ? "" : "none";
 }
-function recentMedNames(cap) {
-  const seen = [], out = [];
-  for (let i = meds.length - 1; i >= 0 && out.length < (cap || 6); i--) {
-    const n = (meds[i].name || "").trim();
-    if (n && !seen.includes(n)) { seen.push(n); out.push(n); }
-  }
-  return out;
-}
-function logMed(name, dose) {
-  name = (name || "").trim();
-  if (!name) return;
-  meds.push({ id: Date.now() + Math.random(), name, dose: (dose || "").trim(), at: new Date().toISOString() });
-  save(KEY_MEDS, meds);
+function tapVitamin(name) {
+  const d = sessionDate();
+  if (!vitaminsLog[d]) vitaminsLog[d] = {};
+  vitaminsLog[d][name] = (vitaminsLog[d][name] || 0) + 1;
+  save(KEY_VITAMINS_LOG, vitaminsLog);
   buzz(10);
 }
-function openMedsLog() {
+function addVitamin(name) {
+  name = (name || "").trim();
+  if (!name || vitaminsList.includes(name)) return false;
+  vitaminsList.push(name);
+  save(KEY_VITAMINS_LIST, vitaminsList);
+  return true;
+}
+function removeVitamin(name) {
+  vitaminsList = vitaminsList.filter((n) => n !== name);
+  save(KEY_VITAMINS_LIST, vitaminsList);
+}
+function openVitamins() {
   openSheet((s) => {
-    addEl(s, "h3", "Log Meds");
-    addEl(s, "p", "A tap logs it right now. Nothing here is shared outside this device.", "sub");
+    addEl(s, "h3", "Vitamins");
+    addEl(s, "p", "Add what you take once — after that, one tap logs it. Nothing here is shared outside this device.", "sub");
 
     const list = document.createElement("div");
     list.className = "plan-list";
-    const chipRow = document.createElement("div");
-    chipRow.className = "chip-row";
     const nameInput = document.createElement("input");
-    const doseInput = document.createElement("input");
-    const chipLabel = addEl(s, "label", "Tap to log now");
-    s.appendChild(chipRow);
 
     const refresh = () => {
       list.textContent = "";
-      medsForDay(meds, sessionDate()).forEach((m) => {
+      const today = vitaminsForDay(vitaminsLog, sessionDate());
+      if (!vitaminsList.length) addEl(list, "p", "Nothing added yet — add one below.", "sub");
+      vitaminsList.forEach((name) => {
         const row = document.createElement("div"); row.className = "plan-row";
-        const body = document.createElement("div"); body.className = "plan-body";
-        const time = new Date(m.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-        addEl(body, "div", m.name, "plan-action");
-        addEl(body, "div", time + (m.dose ? " · " + m.dose : ""), "plan-cue");
-        row.appendChild(body);
+        const tapBtn = document.createElement("button");
+        tapBtn.type = "button"; tapBtn.className = "plan-body";
+        addEl(tapBtn, "div", name, "plan-action");
+        addEl(tapBtn, "div", String(today[name] || 0) + " today", "plan-cue");
+        tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
+        row.appendChild(tapBtn);
         const del = document.createElement("button");
         del.type = "button"; del.className = "plan-del"; del.textContent = "×";
-        del.setAttribute("aria-label", "Remove this entry");
+        del.setAttribute("aria-label", `Remove ${name} from your list`);
         del.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          meds = meds.filter((x) => x.id !== m.id);
-          save(KEY_MEDS, meds); buzz(8); refresh();
+          removeVitamin(name); refresh();
         });
         row.appendChild(del);
         list.appendChild(row);
       });
-
-      chipRow.textContent = "";
-      const recent = recentMedNames();
-      recent.forEach((n) => {
-        const chip = document.createElement("button");
-        chip.type = "button"; chip.className = "chip";
-        chip.textContent = n;
-        chip.addEventListener("click", () => { logMed(n); toast(`${n} logged`); refresh(); });
-        chipRow.appendChild(chip);
-      });
-      // re-checked on every refresh, not just at open, so logging a second
-      // medication in the same visit immediately offers it as a chip too
-      const show = recent.length ? "" : "none";
-      chipLabel.style.display = show; chipRow.style.display = show;
     };
     refresh();
 
-    addEl(s, "label", "Medication");
-    nameInput.type = "text"; nameInput.placeholder = "e.g. Ibuprofen";
-    s.appendChild(nameInput);
-    addEl(s, "label", "Dose (optional)");
-    doseInput.type = "text"; doseInput.placeholder = "e.g. 200mg";
-    s.appendChild(doseInput);
-    s.appendChild(makeBtn("Log now", "primary", () => {
-      if (!nameInput.value.trim()) { toast("Enter a name"); return; }
-      logMed(nameInput.value, doseInput.value);
-      toast(`${nameInput.value.trim()} logged`);
-      nameInput.value = ""; doseInput.value = "";
-      refresh();
-    }));
-
-    addEl(s, "label", "Today");
     s.appendChild(list);
+    addEl(s, "label", "Add a vitamin");
+    nameInput.type = "text"; nameInput.placeholder = "e.g. Vitamin D";
+    s.appendChild(nameInput);
+    s.appendChild(makeBtn("Add", "primary", () => {
+      if (addVitamin(nameInput.value)) { nameInput.value = ""; refresh(); }
+      else toast(nameInput.value.trim() ? "Already on your list" : "Enter a name");
+    }));
     s.appendChild(makeBtn("Done", "ghost", closeSheet));
   });
 }
@@ -2994,12 +2988,14 @@ function commitDay(note, dateStr, extras) {
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
 
   // grow the tree on an under-goal day; a miss makes it droop (no growth)
-  let prestiged = false;
+  let prestiged = false, treeMile = null;
   if (hasGoal()) {
     if (underGoal) {
       tree.sad = false;
+      const prevProgress = tree.progress;
       tree.progress += 1;
       if (tree.progress >= TREE_DAYS) { tree.progress = 0; tree.level += 1; prestiged = true; }
+      else treeMile = treeMilestoneHit(prevProgress, tree.progress, TREE_DAYS);
     } else {
       tree.sad = true;
     }
@@ -3013,6 +3009,12 @@ function commitDay(note, dateStr, extras) {
     ? `🌳 Tree fully grown — Prestige ${tree.level}!`
     : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
+  // a second, separate pop-up for a tree milestone reached along the way —
+  // prestige (100%) already got its own toast above, this covers 25/50/75%
+  if (treeMile && features.tree) {
+    buzz([0, 25, 40, 25]);
+    toast(`🌳 Your tree is ${treeMile}% grown`, 3200);
+  }
 
   // confetti from the ring for a day finished under the goal (never when over —
   // the celebration is reserved for keeping the promise)
@@ -3308,8 +3310,8 @@ function openFeatureSettings() {
     waterFeat.addEventListener("change", () => { features.water = waterFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const treeFeat = makeToggle(s, "Growth tree", features.tree);
     treeFeat.addEventListener("change", () => { features.tree = treeFeat.checked; save(KEY_FEATURES, features); buzz(8); });
-    const medsFeat = makeToggle(s, "Medication log button", features.meds);
-    medsFeat.addEventListener("change", () => { features.meds = medsFeat.checked; save(KEY_FEATURES, features); syncMedsBtn(); buzz(8); });
+    const vitaminsFeat = makeToggle(s, "Vitamins button", features.vitamins);
+    vitaminsFeat.addEventListener("change", () => { features.vitamins = vitaminsFeat.checked; save(KEY_FEATURES, features); syncVitaminsBtn(); buzz(8); });
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -5328,9 +5330,9 @@ function openMore() {
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
-el.medsBtn.addEventListener("click", openMedsLog);
+el.vitaminsBtn.addEventListener("click", openVitamins);
 el.end.addEventListener("click", openEndDay);
-syncMedsBtn();
+syncVitaminsBtn();
 el.gear.addEventListener("click", openSettings);
 el.moreBtn.addEventListener("click", openMore);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight

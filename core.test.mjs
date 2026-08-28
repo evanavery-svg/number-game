@@ -704,24 +704,32 @@ test("auditHistory stays quiet on healthy data", () => {
   assert.deepEqual(auditKinds([{ date: "2026-08-10", label: "x", total: 1, taps: 0, endedAt: "2026-08-10T09:00:00.000Z" }], "2026-08-10"), []);
 });
 
-test("medsForDay attributes entries by the same 4am cutoff as everything else", () => {
-  const at = (y, mo, d, h, m) => new Date(y, mo, d, h, m || 0).toISOString();
-  const meds = [
-    { id: 1, name: "Vitamin D", dose: "", at: at(2026, 7, 12, 9, 0) },
-    { id: 2, name: "Ibuprofen", dose: "200mg", at: at(2026, 7, 12, 21, 30) },
-    // logged at 2am — belongs to the PREVIOUS session day (Aug 12), not Aug 13
-    { id: 3, name: "Melatonin", dose: "", at: at(2026, 7, 13, 2, 0) },
-    { id: 4, name: "Vitamin D", dose: "", at: at(2026, 7, 13, 9, 0) },
-  ];
-  const day12 = core.medsForDay(meds, "2026-08-12");
-  assert.equal(day12.length, 3);
-  assert.deepEqual(day12.map((m) => m.id), [3, 2, 1]);   // newest first, and the 2am one included
-  const day13 = core.medsForDay(meds, "2026-08-13");
-  assert.deepEqual(day13.map((m) => m.id), [4]);
-  assert.deepEqual(core.medsForDay([], "2026-08-12"), []);
-  assert.deepEqual(core.medsForDay(null, "2026-08-12"), []);
-  // entries with no timestamp are ignored rather than crashing
-  assert.deepEqual(core.medsForDay([{ id: 9, name: "x" }], "2026-08-12"), []);
+test("vitaminsForDay reads today's tallies and defaults to empty", () => {
+  const log = { "2026-08-12": { "Vitamin D": 1, "Fish Oil": 2 }, "2026-08-13": { "Vitamin D": 1 } };
+  assert.deepEqual(core.vitaminsForDay(log, "2026-08-12"), { "Vitamin D": 1, "Fish Oil": 2 });
+  assert.deepEqual(core.vitaminsForDay(log, "2026-08-13"), { "Vitamin D": 1 });
+  // a day with no entries yet, an empty log, and a missing log all read as empty rather than crashing
+  assert.deepEqual(core.vitaminsForDay(log, "2026-08-20"), {});
+  assert.deepEqual(core.vitaminsForDay({}, "2026-08-12"), {});
+  assert.deepEqual(core.vitaminsForDay(null, "2026-08-12"), {});
+});
+
+test("treeMilestoneHit fires once per quarter crossed, never at 100%", () => {
+  // a single day's growth (progress += 1) crossing the 25% line (day 8 of 30)
+  assert.equal(core.treeMilestoneHit(7, 8, 30), 25);
+  // the same crossing checked again (e.g. a second render) must not re-fire —
+  // prevProgress has already moved past the threshold
+  assert.equal(core.treeMilestoneHit(8, 9, 30), null);
+  // no threshold crossed this step
+  assert.equal(core.treeMilestoneHit(10, 11, 30), null);
+  // 50% and 75%
+  assert.equal(core.treeMilestoneHit(14, 15, 30), 50);
+  assert.equal(core.treeMilestoneHit(22, 23, 30), 75);
+  // crossing straight to full-grown (30) is handled by the caller as a prestige,
+  // not a quarter milestone — no new quarter line is crossed on this last step
+  assert.equal(core.treeMilestoneHit(29, 30, 30), null);
+  // jumping past a threshold in one step (shouldn't normally happen, but must not crash)
+  assert.equal(core.treeMilestoneHit(5, 16, 30), 25);
 });
 
 test("auditHistory catches each bug that actually shipped", () => {

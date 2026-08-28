@@ -289,15 +289,26 @@ function auditHistory(history, todayStr) {
   return out;
 }
 
-// ---- medication log ----
-// Which day an entry belongs to is exactly the question that produced three
-// separate midnight-boundary bugs elsewhere in this app, so it goes through
-// the same sessionDate() cutoff as everything else rather than a fresh
-// calendar-date comparison.
-function medsForDay(meds, dayStr) {
-  return (meds || [])
-    .filter((m) => m && m.at && sessionDate(new Date(m.at)) === dayStr)
-    .sort((a, b) => new Date(b.at) - new Date(a.at));
+// ---- vitamins ----
+// The log is keyed by session day, so "today's counts" is just the entry
+// for today's key — a new day is a new (empty) entry, which is what makes
+// the daily reset automatic without any separate reset bookkeeping.
+function vitaminsForDay(log, dayStr) {
+  return (log && log[dayStr]) || {};
+}
+
+// ---- growth tree milestones ----
+// A pop-up at 25/50/75% of the way to a prestige, not just on full-grown —
+// a 30-day stretch is long enough that a quarter/half/three-quarters cue is
+// worth celebrating too. 100% already gets its own "prestige" toast at the
+// call site, so this only ever returns 25, 50 or 75.
+const TREE_MILESTONE_PCTS = [25, 50, 75];
+function treeMilestoneHit(prevProgress, newProgress, days) {
+  for (const pct of TREE_MILESTONE_PCTS) {
+    const at = Math.round((days * pct) / 100);
+    if (prevProgress < at && newProgress >= at) return pct;
+  }
+  return null;
 }
 
 // ---- the shape of a day ----
@@ -748,7 +759,8 @@ if (typeof module !== "undefined" && module.exports) {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
-    dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, medsForDay,
+    dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, vitaminsForDay,
+    TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
