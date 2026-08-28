@@ -2416,7 +2416,7 @@ function renderHistory() {
     if (day.vitamins && Object.keys(day.vitamins).length) {
       const vLine = document.createElement("div");
       vLine.className = "hist-vitamins";
-      vLine.textContent = "💊 " + Object.entries(day.vitamins).map(([n, c]) => n + (c > 1 ? " ×" + c : "")).join(", ");
+      vLine.textContent = "💊 " + Object.entries(day.vitamins).map(([n, v]) => { const c = vitCount(v); return n + (c > 1 ? " ×" + c : ""); }).join(", ");
       row.appendChild(vLine);
     }
 
@@ -2542,10 +2542,12 @@ function warnOver() {
 function syncVitaminsBtn() {
   if (el.vitaminsBtn) el.vitaminsBtn.style.display = features.vitamins ? "" : "none";
 }
+function vitCount(v) { return Array.isArray(v) ? v.length : (v || 0); }
 function tapVitamin(name) {
   const d = sessionDate();
   if (!vitaminsLog[d]) vitaminsLog[d] = {};
-  vitaminsLog[d][name] = (vitaminsLog[d][name] || 0) + 1;
+  if (!Array.isArray(vitaminsLog[d][name])) vitaminsLog[d][name] = [];
+  vitaminsLog[d][name].push(new Date().toISOString());
   save(KEY_VITAMINS_LOG, vitaminsLog);
   buzz(10);
 }
@@ -2578,7 +2580,7 @@ function openVitamins() {
         const tapBtn = document.createElement("button");
         tapBtn.type = "button"; tapBtn.className = "plan-body";
         addEl(tapBtn, "div", name, "plan-action");
-        addEl(tapBtn, "div", String(today[name] || 0) + " today", "plan-cue");
+        addEl(tapBtn, "div", vitCount(today[name]) + " today", "plan-cue");
         tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
         row.appendChild(tapBtn);
         const del = document.createElement("button");
@@ -3605,8 +3607,13 @@ function openHistorySheet(idx) {
       addEl(s, "label", "Vitamins");
       const vList = document.createElement("div");
       vList.className = "day-recap";
-      Object.entries(day.vitamins).forEach(([name, count]) => {
-        addEl(vList, "div", `💊 ${name}${count > 1 ? " × " + count : ""}`);
+      Object.entries(day.vitamins).forEach(([name, v]) => {
+        const times = Array.isArray(v) ? v : [];
+        const c = times.length || v || 0;
+        const timeStr = times.length
+          ? " · " + times.map((t) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })).join(", ")
+          : "";
+        addEl(vList, "div", `💊 ${name}${c > 1 ? " × " + c : ""}${timeStr}`);
       });
       s.appendChild(vList);
     }
