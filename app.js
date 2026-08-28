@@ -38,7 +38,8 @@ const KEY_WATER = "count.water";          // { date, oz, log: [amounts] } — hy
 const KEY_WATER_GLASS = "count.waterGlass"; // oz added per tap
 const KEY_WATER_GOAL = "count.waterGoal";   // daily oz goal
 const KEY_WATER_PRESETS = "count.waterPresets"; // [oz, …] quick glass-size buttons
-const KEY_FEATURES = "count.features";    // { mood, water, tree, since } — which extras are on
+const KEY_FEATURES = "count.features";    // { mood, water, tree, since, meds } — which extras are on
+const KEY_MEDS = "count.meds";            // [{ id, name, dose, at }] medication log
 const KEY_BACKUP_AT = "count.backupAt";   // timestamp of the last full backup
 const KEY_BACKUP_NUDGE = "count.backupNudge"; // YYYY-MM-DD of the last backup nudge
 const KEY_ONBOARDED = "count.onboarded";  // bool — first-run intro completed
@@ -79,6 +80,7 @@ const el = {
   add: document.getElementById("addBtn"),
   moreBtn: document.getElementById("moreBtn"),
   undo: document.getElementById("undoBtn"),
+  medsBtn: document.getElementById("medsBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
   statsBtn: document.getElementById("statsBtn"),
@@ -293,7 +295,8 @@ function cyclePulse() {
   buzz(6);
 }
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
-let features = Object.assign({ mood: true, water: true, tree: true, since: true }, load(KEY_FEATURES, {}));
+let features = Object.assign({ mood: true, water: true, tree: true, since: true, meds: true }, load(KEY_FEATURES, {}));
+let meds = load(KEY_MEDS, []);              // medication log
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
 // A goal of 0 is the destination, not "off" — so track "is there a goal" apart
 // from its value. Older installs stored 0 to mean "none": migrate on first run.
@@ -2507,6 +2510,101 @@ function warnOver() {
   el.ringWrap.classList.remove("nudge"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("nudge");
   toast("Over your goal for today");
 }
+// ---- medication log ----
+// A name, an optional dose/note, and a timestamp. Visible (not behind the
+// journal passcode), same tier as the Water tracker. Which day an entry
+// belongs to always goes through sessionDate() via medsForDay() in core.js —
+// re-deriving that cutoff inline is exactly how three separate midnight bugs
+// happened earlier in this app.
+function syncMedsBtn() {
+  if (el.medsBtn) el.medsBtn.style.display = features.meds ? "" : "none";
+}
+function recentMedNames(cap) {
+  const seen = [], out = [];
+  for (let i = meds.length - 1; i >= 0 && out.length < (cap || 6); i--) {
+    const n = (meds[i].name || "").trim();
+    if (n && !seen.includes(n)) { seen.push(n); out.push(n); }
+  }
+  return out;
+}
+function logMed(name, dose) {
+  name = (name || "").trim();
+  if (!name) return;
+  meds.push({ id: Date.now() + Math.random(), name, dose: (dose || "").trim(), at: new Date().toISOString() });
+  save(KEY_MEDS, meds);
+  buzz(10);
+}
+function openMedsLog() {
+  openSheet((s) => {
+    addEl(s, "h3", "Log Meds");
+    addEl(s, "p", "A tap logs it right now. Nothing here is shared outside this device.", "sub");
+
+    const list = document.createElement("div");
+    list.className = "plan-list";
+    const chipRow = document.createElement("div");
+    chipRow.className = "chip-row";
+    const nameInput = document.createElement("input");
+    const doseInput = document.createElement("input");
+    const chipLabel = addEl(s, "label", "Tap to log now");
+    s.appendChild(chipRow);
+
+    const refresh = () => {
+      list.textContent = "";
+      medsForDay(meds, sessionDate()).forEach((m) => {
+        const row = document.createElement("div"); row.className = "plan-row";
+        const body = document.createElement("div"); body.className = "plan-body";
+        const time = new Date(m.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        addEl(body, "div", m.name, "plan-action");
+        addEl(body, "div", time + (m.dose ? " · " + m.dose : ""), "plan-cue");
+        row.appendChild(body);
+        const del = document.createElement("button");
+        del.type = "button"; del.className = "plan-del"; del.textContent = "×";
+        del.setAttribute("aria-label", "Remove this entry");
+        del.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          meds = meds.filter((x) => x.id !== m.id);
+          save(KEY_MEDS, meds); buzz(8); refresh();
+        });
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+
+      chipRow.textContent = "";
+      const recent = recentMedNames();
+      recent.forEach((n) => {
+        const chip = document.createElement("button");
+        chip.type = "button"; chip.className = "chip";
+        chip.textContent = n;
+        chip.addEventListener("click", () => { logMed(n); toast(`${n} logged`); refresh(); });
+        chipRow.appendChild(chip);
+      });
+      // re-checked on every refresh, not just at open, so logging a second
+      // medication in the same visit immediately offers it as a chip too
+      const show = recent.length ? "" : "none";
+      chipLabel.style.display = show; chipRow.style.display = show;
+    };
+    refresh();
+
+    addEl(s, "label", "Medication");
+    nameInput.type = "text"; nameInput.placeholder = "e.g. Ibuprofen";
+    s.appendChild(nameInput);
+    addEl(s, "label", "Dose (optional)");
+    doseInput.type = "text"; doseInput.placeholder = "e.g. 200mg";
+    s.appendChild(doseInput);
+    s.appendChild(makeBtn("Log now", "primary", () => {
+      if (!nameInput.value.trim()) { toast("Enter a name"); return; }
+      logMed(nameInput.value, doseInput.value);
+      toast(`${nameInput.value.trim()} logged`);
+      nameInput.value = ""; doseInput.value = "";
+      refresh();
+    }));
+
+    addEl(s, "label", "Today");
+    s.appendChild(list);
+    s.appendChild(makeBtn("Done", "ghost", closeSheet));
+  });
+}
+
 function undo() {
   if (taps === 0) return;
   const last = tapLog.pop();
@@ -3210,6 +3308,8 @@ function openFeatureSettings() {
     waterFeat.addEventListener("change", () => { features.water = waterFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const treeFeat = makeToggle(s, "Growth tree", features.tree);
     treeFeat.addEventListener("change", () => { features.tree = treeFeat.checked; save(KEY_FEATURES, features); buzz(8); });
+    const medsFeat = makeToggle(s, "Medication log button", features.meds);
+    medsFeat.addEventListener("change", () => { features.meds = medsFeat.checked; save(KEY_FEATURES, features); syncMedsBtn(); buzz(8); });
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -5228,7 +5328,9 @@ function openMore() {
 // ---- wire up ----
 el.add.addEventListener("click", addTap);
 el.undo.addEventListener("click", undo);
+el.medsBtn.addEventListener("click", openMedsLog);
 el.end.addEventListener("click", openEndDay);
+syncMedsBtn();
 el.gear.addEventListener("click", openSettings);
 el.moreBtn.addEventListener("click", openMore);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight

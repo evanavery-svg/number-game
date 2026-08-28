@@ -289,6 +289,17 @@ function auditHistory(history, todayStr) {
   return out;
 }
 
+// ---- medication log ----
+// Which day an entry belongs to is exactly the question that produced three
+// separate midnight-boundary bugs elsewhere in this app, so it goes through
+// the same sessionDate() cutoff as everything else rather than a fresh
+// calendar-date comparison.
+function medsForDay(meds, dayStr) {
+  return (meds || [])
+    .filter((m) => m && m.at && sessionDate(new Date(m.at)) === dayStr)
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+}
+
 // ---- the shape of a day ----
 // Every tap has carried a timestamp all along and nothing has ever read them
 // for *when* in the day you log. Buckets by session hour so a late night after
@@ -737,7 +748,7 @@ if (typeof module !== "undefined" && module.exports) {
     planFor, upsertDay, isFutureDate, futureDays, dateTaken, calendarCells, sinceCardModel, dayStamp,
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
-    dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory,
+    dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, medsForDay,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
