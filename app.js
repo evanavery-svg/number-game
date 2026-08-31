@@ -2589,25 +2589,26 @@ function renameVitamin(oldName, newName) {
 function openVitamins() {
   let editing = false;
   openSheet((s) => {
-    addEl(s, "h3", "Vitamins");
+    const hdr = document.createElement("div"); hdr.className = "vit-header";
+    addEl(hdr, "h3", "Vitamins");
+    const pill = document.createElement("span"); pill.className = "vit-summary";
+    hdr.appendChild(pill);
+    s.appendChild(hdr);
 
-    const prog = document.createElement("div"); prog.className = "vit-progress";
-    const progText = document.createElement("span"); progText.className = "vit-progress-text";
-    const progBar = document.createElement("div"); progBar.className = "vit-progress-bar";
-    const progFill = document.createElement("i"); progBar.appendChild(progFill);
-    prog.appendChild(progText); prog.appendChild(progBar);
-    s.appendChild(prog);
+    const bar = document.createElement("div"); bar.className = "vit-bar";
+    const barFill = document.createElement("i"); bar.appendChild(barFill);
+    s.appendChild(bar);
 
-    const list = document.createElement("div"); list.className = "plan-list";
+    const list = document.createElement("div"); list.className = "vit-list";
 
     const refresh = () => {
       list.textContent = "";
       const todayLog = vitaminsForDay(vitaminsLog, sessionDate());
       const total = vitaminsList.length;
       const done = vitaminsList.filter((n) => vitCount(todayLog[n]) > 0).length;
-      progText.textContent = total ? `${done} of ${total} taken` : "No vitamins yet";
-      progText.className = "vit-progress-text" + (total && done >= total ? " all-done" : "");
-      progFill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
+      pill.textContent = total ? `${done}/${total}` : "0";
+      pill.className = "vit-summary" + (total && done >= total ? " all-done" : "");
+      barFill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
 
       vitaminsList.forEach((name) => {
         const c = vitCount(todayLog[name]);
@@ -2615,23 +2616,21 @@ function openVitamins() {
         const isTaken = c > 0;
         const row = document.createElement("div");
         row.className = "vit-row" + (isTaken ? " taken" : "");
-        const check = document.createElement("span");
-        check.className = "vit-check"; check.textContent = "✓";
-        row.appendChild(check);
+
+        const circle = document.createElement("span"); circle.className = "vit-circle";
+        row.appendChild(circle);
+
         const tapBtn = document.createElement("button");
         tapBtn.type = "button"; tapBtn.className = "vit-body";
-        addEl(tapBtn, "div", name, "vit-name");
-        const meta = document.createElement("div");
-        meta.className = "vit-meta" + (isTaken ? " taken" : "");
+        addEl(tapBtn, "span", name, "vit-name");
         if (isTaken && times.length) {
           const last = new Date(times[times.length - 1]);
-          meta.textContent = (c > 1 ? c + "× · " : "") + last.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-        } else {
-          meta.textContent = isTaken ? c + " today" : "not yet";
+          const label = (c > 1 ? c + "× · " : "") + last.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+          addEl(tapBtn, "span", label, "vit-time");
         }
-        tapBtn.appendChild(meta);
         tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
         row.appendChild(tapBtn);
+
         if (isTaken && !editing) {
           const undoBtn = document.createElement("button");
           undoBtn.type = "button"; undoBtn.className = "vit-undo";
@@ -2642,16 +2641,14 @@ function openVitamins() {
         }
         if (editing) {
           const ren = document.createElement("button");
-          ren.type = "button"; ren.className = "vit-rename";
+          ren.type = "button"; ren.className = "vit-edit-btn";
           ren.textContent = "✎";
           ren.setAttribute("aria-label", `Rename ${name}`);
-          ren.addEventListener("click", (ev) => {
-            ev.stopPropagation();
-            openRenameVitamin(name, refresh);
-          });
+          ren.addEventListener("click", (ev) => { ev.stopPropagation(); openRenameVitamin(name, refresh); });
           row.appendChild(ren);
           const del = document.createElement("button");
-          del.type = "button"; del.className = "vit-del"; del.textContent = "×";
+          del.type = "button"; del.className = "vit-edit-btn";
+          del.textContent = "×";
           del.setAttribute("aria-label", `Remove ${name}`);
           del.addEventListener("click", (ev) => { ev.stopPropagation(); removeVitamin(name); refresh(); });
           row.appendChild(del);
@@ -2675,7 +2672,7 @@ function openVitamins() {
     s.appendChild(list);
 
     const footer = document.createElement("div"); footer.className = "vit-footer";
-    const editBtn = makeBtn("Edit list", "ghost", () => { editing = !editing; editBtn.textContent = editing ? "Stop editing" : "Edit list"; refresh(); });
+    const editBtn = makeBtn("Edit list", "ghost", () => { editing = !editing; editBtn.textContent = editing ? "Done editing" : "Edit list"; refresh(); });
     const doneBtn = makeBtn("Done", "ghost", closeSheet);
     footer.appendChild(editBtn); footer.appendChild(doneBtn);
     s.appendChild(footer);
