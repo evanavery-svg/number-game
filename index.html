@@ -1223,6 +1223,16 @@
     .vit-name { font-size: 15px; color: var(--text); font-weight: 600; }
     .vit-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
     .vit-meta.taken { color: var(--safe); }
+    .vit-undo {
+      background: none; border: none; color: var(--muted); font-size: 15px; line-height: 1;
+      padding: 4px 6px; cursor: pointer; font-family: inherit; opacity: 0.6;
+    }
+    .vit-undo:active { opacity: 1; color: var(--accent); }
+    .vit-rename {
+      background: none; border: none; color: var(--faint); font-size: 16px; line-height: 1;
+      padding: 0 4px; cursor: pointer; font-family: inherit;
+    }
+    .vit-rename:active { color: var(--accent); }
     .vit-del {
       background: none; border: none; color: var(--faint); font-size: 18px; line-height: 1;
       padding: 0 2px; cursor: pointer; font-family: inherit;
@@ -1582,7 +1592,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.11 · © Avery LLC</div>
+  <div class="version">v10.12 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

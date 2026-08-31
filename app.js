@@ -2562,6 +2562,30 @@ function removeVitamin(name) {
   vitaminsList = vitaminsList.filter((n) => n !== name);
   save(KEY_VITAMINS_LIST, vitaminsList);
 }
+function undoVitamin(name) {
+  const d = sessionDate();
+  if (!vitaminsLog[d] || !Array.isArray(vitaminsLog[d][name]) || !vitaminsLog[d][name].length) return false;
+  vitaminsLog[d][name].pop();
+  if (!vitaminsLog[d][name].length) delete vitaminsLog[d][name];
+  save(KEY_VITAMINS_LOG, vitaminsLog);
+  buzz(10);
+  return true;
+}
+function renameVitamin(oldName, newName) {
+  newName = (newName || "").trim();
+  if (!newName || newName === oldName || vitaminsList.includes(newName)) return false;
+  const idx = vitaminsList.indexOf(oldName);
+  if (idx < 0) return false;
+  vitaminsList[idx] = newName;
+  save(KEY_VITAMINS_LIST, vitaminsList);
+  const d = sessionDate();
+  if (vitaminsLog[d] && vitaminsLog[d][oldName]) {
+    vitaminsLog[d][newName] = vitaminsLog[d][oldName];
+    delete vitaminsLog[d][oldName];
+    save(KEY_VITAMINS_LOG, vitaminsLog);
+  }
+  return true;
+}
 function openVitamins() {
   let editing = false;
   openSheet((s) => {
@@ -2608,7 +2632,24 @@ function openVitamins() {
         tapBtn.appendChild(meta);
         tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
         row.appendChild(tapBtn);
+        if (isTaken && !editing) {
+          const undoBtn = document.createElement("button");
+          undoBtn.type = "button"; undoBtn.className = "vit-undo";
+          undoBtn.textContent = "↩";
+          undoBtn.setAttribute("aria-label", `Undo ${name}`);
+          undoBtn.addEventListener("click", (ev) => { ev.stopPropagation(); undoVitamin(name); refresh(); });
+          row.appendChild(undoBtn);
+        }
         if (editing) {
+          const ren = document.createElement("button");
+          ren.type = "button"; ren.className = "vit-rename";
+          ren.textContent = "✎";
+          ren.setAttribute("aria-label", `Rename ${name}`);
+          ren.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            openRenameVitamin(name, refresh);
+          });
+          row.appendChild(ren);
           const del = document.createElement("button");
           del.type = "button"; del.className = "vit-del"; del.textContent = "×";
           del.setAttribute("aria-label", `Remove ${name}`);
@@ -2638,6 +2679,21 @@ function openVitamins() {
     const doneBtn = makeBtn("Done", "ghost", closeSheet);
     footer.appendChild(editBtn); footer.appendChild(doneBtn);
     s.appendChild(footer);
+  });
+}
+
+function openRenameVitamin(oldName, onDone) {
+  openSheet((s) => {
+    addEl(s, "h3", "Rename");
+    addEl(s, "label", "New name");
+    const inp = document.createElement("input"); inp.type = "text"; inp.value = oldName; inp.maxLength = 40;
+    s.appendChild(inp);
+    s.appendChild(makeBtn("Save", "primary", () => {
+      if (renameVitamin(oldName, inp.value)) { closeSheet(); setTimeout(() => { openVitamins(); }, 300); }
+      else toast(inp.value.trim() === oldName ? "Name unchanged" : inp.value.trim() ? "Already on your list" : "Enter a name");
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", () => { closeSheet(); setTimeout(() => { openVitamins(); }, 300); }));
+    setTimeout(() => { inp.focus(); inp.select(); }, 50);
   });
 }
 
