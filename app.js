@@ -2416,7 +2416,7 @@ function renderHistory() {
     if (day.vitamins && Object.keys(day.vitamins).length) {
       const vLine = document.createElement("div");
       vLine.className = "hist-vitamins";
-      vLine.textContent = "💊 " + Object.entries(day.vitamins).map(([n, v]) => { const c = vitCount(v); return n + (c > 1 ? " ×" + c : ""); }).join(", ");
+      vLine.textContent = "✅ " + Object.entries(day.vitamins).map(([n, v]) => { const c = vitCount(v); return n + (c > 1 ? " ×" + c : ""); }).join(", ");
       row.appendChild(vLine);
     }
 
@@ -2590,7 +2590,7 @@ function openVitamins() {
   let editing = false;
   openSheet((s) => {
     const hdr = document.createElement("div"); hdr.className = "vit-header";
-    addEl(hdr, "h3", "Vitamins");
+    addEl(hdr, "h3", "Daily Habits");
     const pill = document.createElement("span"); pill.className = "vit-summary";
     hdr.appendChild(pill);
     s.appendChild(hdr);
@@ -2658,7 +2658,7 @@ function openVitamins() {
 
       if (editing) {
         const addRow = document.createElement("div"); addRow.className = "vit-add-row";
-        const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "e.g. Vitamin D";
+        const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "e.g. Drink water";
         const addBtn = document.createElement("button"); addBtn.type = "button"; addBtn.className = "vit-add-btn"; addBtn.textContent = "Add";
         addBtn.addEventListener("click", () => {
           if (addVitamin(inp.value)) { inp.value = ""; refresh(); }
@@ -3409,7 +3409,7 @@ function openFeatureSettings() {
     waterFeat.addEventListener("change", () => { features.water = waterFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const treeFeat = makeToggle(s, "Growth tree", features.tree);
     treeFeat.addEventListener("change", () => { features.tree = treeFeat.checked; save(KEY_FEATURES, features); buzz(8); });
-    const vitaminsFeat = makeToggle(s, "Vitamins button", features.vitamins);
+    const vitaminsFeat = makeToggle(s, "Daily Habits button", features.vitamins);
     vitaminsFeat.addEventListener("change", () => { features.vitamins = vitaminsFeat.checked; save(KEY_FEATURES, features); syncVitaminsBtn(); buzz(8); });
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
@@ -3690,7 +3690,7 @@ function openHistorySheet(idx) {
     s.appendChild(ta);
 
     if (day.vitamins && Object.keys(day.vitamins).length) {
-      addEl(s, "label", "Vitamins");
+      addEl(s, "label", "Daily Habits");
       const vList = document.createElement("div");
       vList.className = "day-recap";
       Object.entries(day.vitamins).forEach(([name, v]) => {
@@ -3699,7 +3699,7 @@ function openHistorySheet(idx) {
         const timeStr = times.length
           ? " · " + times.map((t) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })).join(", ")
           : "";
-        addEl(vList, "div", `💊 ${name}${c > 1 ? " × " + c : ""}${timeStr}`);
+        addEl(vList, "div", `✅ ${name}${c > 1 ? " × " + c : ""}${timeStr}`);
       });
       s.appendChild(vList);
     }
