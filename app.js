@@ -2563,48 +2563,81 @@ function removeVitamin(name) {
   save(KEY_VITAMINS_LIST, vitaminsList);
 }
 function openVitamins() {
+  let editing = false;
   openSheet((s) => {
     addEl(s, "h3", "Vitamins");
-    addEl(s, "p", "Add what you take once — after that, one tap logs it. Nothing here is shared outside this device.", "sub");
 
-    const list = document.createElement("div");
-    list.className = "plan-list";
-    const nameInput = document.createElement("input");
+    const prog = document.createElement("div"); prog.className = "vit-progress";
+    const progText = document.createElement("span"); progText.className = "vit-progress-text";
+    const progBar = document.createElement("div"); progBar.className = "vit-progress-bar";
+    const progFill = document.createElement("i"); progBar.appendChild(progFill);
+    prog.appendChild(progText); prog.appendChild(progBar);
+    s.appendChild(prog);
+
+    const list = document.createElement("div"); list.className = "plan-list";
 
     const refresh = () => {
       list.textContent = "";
-      const today = vitaminsForDay(vitaminsLog, sessionDate());
-      if (!vitaminsList.length) addEl(list, "p", "Nothing added yet — add one below.", "sub");
+      const todayLog = vitaminsForDay(vitaminsLog, sessionDate());
+      const total = vitaminsList.length;
+      const done = vitaminsList.filter((n) => vitCount(todayLog[n]) > 0).length;
+      progText.textContent = total ? `${done} of ${total} taken` : "No vitamins yet";
+      progText.className = "vit-progress-text" + (total && done >= total ? " all-done" : "");
+      progFill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
+
       vitaminsList.forEach((name) => {
-        const row = document.createElement("div"); row.className = "plan-row";
+        const c = vitCount(todayLog[name]);
+        const times = Array.isArray(todayLog[name]) ? todayLog[name] : [];
+        const isTaken = c > 0;
+        const row = document.createElement("div");
+        row.className = "vit-row" + (isTaken ? " taken" : "");
+        const check = document.createElement("span");
+        check.className = "vit-check"; check.textContent = "✓";
+        row.appendChild(check);
         const tapBtn = document.createElement("button");
-        tapBtn.type = "button"; tapBtn.className = "plan-body";
-        addEl(tapBtn, "div", name, "plan-action");
-        addEl(tapBtn, "div", vitCount(today[name]) + " today", "plan-cue");
+        tapBtn.type = "button"; tapBtn.className = "vit-body";
+        addEl(tapBtn, "div", name, "vit-name");
+        const meta = document.createElement("div");
+        meta.className = "vit-meta" + (isTaken ? " taken" : "");
+        if (isTaken && times.length) {
+          const last = new Date(times[times.length - 1]);
+          meta.textContent = (c > 1 ? c + "× · " : "") + last.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        } else {
+          meta.textContent = isTaken ? c + " today" : "not yet";
+        }
+        tapBtn.appendChild(meta);
         tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
         row.appendChild(tapBtn);
-        const del = document.createElement("button");
-        del.type = "button"; del.className = "plan-del"; del.textContent = "×";
-        del.setAttribute("aria-label", `Remove ${name} from your list`);
-        del.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          removeVitamin(name); refresh();
-        });
-        row.appendChild(del);
+        if (editing) {
+          const del = document.createElement("button");
+          del.type = "button"; del.className = "vit-del"; del.textContent = "×";
+          del.setAttribute("aria-label", `Remove ${name}`);
+          del.addEventListener("click", (ev) => { ev.stopPropagation(); removeVitamin(name); refresh(); });
+          row.appendChild(del);
+        }
         list.appendChild(row);
       });
+
+      if (editing) {
+        const addRow = document.createElement("div"); addRow.className = "vit-add-row";
+        const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "e.g. Vitamin D";
+        const addBtn = document.createElement("button"); addBtn.type = "button"; addBtn.className = "vit-add-btn"; addBtn.textContent = "Add";
+        addBtn.addEventListener("click", () => {
+          if (addVitamin(inp.value)) { inp.value = ""; refresh(); }
+          else toast(inp.value.trim() ? "Already on your list" : "Enter a name");
+        });
+        addRow.appendChild(inp); addRow.appendChild(addBtn);
+        list.appendChild(addRow);
+      }
     };
     refresh();
-
     s.appendChild(list);
-    addEl(s, "label", "Add a vitamin");
-    nameInput.type = "text"; nameInput.placeholder = "e.g. Vitamin D";
-    s.appendChild(nameInput);
-    s.appendChild(makeBtn("Add", "primary", () => {
-      if (addVitamin(nameInput.value)) { nameInput.value = ""; refresh(); }
-      else toast(nameInput.value.trim() ? "Already on your list" : "Enter a name");
-    }));
-    s.appendChild(makeBtn("Done", "ghost", closeSheet));
+
+    const footer = document.createElement("div"); footer.className = "vit-footer";
+    const editBtn = makeBtn("Edit list", "ghost", () => { editing = !editing; editBtn.textContent = editing ? "Stop editing" : "Edit list"; refresh(); });
+    const doneBtn = makeBtn("Done", "ghost", closeSheet);
+    footer.appendChild(editBtn); footer.appendChild(doneBtn);
+    s.appendChild(footer);
   });
 }
 

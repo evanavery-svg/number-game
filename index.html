@@ -1200,6 +1200,46 @@
       transition: background var(--dur-fast) var(--ease-out);
     }
     .plan-add:active { background: var(--key); }
+
+    .vit-progress { display: flex; align-items: center; gap: 10px; margin-bottom: var(--sp-3); }
+    .vit-progress-text { font-size: 14px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+    .vit-progress-text.all-done { color: var(--safe); }
+    .vit-progress-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .vit-progress-bar i { display: block; height: 100%; border-radius: 999px; background: var(--safe); transition: width var(--dur-slow) var(--ease-out); }
+    .vit-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface-2); border-radius: 14px; padding: 14px 16px;
+      border-left: 3px solid transparent; transition: border-color var(--dur-base) ease, background var(--dur-fast) ease;
+    }
+    .vit-row.taken { border-left-color: var(--safe); }
+    .vit-row.taken .vit-check { color: var(--safe); opacity: 1; }
+    .vit-check { font-size: 18px; opacity: 0.2; transition: opacity var(--dur-base) ease, color var(--dur-base) ease; pointer-events: none; line-height: 1; }
+    .vit-body {
+      flex: 1; min-width: 0; background: none; border: none; padding: 0;
+      text-align: left; font-family: inherit; cursor: pointer; color: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .vit-body:active { opacity: .7; }
+    .vit-name { font-size: 15px; color: var(--text); font-weight: 600; }
+    .vit-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .vit-meta.taken { color: var(--safe); }
+    .vit-del {
+      background: none; border: none; color: var(--faint); font-size: 18px; line-height: 1;
+      padding: 0 2px; cursor: pointer; font-family: inherit;
+    }
+    .vit-del:active { color: var(--over); }
+    .vit-add-row {
+      display: flex; gap: var(--sp-2); margin-top: var(--sp-3);
+    }
+    .vit-add-row input { flex: 1; }
+    .vit-add-btn {
+      padding: 10px 18px; border-radius: 10px; border: none;
+      background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .vit-add-btn:active { opacity: .8; }
+    .vit-footer { display: flex; justify-content: space-between; align-items: center; margin-top: var(--sp-4); }
+
     .plan-recall {
       background: var(--surface-2); border-left: 3px solid var(--accent);
       border-radius: 8px; padding: var(--sp-3); margin-top: var(--sp-3);
@@ -1542,7 +1582,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.10 · © Avery LLC</div>
+  <div class="version">v10.11 · © Avery LLC</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
