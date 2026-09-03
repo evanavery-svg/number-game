@@ -1560,7 +1560,7 @@ function renderProgress() {
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
   let endDay;
   if (zp && !zp.done) {
-    const proj = new Date(Math.min(zp.date.getTime(), today0.getTime() + 180 * 864e5));
+    const proj = new Date(Math.min(zp.date.getTime(), today0.getTime() + 90 * 864e5));
     endDay = proj > today0 ? proj : new Date(today0.getTime() + 30 * 864e5);
   } else {
     endDay = new Date(today0.getTime() + 14 * 864e5);
@@ -1568,6 +1568,15 @@ function renderProgress() {
   const t0 = firstDay.getTime(), tEnd = endDay.getTime();
   const totalDays = Math.max(1, Math.round((tEnd - t0) / 864e5));
   const todayDay = Math.round((today0.getTime() - t0) / 864e5);
+
+  // The chart is a fixed-width canvas inside a side-scroller. Each day gets a
+  // fixed pixel width sized so the logged history fills the visible card on
+  // open (now sits at the right edge); the projected future extends off to the
+  // right, revealed by scrolling.
+  const scroll = document.createElement("div");
+  scroll.className = "prog-scroll";
+  card.appendChild(scroll);
+  const availW = scroll.clientWidth || 300;
 
   const tapPts = [];
   const cur = new Date(firstDay);
@@ -1583,12 +1592,6 @@ function renderProgress() {
     tapPts.push({ day: todayDay, val: today });
   }
 
-  const goalAtDay = (d) => {
-    const t = t0 + d * 864e5;
-    let g = pts[0].goal;
-    for (const p of pts) { if (p.at <= t) g = p.goal; }
-    return g;
-  };
   const goalPts = [];
   for (let i = 0; i < pts.length; i++) {
     const day = Math.max(0, Math.round((pts[i].at - t0) / 864e5));
@@ -1611,10 +1614,13 @@ function renderProgress() {
     1
   ) * 1.15;
 
-  const PAD = { top: 6, right: 2, bottom: 22, left: 28 };
-  const W = 320, H = 140;
-  const plotW = W - PAD.left - PAD.right, plotH = H - PAD.top - PAD.bottom;
-  const X = (d) => PAD.left + (d / totalDays) * plotW;
+  const PAD = { top: 8, right: 8, bottom: 20, left: 26 };
+  const H = 120;
+  const pastDays = Math.max(1, todayDay);
+  const pxPerDay = Math.max(4, Math.min(16, (availW - PAD.left - PAD.right) / pastDays));
+  const W = Math.round(PAD.left + totalDays * pxPerDay + PAD.right);
+  const plotH = H - PAD.top - PAD.bottom;
+  const X = (d) => PAD.left + d * pxPerDay;
   const Y = (v) => PAD.top + plotH - (v / maxVal) * plotH;
 
   const niceStep = (max) => {
@@ -1648,15 +1654,13 @@ function renderProgress() {
 
   const firstLabel = firstDay.toLocaleDateString(undefined, { month: "short" });
   const endLabel = endDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-  const midDate = new Date(t0 + (tEnd - t0) / 2);
-  const midLabel = midDate.toLocaleDateString(undefined, { month: "short" });
 
   const endDot = tapPts.length
     ? `<circle cx="${X(tapPts[tapPts.length - 1].day).toFixed(1)}" cy="${Y(tapPts[tapPts.length - 1].val).toFixed(1)}" r="3.5" class="prog-dot"/>`
     : "";
 
-  card.insertAdjacentHTML("beforeend",
-    `<svg class="prog-svg" viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
+  scroll.innerHTML =
+    `<svg class="prog-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
     gridLines + yLabels +
     `<path d="${areaD}" class="prog-area"/>` +
     todayLine +
@@ -1664,16 +1668,24 @@ function renderProgress() {
     `<path d="${futurePath}" class="prog-goal-future"/>` +
     `<polyline points="${tapPoly}" class="prog-taps trend-poly"/>` +
     endDot +
-    `<text x="${PAD.left}" y="${H - 2}" class="prog-xlabel">${firstLabel}</text>` +
-    `<text x="${X(totalDays / 2).toFixed(1)}" y="${H - 2}" class="prog-xlabel" text-anchor="middle">${midLabel}</text>` +
-    `<text x="${W - PAD.right}" y="${H - 2}" class="prog-xlabel" text-anchor="end">${endLabel}</text>` +
-    `</svg>` +
+    `<text x="${PAD.left}" y="${H - 4}" class="prog-xlabel">${firstLabel}</text>` +
+    `<text x="${todayX}" y="${H - 4}" class="prog-xlabel prog-nowlabel" text-anchor="middle">now</text>` +
+    `<text x="${W - PAD.right}" y="${H - 4}" class="prog-xlabel" text-anchor="end">${endLabel}</text>` +
+    `</svg>`;
+
+  card.insertAdjacentHTML("beforeend",
     `<div class="prog-legend">` +
     `<span class="leg-taps"><i></i>Taps</span>` +
     `<span class="leg-goal"><i></i>Goal</span>` +
     `<span class="leg-future"><i></i>Projected</span>` +
     `</div>`
   );
+
+  // Open with the logged history filling the view and "now" at the right edge;
+  // the projected future waits off to the right.
+  const setScroll = () => { scroll.scrollLeft = Math.max(0, X(todayDay) - scroll.clientWidth + PAD.right); };
+  setScroll();
+  requestAnimationFrame(setScroll);
   drawLine(card);
 }
 
