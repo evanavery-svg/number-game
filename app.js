@@ -114,6 +114,7 @@ const el = {
   compareLine: document.getElementById("compareLine"),
   riskLine: document.getElementById("riskLine"),
   ladderCard: document.getElementById("ladderCard"),
+  progressCard: document.getElementById("progressCard"),
   recordsCard: document.getElementById("recordsCard"),
   trendCard: document.getElementById("trendCard"),
   shapeCard: document.getElementById("shapeCard"),
@@ -1268,7 +1269,7 @@ function renderRangeRow() {
 // were reconstructed for panels nobody had open.
 const SEG_RENDER = {
   overview: () => { renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
-  journey:  () => { renderLadder(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
+  journey:  () => { renderLadder(); renderProgress(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
   patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderMood(); renderConnections(); renderWins(); },
 };
 function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
@@ -1537,6 +1538,109 @@ function appendSuggestion(card) {
   });
   box.appendChild(go);
   card.appendChild(box);
+}
+
+function renderProgress() {
+  const card = el.progressCard;
+  if (!hasGoal() || history.length < 3 || goalLog.length < 1) {
+    card.style.display = "none"; return;
+  }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "Progress", "section-title");
+
+  const byDate = {};
+  history.forEach((d) => { byDate[d.date] = d.total; });
+  const sorted = history.map((d) => d.date).sort();
+  const firstDay = new Date(sorted[0] + "T00:00:00");
+
+  const pts = goalLog.map((g) => ({ at: new Date(g.at).getTime(), goal: g.goal }))
+    .filter((g) => !isNaN(g.at)).sort((a, b) => a.at - b.at);
+
+  const zp = projectZero(goalLog);
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  let endDay;
+  if (zp && !zp.done) {
+    const proj = new Date(Math.min(zp.date.getTime(), today0.getTime() + 180 * 864e5));
+    endDay = proj > today0 ? proj : new Date(today0.getTime() + 30 * 864e5);
+  } else {
+    endDay = new Date(today0.getTime() + 14 * 864e5);
+  }
+  const t0 = firstDay.getTime(), tEnd = endDay.getTime();
+  const totalDays = Math.max(1, Math.round((tEnd - t0) / 864e5));
+
+  const tapPts = [];
+  const cur = new Date(firstDay);
+  while (cur <= today0) {
+    const key = isoLocal(cur);
+    if (byDate[key] != null) tapPts.push({ day: Math.round((cur.getTime() - t0) / 864e5), val: byDate[key] });
+    cur.setDate(cur.getDate() + 1);
+  }
+  if (today > 0 || tapPts.length === 0) {
+    tapPts.push({ day: Math.round((today0.getTime() - t0) / 864e5), val: today });
+  }
+
+  const goalPts = [];
+  for (let i = 0; i < pts.length; i++) {
+    const day = Math.max(0, Math.round((pts[i].at - t0) / 864e5));
+    goalPts.push({ day, val: pts[i].goal });
+    if (i + 1 < pts.length) {
+      const nextDay = Math.round((pts[i + 1].at - t0) / 864e5);
+      goalPts.push({ day: nextDay, val: pts[i].goal });
+    }
+  }
+  const lastGoal = pts[pts.length - 1].goal;
+  const todayDay = Math.round((today0.getTime() - t0) / 864e5);
+  goalPts.push({ day: todayDay, val: lastGoal });
+
+  const futureGoalPts = [];
+  if (zp && !zp.done && lastGoal > 0) {
+    futureGoalPts.push({ day: todayDay, val: lastGoal });
+    futureGoalPts.push({ day: totalDays, val: 0 });
+  } else {
+    futureGoalPts.push({ day: todayDay, val: lastGoal });
+    futureGoalPts.push({ day: totalDays, val: lastGoal });
+  }
+
+  const maxVal = Math.max(
+    ...tapPts.map((p) => p.val),
+    ...goalPts.map((p) => p.val),
+    ...futureGoalPts.map((p) => p.val),
+    1
+  ) * 1.1;
+
+  const W = 100, H = 50;
+  const X = (d) => (d / totalDays) * W;
+  const Y = (v) => H - (v / maxVal) * (H - 4);
+
+  const tapPoly = tapPts.map((p) => `${X(p.day).toFixed(2)},${Y(p.val).toFixed(2)}`).join(" ");
+  const goalPath = goalPts.map((p, i) => `${i === 0 ? "M" : "L"} ${X(p.day).toFixed(2)} ${Y(p.val).toFixed(2)}`).join(" ");
+  const futurePath = futureGoalPts.map((p, i) => `${i === 0 ? "M" : "L"} ${X(p.day).toFixed(2)} ${Y(p.val).toFixed(2)}`).join(" ");
+
+  const todayX = X(todayDay).toFixed(2);
+  const todayLine = `<line x1="${todayX}" y1="0" x2="${todayX}" y2="${H}" class="prog-today"/>`;
+
+  const areaPath = tapPts.length > 1
+    ? `M ${X(tapPts[0].day).toFixed(2)} ${H} ` +
+      tapPts.map((p) => `L ${X(p.day).toFixed(2)} ${Y(p.val).toFixed(2)}`).join(" ") +
+      ` L ${X(tapPts[tapPts.length - 1].day).toFixed(2)} ${H} Z`
+    : "";
+
+  const firstLabel = firstDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  const endLabel = endDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  const todayPct = ((todayDay / totalDays) * 100).toFixed(1);
+
+  card.insertAdjacentHTML("beforeend",
+    `<svg class="prog-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
+    (areaPath ? `<path d="${areaPath}" fill="var(--accent)" class="prog-area"/>` : "") +
+    todayLine +
+    `<path d="${goalPath}" class="prog-goal"/>` +
+    `<path d="${futurePath}" class="prog-goal-future"/>` +
+    `<polyline points="${tapPoly}" class="prog-taps trend-poly"/>` +
+    `</svg>` +
+    `<div class="prog-dates"><span>${firstLabel}</span><span style="left:${todayPct}%">now</span><span>${endLabel}</span></div>` +
+    `<div class="prog-legend"><span class="leg-taps"><i></i>Daily taps</span><span class="leg-goal"><i></i>Goal</span></div>`
+  );
+  drawLine(card);
 }
 
 // All-time highlights.
