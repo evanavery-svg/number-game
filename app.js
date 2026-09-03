@@ -1652,8 +1652,26 @@ function renderProgress() {
   const todayX = X(todayDay).toFixed(1);
   const todayLine = `<line x1="${todayX}" y1="${PAD.top}" x2="${todayX}" y2="${Y(0)}" class="prog-today"/>`;
 
-  const firstLabel = firstDay.toLocaleDateString(undefined, { month: "short" });
-  const endLabel = endDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  // Month markers: a faint tick and a label at each month boundary across the
+  // whole range, so the dates stay readable as you scroll into the future.
+  let monthMarks = "";
+  const mCursor = new Date(firstDay.getFullYear(), firstDay.getMonth(), 1);
+  let firstMark = true;
+  while (mCursor <= endDay) {
+    const dayIdx = Math.round((mCursor.getTime() - t0) / 864e5);
+    const showYear = firstMark || mCursor.getMonth() === 0;
+    const label = mCursor.toLocaleDateString(undefined, showYear ? { month: "short", year: "2-digit" } : { month: "short" });
+    if (dayIdx < 0) {
+      // the month the log starts in — label it at the left edge, no tick
+      monthMarks += `<text x="${PAD.left}" y="${H - 4}" class="prog-xlabel">${label}</text>`;
+    } else {
+      const mx = X(dayIdx).toFixed(1);
+      monthMarks += `<line x1="${mx}" y1="${PAD.top}" x2="${mx}" y2="${Y(0)}" class="prog-month"/>`;
+      monthMarks += `<text x="${mx}" y="${H - 4}" class="prog-xlabel" text-anchor="middle">${label}</text>`;
+    }
+    mCursor.setMonth(mCursor.getMonth() + 1);
+    firstMark = false;
+  }
 
   const endDot = tapPts.length
     ? `<circle cx="${X(tapPts[tapPts.length - 1].day).toFixed(1)}" cy="${Y(tapPts[tapPts.length - 1].val).toFixed(1)}" r="3.5" class="prog-dot"/>`
@@ -1661,16 +1679,14 @@ function renderProgress() {
 
   scroll.innerHTML =
     `<svg class="prog-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
-    gridLines + yLabels +
+    gridLines + yLabels + monthMarks +
     `<path d="${areaD}" class="prog-area"/>` +
     todayLine +
     `<path d="${goalPath}" class="prog-goal-line"/>` +
     `<path d="${futurePath}" class="prog-goal-future"/>` +
     `<polyline points="${tapPoly}" class="prog-taps trend-poly"/>` +
     endDot +
-    `<text x="${PAD.left}" y="${H - 4}" class="prog-xlabel">${firstLabel}</text>` +
-    `<text x="${todayX}" y="${H - 4}" class="prog-xlabel prog-nowlabel" text-anchor="middle">now</text>` +
-    `<text x="${W - PAD.right}" y="${H - 4}" class="prog-xlabel" text-anchor="end">${endLabel}</text>` +
+    `<text x="${todayX}" y="${PAD.top + 7}" class="prog-xlabel prog-nowlabel" text-anchor="middle">now</text>` +
     `</svg>`;
 
   card.insertAdjacentHTML("beforeend",
