@@ -1567,78 +1567,112 @@ function renderProgress() {
   }
   const t0 = firstDay.getTime(), tEnd = endDay.getTime();
   const totalDays = Math.max(1, Math.round((tEnd - t0) / 864e5));
+  const todayDay = Math.round((today0.getTime() - t0) / 864e5);
 
   const tapPts = [];
   const cur = new Date(firstDay);
   while (cur <= today0) {
     const key = isoLocal(cur);
-    if (byDate[key] != null) tapPts.push({ day: Math.round((cur.getTime() - t0) / 864e5), val: byDate[key] });
+    const dayIdx = Math.round((cur.getTime() - t0) / 864e5);
+    tapPts.push({ day: dayIdx, val: byDate[key] != null ? byDate[key] : 0 });
     cur.setDate(cur.getDate() + 1);
   }
-  if (today > 0 || tapPts.length === 0) {
-    tapPts.push({ day: Math.round((today0.getTime() - t0) / 864e5), val: today });
+  if (tapPts.length && tapPts[tapPts.length - 1].day === todayDay) {
+    tapPts[tapPts.length - 1].val = today;
+  } else {
+    tapPts.push({ day: todayDay, val: today });
   }
 
+  const goalAtDay = (d) => {
+    const t = t0 + d * 864e5;
+    let g = pts[0].goal;
+    for (const p of pts) { if (p.at <= t) g = p.goal; }
+    return g;
+  };
   const goalPts = [];
   for (let i = 0; i < pts.length; i++) {
     const day = Math.max(0, Math.round((pts[i].at - t0) / 864e5));
+    if (i > 0) goalPts.push({ day, val: pts[i - 1].goal });
     goalPts.push({ day, val: pts[i].goal });
-    if (i + 1 < pts.length) {
-      const nextDay = Math.round((pts[i + 1].at - t0) / 864e5);
-      goalPts.push({ day: nextDay, val: pts[i].goal });
-    }
   }
   const lastGoal = pts[pts.length - 1].goal;
-  const todayDay = Math.round((today0.getTime() - t0) / 864e5);
   goalPts.push({ day: todayDay, val: lastGoal });
 
-  const futureGoalPts = [];
+  const futureGoalPts = [{ day: todayDay, val: lastGoal }];
   if (zp && !zp.done && lastGoal > 0) {
-    futureGoalPts.push({ day: todayDay, val: lastGoal });
     futureGoalPts.push({ day: totalDays, val: 0 });
   } else {
-    futureGoalPts.push({ day: todayDay, val: lastGoal });
     futureGoalPts.push({ day: totalDays, val: lastGoal });
   }
 
   const maxVal = Math.max(
     ...tapPts.map((p) => p.val),
     ...goalPts.map((p) => p.val),
-    ...futureGoalPts.map((p) => p.val),
     1
-  ) * 1.1;
+  ) * 1.15;
 
-  const W = 100, H = 50;
-  const X = (d) => (d / totalDays) * W;
-  const Y = (v) => H - (v / maxVal) * (H - 4);
+  const PAD = { top: 6, right: 2, bottom: 22, left: 28 };
+  const W = 320, H = 140;
+  const plotW = W - PAD.left - PAD.right, plotH = H - PAD.top - PAD.bottom;
+  const X = (d) => PAD.left + (d / totalDays) * plotW;
+  const Y = (v) => PAD.top + plotH - (v / maxVal) * plotH;
 
-  const tapPoly = tapPts.map((p) => `${X(p.day).toFixed(2)},${Y(p.val).toFixed(2)}`).join(" ");
-  const goalPath = goalPts.map((p, i) => `${i === 0 ? "M" : "L"} ${X(p.day).toFixed(2)} ${Y(p.val).toFixed(2)}`).join(" ");
-  const futurePath = futureGoalPts.map((p, i) => `${i === 0 ? "M" : "L"} ${X(p.day).toFixed(2)} ${Y(p.val).toFixed(2)}`).join(" ");
+  const niceStep = (max) => {
+    const raw = max / 4;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    if (norm <= 1) return mag;
+    if (norm <= 2) return 2 * mag;
+    if (norm <= 5) return 5 * mag;
+    return 10 * mag;
+  };
+  const yStep = Math.max(1, niceStep(maxVal));
+  let gridLines = "";
+  let yLabels = "";
+  for (let v = 0; v <= maxVal; v += yStep) {
+    const y = Y(v).toFixed(1);
+    gridLines += `<line x1="${PAD.left}" y1="${y}" x2="${W - PAD.right}" y2="${y}" class="prog-grid"/>`;
+    yLabels += `<text x="${PAD.left - 4}" y="${y}" class="prog-ylabel" text-anchor="end" dominant-baseline="middle">${Math.round(v)}</text>`;
+  }
 
-  const todayX = X(todayDay).toFixed(2);
-  const todayLine = `<line x1="${todayX}" y1="0" x2="${todayX}" y2="${H}" class="prog-today"/>`;
+  const tapPoly = tapPts.map((p) => `${X(p.day).toFixed(1)},${Y(p.val).toFixed(1)}`).join(" ");
+  const goalPath = goalPts.map((p, i) => `${i === 0 ? "M" : "L"}${X(p.day).toFixed(1)},${Y(p.val).toFixed(1)}`).join(" ");
+  const futurePath = futureGoalPts.map((p, i) => `${i === 0 ? "M" : "L"}${X(p.day).toFixed(1)},${Y(p.val).toFixed(1)}`).join(" ");
 
-  const areaPath = tapPts.length > 1
-    ? `M ${X(tapPts[0].day).toFixed(2)} ${H} ` +
-      tapPts.map((p) => `L ${X(p.day).toFixed(2)} ${Y(p.val).toFixed(2)}`).join(" ") +
-      ` L ${X(tapPts[tapPts.length - 1].day).toFixed(2)} ${H} Z`
+  const areaD = `M${X(tapPts[0].day).toFixed(1)},${Y(0).toFixed(1)} ` +
+    tapPts.map((p) => `L${X(p.day).toFixed(1)},${Y(p.val).toFixed(1)}`).join(" ") +
+    ` L${X(tapPts[tapPts.length - 1].day).toFixed(1)},${Y(0).toFixed(1)}Z`;
+
+  const todayX = X(todayDay).toFixed(1);
+  const todayLine = `<line x1="${todayX}" y1="${PAD.top}" x2="${todayX}" y2="${Y(0)}" class="prog-today"/>`;
+
+  const firstLabel = firstDay.toLocaleDateString(undefined, { month: "short" });
+  const endLabel = endDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  const midDate = new Date(t0 + (tEnd - t0) / 2);
+  const midLabel = midDate.toLocaleDateString(undefined, { month: "short" });
+
+  const endDot = tapPts.length
+    ? `<circle cx="${X(tapPts[tapPts.length - 1].day).toFixed(1)}" cy="${Y(tapPts[tapPts.length - 1].val).toFixed(1)}" r="3.5" class="prog-dot"/>`
     : "";
 
-  const firstLabel = firstDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-  const endLabel = endDay.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-  const todayPct = ((todayDay / totalDays) * 100).toFixed(1);
-
   card.insertAdjacentHTML("beforeend",
-    `<svg class="prog-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
-    (areaPath ? `<path d="${areaPath}" fill="var(--accent)" class="prog-area"/>` : "") +
+    `<svg class="prog-svg" viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
+    gridLines + yLabels +
+    `<path d="${areaD}" class="prog-area"/>` +
     todayLine +
-    `<path d="${goalPath}" class="prog-goal"/>` +
+    `<path d="${goalPath}" class="prog-goal-line"/>` +
     `<path d="${futurePath}" class="prog-goal-future"/>` +
     `<polyline points="${tapPoly}" class="prog-taps trend-poly"/>` +
+    endDot +
+    `<text x="${PAD.left}" y="${H - 2}" class="prog-xlabel">${firstLabel}</text>` +
+    `<text x="${X(totalDays / 2).toFixed(1)}" y="${H - 2}" class="prog-xlabel" text-anchor="middle">${midLabel}</text>` +
+    `<text x="${W - PAD.right}" y="${H - 2}" class="prog-xlabel" text-anchor="end">${endLabel}</text>` +
     `</svg>` +
-    `<div class="prog-dates"><span>${firstLabel}</span><span style="left:${todayPct}%">now</span><span>${endLabel}</span></div>` +
-    `<div class="prog-legend"><span class="leg-taps"><i></i>Daily taps</span><span class="leg-goal"><i></i>Goal</span></div>`
+    `<div class="prog-legend">` +
+    `<span class="leg-taps"><i></i>Taps</span>` +
+    `<span class="leg-goal"><i></i>Goal</span>` +
+    `<span class="leg-future"><i></i>Projected</span>` +
+    `</div>`
   );
   drawLine(card);
 }
