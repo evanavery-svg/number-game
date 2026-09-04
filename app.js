@@ -1631,6 +1631,22 @@ function renderProgress() {
   const X = (d) => PAD.left + d * pxPerDay;
   const Y = (v) => PAD.top + plotH - (v / maxVal) * plotH;
 
+  // For tap-to-read: the tap total on each day, and the goal on any day (the
+  // held rung in the past, the projected line in the future).
+  const tapByDay = {};
+  tapPts.forEach((p) => { tapByDay[p.day] = p.val; });
+  const goalOnDay = (day) => {
+    if (day <= todayDay) {
+      const t = t0 + day * 864e5;
+      let g = pts[0].goal;
+      for (const pnt of pts) if (pnt.at <= t) g = pnt.goal;
+      return g;
+    }
+    const a = futureGoalPts[0], z = futureGoalPts[futureGoalPts.length - 1];
+    const frac = (day - a.day) / Math.max(1, z.day - a.day);
+    return a.val + (z.val - a.val) * frac;
+  };
+
   const niceStep = (max) => {
     const raw = max / 4;
     const mag = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -1694,16 +1710,47 @@ function renderProgress() {
     `<path d="${futurePath}" class="prog-goal-future"/>` +
     `<polyline points="${tapPoly}" class="prog-taps trend-poly"/>` +
     endDot +
+    `<g class="prog-cursor" style="display:none"><line y1="${PAD.top}" y2="${Y(0)}" class="prog-cursor-line"/><circle r="3.5" class="prog-cursor-dot"/></g>` +
     `<text x="${todayX}" y="${PAD.top + 7}" class="prog-xlabel prog-nowlabel" text-anchor="middle">now</text>` +
     `</svg>`;
 
   card.insertAdjacentHTML("beforeend",
+    `<div class="prog-readout" id="progReadout">Tap the chart to read any day</div>` +
     `<div class="prog-legend">` +
     `<span class="leg-taps"><i></i>Taps</span>` +
     `<span class="leg-goal"><i></i>Goal</span>` +
     `<span class="leg-future"><i></i>Projected</span>` +
     `</div>`
   );
+
+  // Tap-to-read: a tap anywhere on the plot snaps a cursor to that day and
+  // shows its numbers below (dragging still scrolls, so this doesn't fight it).
+  const svg = scroll.querySelector(".prog-svg");
+  const cursor = svg.querySelector(".prog-cursor");
+  const cLine = cursor.querySelector(".prog-cursor-line");
+  const cDot = cursor.querySelector(".prog-cursor-dot");
+  const readout = card.querySelector("#progReadout");
+  const showDay = (day) => {
+    day = Math.max(0, Math.min(totalDays, Math.round(day)));
+    const cx = X(day);
+    cLine.setAttribute("x1", cx.toFixed(1)); cLine.setAttribute("x2", cx.toFixed(1));
+    cursor.style.display = "";
+    const dateStr = new Date(t0 + day * 864e5).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const g = goalOnDay(day);
+    if (day <= todayDay && tapByDay[day] != null) {
+      const v = tapByDay[day];
+      cDot.setAttribute("cx", cx.toFixed(1)); cDot.setAttribute("cy", Y(v).toFixed(1)); cDot.style.display = "";
+      readout.innerHTML = `<b>${dateStr}</b> · ${fmt(v)} tap${v === 1 ? "" : "s"}` + (hasGoal() ? ` · goal ${fmt(g)}` : "");
+    } else {
+      cDot.style.display = "none";
+      readout.innerHTML = `<b>${dateStr}</b> · projected goal ${fmt(round2(g))}`;
+    }
+  };
+  svg.addEventListener("click", (ev) => {
+    const rect = svg.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) * (W / rect.width);
+    showDay((x - PAD.left) / pxPerDay);
+  });
 
   // Open with the logged history filling the view and "now" at the right edge;
   // the projected future waits off to the right.
@@ -4402,17 +4449,24 @@ function checkReminder() {
   const due = now.getHours() * 60 + now.getMinutes() >= h * 60 + m;
   const todayStr = isoLocal(now);
   if (due && !hasActivityToday() && load(KEY_REMIND_DISMISS, null) !== todayStr) {
+    // If a good run is on the line, say so — a streak you can lose tonight is a
+    // stronger nudge than a generic reminder. Only past ~3 days is it worth it.
+    const s = underStreak();
+    const body = s >= 3
+      ? `${s}-day streak under goal — end today under ${fmt(goal)} to keep it.`
+      : "Don't forget to track today.";
+    el.reminderText.textContent = body;
     el.reminder.style.display = "flex";
-    notifyOnce(todayStr);
+    notifyOnce(todayStr, body);
   } else {
     el.reminder.style.display = "none";
   }
 }
-function notifyOnce(todayStr) {
+function notifyOnce(todayStr, body) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   if (load(KEY_REMIND_LAST, null) === todayStr) return;
   save(KEY_REMIND_LAST, todayStr);
-  const body = "Don't forget to track today.";
+  body = body || "Don't forget to track today.";
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.ready) {
       navigator.serviceWorker.ready.then((reg) => reg.showNotification("Tracker", { body, icon: "icon-192.png", badge: "icon-192.png", tag: "daily" })).catch(() => {});
