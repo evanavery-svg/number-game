@@ -115,6 +115,8 @@ const el = {
   riskLine: document.getElementById("riskLine"),
   ladderCard: document.getElementById("ladderCard"),
   progressCard: document.getElementById("progressCard"),
+  habitsSummaryCard: document.getElementById("habitsSummaryCard"),
+  habitsListCard: document.getElementById("habitsListCard"),
   recordsCard: document.getElementById("recordsCard"),
   trendCard: document.getElementById("trendCard"),
   shapeCard: document.getElementById("shapeCard"),
@@ -1221,14 +1223,18 @@ const RANGES = [{ n: 7, t: "7d" }, { n: 30, t: "30d" }, { n: 90, t: "90d" }, { n
 const SEGMENTS = [
   { key: "overview", label: "Overview", page: "segOverview" },
   { key: "journey", label: "Journey", page: "segJourney" },
+  { key: "habits", label: "Habits", page: "segHabits" },
   { key: "patterns", label: "Patterns", page: "segPatterns" },
 ];
+// The Habits tab only exists when the daily-habits feature is turned on.
+function segList() { return SEGMENTS.filter((s) => s.key !== "habits" || features.vitamins); }
 let insightSeg = "overview";
 let moreStatsOpen = false;
 function renderSegRow() {
   const row = el.segRow;
   row.textContent = "";
-  SEGMENTS.forEach((sg) => {
+  if (!segList().some((s) => s.key === insightSeg)) insightSeg = "overview";
+  segList().forEach((sg) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "seg-btn" + (insightSeg === sg.key ? " on" : "");
@@ -1238,11 +1244,12 @@ function renderSegRow() {
   });
 }
 function showSegment() {
+  if (!segList().some((s) => s.key === insightSeg)) insightSeg = "overview";
   SEGMENTS.forEach((sg) => {
     const page = document.getElementById(sg.page);
     if (page) page.style.display = insightSeg === sg.key ? "block" : "none";
   });
-  el.segRow.querySelectorAll(".seg-btn").forEach((b, i) => b.classList.toggle("on", SEGMENTS[i].key === insightSeg));
+  el.segRow.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("on", b.textContent === (segList().find((s) => s.key === insightSeg) || {}).label));
   // the range switcher only drives the Overview stats
   el.rangeRow.style.display = insightSeg === "overview" ? "flex" : "none";
   const body = el.insightsOverlay.querySelector(".panel-body");
@@ -1270,6 +1277,7 @@ function renderRangeRow() {
 const SEG_RENDER = {
   overview: () => { renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
   journey:  () => { renderLadder(); renderProgress(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
+  habits:   () => { renderHabits(); },
   patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderMood(); renderConnections(); renderWins(); },
 };
 function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
@@ -1703,6 +1711,64 @@ function renderProgress() {
   setScroll();
   requestAnimationFrame(setScroll);
   drawLine(card);
+}
+
+// How the Daily Habits checklist is going: a 30-day completion trend, and a
+// per-habit breakdown with each habit's rate and current streak.
+const DOW_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function renderHabits() {
+  const sum = el.habitsSummaryCard, listCard = el.habitsListCard;
+  if (!vitaminsList.length) {
+    sum.style.display = "block"; sum.textContent = "";
+    addEl(sum, "div", "Habits", "section-title");
+    addEl(sum, "div", "Add a daily habit and its streaks and completion will chart here.", "card-empty");
+    listCard.style.display = "none";
+    return;
+  }
+
+  const N = 30;
+  const stats = habitStats(vitaminsLog, vitaminsList, sessionDate(), N);
+  const avg = stats.series.reduce((s, d) => s + d.rate, 0) / stats.series.length;
+
+  // ---- summary card: completion trend + headline ----
+  sum.style.display = "block"; sum.textContent = "";
+  addEl(sum, "div", "Habits · last 30 days", "section-title");
+
+  const W = 100, H = 42;
+  const X = (i) => (i / (N - 1)) * W;
+  const Y = (r) => H - r * (H - 3);
+  const poly = stats.series.map((d, i) => `${X(i).toFixed(2)},${Y(d.rate).toFixed(2)}`).join(" ");
+  sum.insertAdjacentHTML("beforeend",
+    `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<line x1="0" y1="${Y(1).toFixed(2)}" x2="${W}" y2="${Y(1).toFixed(2)}" class="trend-goal"/>` +
+    `<polyline points="${poly}" class="trend-poly"/></svg>`);
+
+  const cap = document.createElement("div"); cap.className = "wk-callout";
+  cap.innerHTML = `You complete <b>${Math.round(avg * 100)}%</b> of your habits on an average day`;
+  sum.appendChild(cap);
+  if (stats.bestDow >= 0 && stats.bestAvg > 0) {
+    const dw = document.createElement("div"); dw.className = "mood-corr";
+    dw.innerHTML = `📅 <b>${DOW_LABELS[stats.bestDow]}</b> is your strongest day`;
+    sum.appendChild(dw);
+  }
+
+  // ---- list card: per-habit rate + streak ----
+  listCard.style.display = "block"; listCard.textContent = "";
+  addEl(listCard, "div", "By habit", "section-title");
+  const list = document.createElement("div"); list.className = "hb-list";
+  stats.per.slice().sort((a, b) => b.rate - a.rate).forEach((h) => {
+    const row = document.createElement("div"); row.className = "hb-row";
+    const top = document.createElement("div"); top.className = "hb-top";
+    addEl(top, "span", h.name, "hb-name");
+    if (h.streak > 1) addEl(top, "span", "🔥 " + h.streak, "hb-streak");
+    addEl(top, "span", `${h.done}/${N}`, "hb-val");
+    row.appendChild(top);
+    const track = document.createElement("div"); track.className = "hb-track";
+    const fill = document.createElement("i"); fill.style.width = Math.round(h.rate * 100) + "%";
+    track.appendChild(fill); row.appendChild(track);
+    list.appendChild(row);
+  });
+  listCard.appendChild(list);
 }
 
 // All-time highlights.
@@ -2769,7 +2835,8 @@ function openVitamins() {
 
     const refresh = () => {
       list.textContent = "";
-      const todayLog = vitaminsForDay(vitaminsLog, sessionDate());
+      const dayKey = sessionDate();
+      const todayLog = vitaminsForDay(vitaminsLog, dayKey);
       const total = vitaminsList.length;
       const done = vitaminsList.filter((n) => vitCount(todayLog[n]) > 0).length;
       pill.textContent = total ? `${done}/${total}` : "0";
@@ -2791,12 +2858,26 @@ function openVitamins() {
 
         const tapBtn = document.createElement("button");
         tapBtn.type = "button"; tapBtn.className = "vit-body";
-        addEl(tapBtn, "span", name, "vit-name");
+        const line = document.createElement("span"); line.className = "vit-line";
+        addEl(line, "span", name, "vit-name");
         if (isTaken && times.length) {
           const last = new Date(times[times.length - 1]);
           const label = (c > 1 ? c + "× · " : "") + last.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-          addEl(tapBtn, "span", label, "vit-time");
+          addEl(line, "span", label, "vit-time");
         }
+        const streak = habitStreak(vitaminsLog, name, dayKey);
+        if (streak > 1) addEl(line, "span", "🔥 " + streak, "vit-streak");
+        tapBtn.appendChild(line);
+
+        // A month of momentum at a glance — a dot per day, filled where done.
+        const dots = document.createElement("span"); dots.className = "vit-dots";
+        habitLastNDays(vitaminsLog, name, dayKey, 30).forEach((done) => {
+          const dot = document.createElement("i");
+          if (done) dot.className = "on";
+          dots.appendChild(dot);
+        });
+        tapBtn.appendChild(dots);
+
         tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
         row.appendChild(tapBtn);
 

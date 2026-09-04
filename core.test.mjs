@@ -714,6 +714,68 @@ test("vitaminsForDay reads today's tallies and defaults to empty", () => {
   assert.deepEqual(core.vitaminsForDay(null, "2026-08-12"), {});
 });
 
+test("vitTakenOn handles array, count, and missing entries", () => {
+  const log = { "2026-08-12": { Water: ["t1", "t2"], Stretch: 1, Read: 0 } };
+  assert.equal(core.vitTakenOn(log, "Water", "2026-08-12"), true);   // timestamp array
+  assert.equal(core.vitTakenOn(log, "Stretch", "2026-08-12"), true); // legacy count
+  assert.equal(core.vitTakenOn(log, "Read", "2026-08-12"), false);   // zero count
+  assert.equal(core.vitTakenOn(log, "Water", "2026-08-13"), false);  // no entry that day
+  assert.equal(core.vitTakenOn(null, "Water", "2026-08-12"), false); // no log
+});
+
+test("prevDayKey steps back one calendar day, across month and year ends", () => {
+  assert.equal(core.prevDayKey("2026-08-12"), "2026-08-11");
+  assert.equal(core.prevDayKey("2026-08-01"), "2026-07-31");
+  assert.equal(core.prevDayKey("2026-01-01"), "2025-12-31");
+});
+
+test("habitStreak counts consecutive days and survives a not-yet-done today", () => {
+  const log = {
+    "2026-08-10": { Water: ["t"] },
+    "2026-08-11": { Water: ["t"] },
+    "2026-08-12": { Water: ["t"] },   // yesterday
+    // 2026-08-13 (today) not done yet
+  };
+  // today not done, but the run through yesterday is still alive → 3
+  assert.equal(core.habitStreak(log, "Water", "2026-08-13"), 3);
+  // once today is done, it extends to 4
+  log["2026-08-13"] = { Water: ["t"] };
+  assert.equal(core.habitStreak(log, "Water", "2026-08-13"), 4);
+  // a gap two days ago breaks it: only today + yesterday count
+  delete log["2026-08-11"];
+  assert.equal(core.habitStreak(log, "Water", "2026-08-13"), 2);
+  // never done → 0
+  assert.equal(core.habitStreak(log, "Nope", "2026-08-13"), 0);
+});
+
+test("habitLastNDays returns oldest→newest booleans", () => {
+  const log = { "2026-08-11": { Water: ["t"] }, "2026-08-13": { Water: ["t"] } };
+  assert.deepEqual(core.habitLastNDays(log, "Water", "2026-08-13", 3), [true, false, true]);
+});
+
+test("habitDayRate is the fraction of the list done that day", () => {
+  const log = { "2026-08-12": { Water: ["t"], Stretch: ["t"] } };
+  assert.equal(core.habitDayRate(log, ["Water", "Stretch", "Read"], "2026-08-12"), 2 / 3);
+  assert.equal(core.habitDayRate(log, [], "2026-08-12"), 0);
+});
+
+test("habitStats summarizes per-habit rate, streak, series, and best weekday", () => {
+  // 2026-08-12 is a Wednesday; build a 3-day window ending Wed
+  const log = {
+    "2026-08-10": { Water: ["t"] },                 // Mon
+    "2026-08-11": { Water: ["t"], Stretch: ["t"] }, // Tue
+    "2026-08-12": { Water: ["t"] },                 // Wed (today)
+  };
+  const s = core.habitStats(log, ["Water", "Stretch"], "2026-08-12", 3);
+  const water = s.per.find((p) => p.name === "Water");
+  const stretch = s.per.find((p) => p.name === "Stretch");
+  assert.equal(water.done, 3); assert.equal(water.rate, 1); assert.equal(water.streak, 3);
+  assert.equal(stretch.done, 1); assert.equal(stretch.rate, 1 / 3);
+  assert.equal(s.series.length, 3);
+  assert.equal(s.series[2].rate, 0.5);   // Wed: 1 of 2 done
+  assert.equal(s.bestDow, 2);            // Tuesday (both done) is the strongest day
+});
+
 test("treeMilestoneHit fires once per quarter crossed, never at 100%", () => {
   // a single day's growth (progress += 1) crossing the 25% line (day 8 of 30)
   assert.equal(core.treeMilestoneHit(7, 8, 30), 25);

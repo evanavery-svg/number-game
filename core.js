@@ -297,6 +297,71 @@ function vitaminsForDay(log, dayStr) {
   return (log && log[dayStr]) || {};
 }
 
+// Was a habit done on a given day? Backward-compatible with the old
+// count-based entries (a number) as well as the current timestamp arrays.
+function vitTakenOn(log, name, dayStr) {
+  const day = log && log[dayStr];
+  if (!day) return false;
+  const v = day[name];
+  return Array.isArray(v) ? v.length > 0 : !!v;
+}
+// The previous calendar day for a "YYYY-MM-DD" key. Noon avoids any DST edge.
+function prevDayKey(dayStr) {
+  const d = new Date(dayStr + "T12:00:00");
+  d.setDate(d.getDate() - 1);
+  return isoLocal(d);
+}
+// Current run of consecutive days a habit was done, counting back from today.
+// Stays alive on a not-yet-done today (it counts the run ending yesterday), so
+// the streak only breaks once a day is genuinely missed.
+function habitStreak(log, name, todayStr) {
+  let cur = todayStr;
+  if (!vitTakenOn(log, name, cur)) {
+    cur = prevDayKey(cur);
+    if (!vitTakenOn(log, name, cur)) return 0;
+  }
+  let n = 0;
+  while (vitTakenOn(log, name, cur)) { n++; cur = prevDayKey(cur); }
+  return n;
+}
+// Booleans for the last n days, oldest → newest (today last) — for a dot row.
+function habitLastNDays(log, name, todayStr, n) {
+  const out = [];
+  let cur = todayStr;
+  for (let i = 0; i < n; i++) { out.push(vitTakenOn(log, name, cur)); cur = prevDayKey(cur); }
+  return out.reverse();
+}
+// Fraction of `names` done on a given day (0..1). Empty list → 0.
+function habitDayRate(log, names, dayStr) {
+  if (!names || !names.length) return 0;
+  let done = 0;
+  for (const nm of names) if (vitTakenOn(log, nm, dayStr)) done++;
+  return done / names.length;
+}
+// Habit analytics over the last n days: a per-habit summary (done count, rate,
+// current streak), the daily completion-rate series, and the strongest weekday.
+function habitStats(log, names, todayStr, n) {
+  names = names || [];
+  const days = [];
+  let cur = todayStr;
+  for (let i = 0; i < n; i++) { days.push(cur); cur = prevDayKey(cur); }
+  days.reverse();   // oldest → newest
+  const per = names.map((nm) => {
+    let done = 0;
+    for (const d of days) if (vitTakenOn(log, nm, d)) done++;
+    return { name: nm, done, n, rate: n ? done / n : 0, streak: habitStreak(log, nm, todayStr) };
+  });
+  const series = days.map((d) => ({ day: d, rate: habitDayRate(log, names, d) }));
+  const byDow = [0, 1, 2, 3, 4, 5, 6].map(() => ({ sum: 0, count: 0 }));
+  for (const s of series) {
+    const dow = new Date(s.day + "T12:00:00").getDay();
+    byDow[dow].sum += s.rate; byDow[dow].count++;
+  }
+  let bestDow = -1, bestAvg = -1;
+  byDow.forEach((b, i) => { if (b.count) { const a = b.sum / b.count; if (a > bestAvg) { bestAvg = a; bestDow = i; } } });
+  return { per, series, bestDow, bestAvg };
+}
+
 // ---- growth tree milestones ----
 // A pop-up at 25/50/75% of the way to a prestige, not just on full-grown —
 // a 30-day stretch is long enough that a quarter/half/three-quarters cue is
@@ -760,6 +825,7 @@ if (typeof module !== "undefined" && module.exports) {
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
     dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, vitaminsForDay,
+    vitTakenOn, prevDayKey, habitStreak, habitLastNDays, habitDayRate, habitStats,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
