@@ -1241,9 +1241,11 @@
     .vit-circle {
       width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
       border: 2px solid var(--surface-2); position: relative;
-      transition: border-color var(--dur-base) ease, background var(--dur-base) ease;
-      pointer-events: none;
+      transition: border-color var(--dur-base) ease, background var(--dur-base) ease, transform var(--dur-fast) ease;
+      padding: 0; margin: 0; box-sizing: border-box; appearance: none; -webkit-appearance: none;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
     }
+    .vit-circle:active { transform: scale(0.88); }
     .vit-row.taken .vit-circle {
       border-color: var(--safe); background: var(--safe);
     }
@@ -1626,7 +1628,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.19</div>
+  <div class="version">v10.20</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

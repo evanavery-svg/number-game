@@ -2783,7 +2783,10 @@ function openVitamins() {
         const row = document.createElement("div");
         row.className = "vit-row" + (isTaken ? " taken" : "");
 
-        const circle = document.createElement("span"); circle.className = "vit-circle";
+        const circle = document.createElement("button");
+        circle.type = "button"; circle.className = "vit-circle";
+        circle.setAttribute("aria-label", (isTaken ? "Add another " : "Mark ") + name);
+        circle.addEventListener("click", (ev) => { ev.stopPropagation(); tapVitamin(name); refresh(); });
         row.appendChild(circle);
 
         const tapBtn = document.createElement("button");
