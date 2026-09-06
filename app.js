@@ -1005,6 +1005,27 @@ function drawLine(container) {
   line.classList.add("draw");
 }
 
+// Draw an arbitrary SVG path on by sweeping its stroke — used for the taper
+// ladder and the goal line, so a rung stepping down reads as motion, not a
+// static picture. Web Animations so it works on any path without a keyframe.
+function drawPath(pathEl, dur, delay) {
+  if (reduceMotion() || !pathEl || !pathEl.getTotalLength || !pathEl.animate) return;
+  const len = pathEl.getTotalLength();
+  if (!len) return;
+  pathEl.style.strokeDasharray = len;
+  const a = pathEl.animate(
+    [{ strokeDashoffset: len }, { strokeDashoffset: 0 }],
+    { duration: dur || 700, delay: delay || 0, easing: "cubic-bezier(.4,0,.2,1)", fill: "backwards" }
+  );
+  a.onfinish = () => { pathEl.style.strokeDasharray = ""; };
+}
+// A plain delayed fade-in that rests at the element's own CSS opacity.
+function fadeIn(node, dur, delay) {
+  if (reduceMotion() || !node || !node.animate) return;
+  const to = getComputedStyle(node).opacity || "1";
+  node.animate([{ opacity: 0 }, { opacity: to }], { duration: dur || 400, delay: delay || 0, easing: "ease-out", fill: "backwards" });
+}
+
 function growBars(container, sel, prop) {
   if (reduceMotion() || !container) return;
   prop = prop || "height";
@@ -1099,6 +1120,24 @@ function setValue(target, animate) {
     else { el.total.textContent = fmt(target); countRAF = null; }
   };
   countRAF = requestAnimationFrame(tick);
+}
+
+// Count a stat-tile value up from zero on reveal. Keeps any suffix (%, ×) and
+// the target's decimal places; a non-numeric value (—) is set as-is.
+function countUpText(node, value, dur) {
+  const m = /^(-?\d+(?:\.\d+)?)(.*)$/.exec(value);
+  if (!m || reduceMotion()) { node.textContent = value; return; }
+  const target = parseFloat(m[1]), suffix = m[2];
+  const decimals = (m[1].split(".")[1] || "").length;
+  const fmtN = (x) => (decimals ? x.toFixed(decimals) : String(Math.round(x)));
+  const t0 = performance.now(); dur = dur || 520;
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    node.textContent = fmtN(target * (1 - Math.pow(1 - p, 3))) + suffix;
+    if (p < 1) requestAnimationFrame(tick);
+    else node.textContent = value;
+  };
+  requestAnimationFrame(tick);
 }
 
 // Goal is a ceiling: streak = consecutive recent days that stayed at or under it.
@@ -1230,6 +1269,7 @@ const SEGMENTS = [
 function segList() { return SEGMENTS.filter((s) => s.key !== "habits" || features.vitamins); }
 let insightSeg = "overview";
 let moreStatsOpen = false;
+let statTilesAnimate = false;   // count the tiles up once, on the way into Insights
 function renderSegRow() {
   const row = el.segRow;
   row.textContent = "";
@@ -1326,6 +1366,7 @@ function renderStatTiles() {
   el.moreStats.style.display = g2.childNodes.length ? "block" : "none";
   el.insightsGrid2.style.display = moreStatsOpen ? "grid" : "none";
   el.moreStats.textContent = moreStatsOpen ? "Fewer stats" : "More stats";
+  statTilesAnimate = false;   // only the opening render counts up; range flips snap
 }
 
 // Turn a dayRisk reading into plain sentences. Kept in one place so the quiet
@@ -1501,6 +1542,8 @@ function renderLadder() {
     `<svg class="ladder-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
     `<line x1="0" y1="${Y(0).toFixed(2)}" x2="${W}" y2="${Y(0).toFixed(2)}" class="ladder-zero"/>` +
     `<path d="${d}" class="ladder-path"/></svg>`);
+  // the staircase draws itself down, so the descent to zero reads as motion
+  drawPath(card.querySelector(".ladder-path"), 900);
 
   const first = pts[0].goal, cur = pts[pts.length - 1].goal;
   const rungs = pts.filter((p, i) => i > 0 && p.goal < pts[i - 1].goal).length;
@@ -1757,7 +1800,11 @@ function renderProgress() {
   const setScroll = () => { scroll.scrollLeft = Math.max(0, X(todayDay) - scroll.clientWidth + PAD.right); };
   setScroll();
   requestAnimationFrame(setScroll);
+  // The chart draws itself on: taps sweep in, the goal steps cascade after,
+  // and the projected taper fades in last.
   drawLine(card);
+  drawPath(svg.querySelector(".prog-goal-line"), 650, 140);
+  fadeIn(svg.querySelector(".prog-goal-future"), 460, 760);
 }
 
 // How the Daily Habits checklist is going: a 30-day completion trend, and a
@@ -2525,7 +2572,7 @@ function statTile(value, label, opts) {
   t.className = "tile";
   const v = document.createElement("div");
   v.className = "tile-val" + (opts.good ? " good" : "") + (opts.bad ? " bad" : "");
-  v.textContent = value;
+  if (statTilesAnimate) countUpText(v, value); else v.textContent = value;
   const l = document.createElement("div");
   l.className = "tile-lbl";
   l.textContent = label;
@@ -2543,6 +2590,7 @@ function openInsights() {
   calOffset = 0;
   insightSeg = "overview";   // always land on Overview
   moreStatsOpen = false;
+  statTilesAnimate = true;   // the headline numbers count up as the panel opens
   el.insightsOverlay.classList.add("show");   // before rendering — renderInsights guards on it
   renderInsights();
   // entrance choreography: tiles + cards rise in, bars grow to height
