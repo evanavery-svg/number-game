@@ -2880,27 +2880,43 @@ function openVitamins() {
 
     const list = document.createElement("div"); list.className = "vit-list";
 
-    const refresh = () => {
+    let wasAllDone = false;   // so the "all done" celebration fires on the crossing, not every render
+    const refresh = (opts) => {
+      opts = opts || {};
+      const anim = !reduceMotion();
       list.textContent = "";
       const dayKey = sessionDate();
       const todayLog = vitaminsForDay(vitaminsLog, dayKey);
       const total = vitaminsList.length;
       const done = vitaminsList.filter((n) => vitCount(todayLog[n]) > 0).length;
-      pill.textContent = total ? `${done}/${total}` : "0";
-      pill.className = "vit-summary" + (total && done >= total ? " all-done" : "");
+      const allDone = total > 0 && done >= total;
+      pill.textContent = total ? (allDone ? `✓ ${done}/${total}` : `${done}/${total}`) : "0";
+      pill.className = "vit-summary" + (allDone ? " all-done" : "");
       barFill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
+
+      // Reaching the finish line on a tap earns a small celebration once.
+      if (allDone && !wasAllDone && opts.tapped && anim) {
+        bar.classList.remove("celebrate"); void bar.offsetWidth; bar.classList.add("celebrate");
+        pill.classList.remove("pop"); void pill.offsetWidth; pill.classList.add("pop");
+        buzz([0, 30, 40, 30, 60]);
+      }
+      if (!allDone) { bar.classList.remove("celebrate"); pill.classList.remove("pop"); }
+      wasAllDone = allDone;
 
       vitaminsList.forEach((name) => {
         const c = vitCount(todayLog[name]);
         const times = Array.isArray(todayLog[name]) ? todayLog[name] : [];
         const isTaken = c > 0;
+        const justCompleted = opts.tapped === name && c === 1;   // today's first completion
         const row = document.createElement("div");
         row.className = "vit-row" + (isTaken ? " taken" : "");
+        // the check strokes on, the ring springs, a soft burst rings out
+        if (opts.tapped === name && isTaken && anim) row.classList.add("just-checked");
 
         const circle = document.createElement("button");
         circle.type = "button"; circle.className = "vit-circle";
         circle.setAttribute("aria-label", (isTaken ? "Add another " : "Mark ") + name);
-        circle.addEventListener("click", (ev) => { ev.stopPropagation(); tapVitamin(name); refresh(); });
+        circle.addEventListener("click", (ev) => { ev.stopPropagation(); tapVitamin(name); refresh({ tapped: name }); });
         row.appendChild(circle);
 
         const tapBtn = document.createElement("button");
@@ -2913,19 +2929,33 @@ function openVitamins() {
           addEl(line, "span", label, "vit-time");
         }
         const streak = habitStreak(vitaminsLog, name, dayKey);
-        if (streak > 1) addEl(line, "span", "🔥 " + streak, "vit-streak");
+        if (streak > 1) {
+          // the flame grows with the run; a fresh completion makes it flare
+          const tier = streak >= 30 ? " big" : streak >= 7 ? " mid" : "";
+          const flame = addEl(line, "span", "🔥 " + streak, "vit-streak" + tier);
+          if (justCompleted && anim) flame.classList.add("flare");
+        }
         tapBtn.appendChild(line);
 
         // A month of momentum at a glance — a dot per day, filled where done.
+        // On open the filled dots cascade in; a fresh completion pops today's.
         const dots = document.createElement("span"); dots.className = "vit-dots";
-        habitLastNDays(vitaminsLog, name, dayKey, 30).forEach((done) => {
+        const flags = habitLastNDays(vitaminsLog, name, dayKey, 30);
+        flags.forEach((on, idx) => {
           const dot = document.createElement("i");
-          if (done) dot.className = "on";
+          if (on) {
+            dot.className = "on";
+            if (opts.opened && anim) { dot.classList.add("cascade"); dot.style.animationDelay = Math.min(idx, 29) * 11 + "ms"; }
+          }
           dots.appendChild(dot);
         });
+        if (justCompleted && anim) {
+          const last = dots.lastElementChild;
+          if (last && last.classList.contains("on")) last.classList.add("pop");
+        }
         tapBtn.appendChild(dots);
 
-        tapBtn.addEventListener("click", () => { tapVitamin(name); refresh(); });
+        tapBtn.addEventListener("click", () => { tapVitamin(name); refresh({ tapped: name }); });
         row.appendChild(tapBtn);
 
         if (isTaken && !editing) {
@@ -2965,7 +2995,7 @@ function openVitamins() {
         list.appendChild(addRow);
       }
     };
-    refresh();
+    refresh({ opened: true });
     s.appendChild(list);
 
     const footer = document.createElement("div"); footer.className = "vit-footer";

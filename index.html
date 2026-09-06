@@ -1280,9 +1280,38 @@
     .vit-time { font-size: 12px; color: var(--faint); }
     .vit-row.taken .vit-time { color: var(--safe); opacity: .7; }
     .vit-streak { font-size: 12px; color: var(--warn, #eda100); font-weight: 600; margin-left: auto; white-space: nowrap; }
+    .vit-streak.mid { font-size: 13px; }
+    .vit-streak.big { font-size: 15px; }
+    .vit-streak.flare { animation: vitFlare 620ms var(--ease-out); transform-origin: left center; }
+    @keyframes vitFlare { 0% { transform: scale(1); } 30% { transform: scale(1.5); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } }
     .vit-dots { display: flex; gap: 2px; flex-wrap: nowrap; }
     .vit-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--surface-2); flex: 0 0 auto; }
     .vit-dots i.on { background: var(--safe); }
+    .vit-dots i.cascade { animation: vitDotIn 300ms var(--ease-out) both; }
+    .vit-dots i.pop { animation: vitDotPop 460ms var(--ease-out); }
+    @keyframes vitDotIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    @keyframes vitDotPop { 0% { transform: scale(0); } 60% { transform: scale(1.7); } 100% { transform: scale(1); } }
+    /* the tap: ring springs, check pops on, a soft burst rings out */
+    .vit-circle::before {
+      content: ""; position: absolute; inset: -3px; border-radius: 50%;
+      border: 2px solid var(--safe); opacity: 0; pointer-events: none;
+    }
+    .vit-row.just-checked .vit-circle { animation: vitRingPop 420ms var(--ease-out); }
+    .vit-row.just-checked .vit-circle::after { animation: vitCheckPop 420ms var(--ease-out); }
+    .vit-row.just-checked .vit-circle::before { animation: vitBurst 520ms var(--ease-out); }
+    @keyframes vitRingPop { 0% { transform: scale(0.7); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
+    @keyframes vitCheckPop { 0% { transform: rotate(45deg) scale(0); } 60% { transform: rotate(45deg) scale(1.35); } 100% { transform: rotate(45deg) scale(1); } }
+    @keyframes vitBurst { 0% { transform: scale(0.5); opacity: 0.55; } 100% { transform: scale(2); opacity: 0; } }
+    /* finishing the checklist: the pill pops and a highlight sweeps the bar */
+    .vit-summary.pop { animation: vitPillPop 460ms var(--ease-out); }
+    @keyframes vitPillPop { 0% { transform: scale(1); } 40% { transform: scale(1.2); } 100% { transform: scale(1); } }
+    .vit-bar { position: relative; }
+    .vit-bar.celebrate::after {
+      content: ""; position: absolute; inset: 0; border-radius: 99px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.85), transparent);
+      transform: translateX(-100%); animation: vitBarSweep 700ms var(--ease-out);
+    }
+    @keyframes vitBarSweep { to { transform: translateX(220%); } }
     .vit-undo {
       background: none; border: none; color: var(--faint); font-size: 13px; line-height: 1;
       padding: 6px; cursor: pointer; font-family: inherit; opacity: 0; transition: opacity var(--dur-base) ease;
@@ -1646,7 +1675,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.22</div>
+  <div class="version">v10.23</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
