@@ -2922,16 +2922,14 @@ function openVitamins() {
     hdr.appendChild(pill);
     s.appendChild(hdr);
 
-    const bar = document.createElement("div"); bar.className = "vit-bar";
-    const barFill = document.createElement("i"); bar.appendChild(barFill);
-    s.appendChild(bar);
-
     const allDoneLine = document.createElement("div");
     allDoneLine.className = "vit-alldone"; allDoneLine.textContent = "All done for today ✓";
     allDoneLine.style.display = "none";
     s.appendChild(allDoneLine);
 
-    const list = document.createElement("div"); list.className = "vit-list";
+    // A grid of tappable habit cards — one tap logs the day; streaks and history
+    // live in the Habits tab of Insights, so the sheet itself stays calm.
+    const grid = document.createElement("div"); grid.className = "vc-grid";
 
     let editBtn;
     const setEditing = (v) => { editing = v; if (editBtn) editBtn.textContent = editing ? "Done editing" : "Edit list"; refresh(); };
@@ -2939,7 +2937,7 @@ function openVitamins() {
     const refresh = (opts) => {
       opts = opts || {};
       const anim = !reduceMotion();
-      list.textContent = "";
+      grid.textContent = "";
       const dayKey = sessionDate();
       const todayLog = vitaminsForDay(vitaminsLog, dayKey);
       const total = vitaminsList.length;
@@ -2947,130 +2945,96 @@ function openVitamins() {
       const allDone = total > 0 && done >= total;
       pill.textContent = total ? (allDone ? `✓ ${done}/${total}` : `${done}/${total}`) : "0";
       pill.className = "vit-summary" + (allDone ? " all-done" : "");
-      barFill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
-
       allDoneLine.style.display = allDone && !editing ? "" : "none";
 
       // Reaching the finish line on a tap earns a small celebration once.
       if (allDone && !wasAllDone && opts.tapped && anim) {
-        bar.classList.remove("celebrate"); void bar.offsetWidth; bar.classList.add("celebrate");
         pill.classList.remove("pop"); void pill.offsetWidth; pill.classList.add("pop");
         allDoneLine.classList.remove("in"); void allDoneLine.offsetWidth; allDoneLine.classList.add("in");
         buzz([0, 30, 40, 30, 60]);
       }
-      if (!allDone) { bar.classList.remove("celebrate"); pill.classList.remove("pop"); }
+      if (!allDone) pill.classList.remove("pop");
       wasAllDone = allDone;
 
       // Nothing on the list yet — invite the first habit instead of an empty sheet.
       if (total === 0 && !editing) {
-        const empty = document.createElement("div"); empty.className = "vit-empty";
+        const empty = document.createElement("div"); empty.className = "vit-empty"; empty.style.gridColumn = "1 / -1";
         addEl(empty, "div", "🌱", "vit-empty-emoji");
         addEl(empty, "div", "No daily habits yet", "vit-empty-title");
         addEl(empty, "div", "Small things, done every day. Add your first one.", "vit-empty-sub");
         empty.appendChild(makeBtn("Add a habit", "primary", () => setEditing(true)));
-        list.appendChild(empty);
+        grid.appendChild(empty);
         return;
       }
 
       vitaminsList.forEach((name) => {
         const c = vitCount(todayLog[name]);
-        const times = Array.isArray(todayLog[name]) ? todayLog[name] : [];
         const isTaken = c > 0;
         const justCompleted = opts.tapped === name && c === 1;   // today's first completion
-        const row = document.createElement("div");
-        row.className = "vit-row" + (isTaken ? " taken" : "");
-        // the check strokes on, the ring springs, a soft burst rings out
-        if (opts.tapped === name && isTaken && anim) row.classList.add("just-checked");
-
-        const circle = document.createElement("button");
-        circle.type = "button"; circle.className = "vit-circle";
-        circle.setAttribute("aria-label", (isTaken ? "Add another " : "Mark ") + name);
-        circle.addEventListener("click", (ev) => { ev.stopPropagation(); tapVitamin(name); refresh({ tapped: name }); });
-        row.appendChild(circle);
-
-        const tapBtn = document.createElement("button");
-        tapBtn.type = "button"; tapBtn.className = "vit-body";
-        const line = document.createElement("span"); line.className = "vit-line";
-        const nameWrap = document.createElement("span"); nameWrap.className = "vit-namewrap";
-        addEl(nameWrap, "span", name, "vit-name");
         const streak = habitStreak(vitaminsLog, name, dayKey);
-        if (!editing && streak > 1) {
-          // the flame grows with the run; a fresh completion makes it flare
-          const tier = streak >= 30 ? " big" : streak >= 7 ? " mid" : "";
-          const flame = addEl(nameWrap, "span", "🔥 " + streak, "vit-streak" + tier);
-          if (justCompleted && anim) flame.classList.add("flare");
-        }
-        line.appendChild(nameWrap);
-        if (!editing && isTaken && times.length) {
-          const last = new Date(times[times.length - 1]);
-          const label = (c > 1 ? c + "× · " : "") + last.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-          addEl(line, "span", label, "vit-time");
-        }
-        tapBtn.appendChild(line);
 
-        // A month at a glance — one segment per day, filled where done. On open
-        // the filled ones cascade in; a fresh completion pops today's.
+        const card = document.createElement(editing ? "div" : "button");
+        card.className = "vc-card" + (isTaken ? " done" : "");
+        if (!editing) { card.type = "button"; card.setAttribute("aria-label", (isTaken ? "Add another " : "Mark ") + name); }
+        // the ring springs, the check pops on, a soft burst rings out
+        if (opts.tapped === name && isTaken && anim) card.classList.add("just-checked");
+
+        const ring = document.createElement("span"); ring.className = "vc-ring";
+        card.appendChild(ring);
+        addEl(card, "span", name, "vc-name");
+
         if (!editing) {
-          const dots = document.createElement("span"); dots.className = "vit-dots";
-          const flags = habitLastNDays(vitaminsLog, name, dayKey, 30);
-          flags.forEach((on, idx) => {
-            const seg = document.createElement("i");
-            if (on) {
-              seg.className = "on";
-              if (opts.opened && anim) { seg.classList.add("cascade"); seg.style.animationDelay = Math.min(idx, 29) * 11 + "ms"; }
-            }
-            dots.appendChild(seg);
-          });
-          const last = dots.lastElementChild;
-          if (last) {
-            last.classList.add("today");
-            if (justCompleted && anim && last.classList.contains("on")) last.classList.add("pop");
+          if (c > 1) addEl(card, "span", c + "×", "vc-count");
+          else if (streak > 1) {
+            const tier = streak >= 30 ? " big" : streak >= 7 ? " mid" : "";
+            const flame = addEl(card, "span", "🔥 " + streak, "vit-streak" + tier);
+            if (justCompleted && anim) flame.classList.add("flare");
           }
-          tapBtn.appendChild(dots);
-        }
-
-        tapBtn.addEventListener("click", () => { tapVitamin(name); refresh({ tapped: name }); });
-        row.appendChild(tapBtn);
-
-        if (isTaken && !editing) {
-          const undoBtn = document.createElement("button");
-          undoBtn.type = "button"; undoBtn.className = "vit-undo";
-          undoBtn.textContent = "↩";
-          undoBtn.setAttribute("aria-label", `Undo ${name}`);
-          undoBtn.addEventListener("click", (ev) => { ev.stopPropagation(); undoVitamin(name); refresh(); });
-          row.appendChild(undoBtn);
-        }
-        if (editing) {
-          const ren = document.createElement("button");
-          ren.type = "button"; ren.className = "vit-edit-btn";
-          ren.textContent = "✎";
+          card.addEventListener("click", () => { tapVitamin(name); refresh({ tapped: name }); });
+          if (isTaken) {
+            const undo = document.createElement("button");
+            undo.type = "button"; undo.className = "vc-undo"; undo.textContent = "↩";
+            undo.setAttribute("aria-label", `Undo ${name}`);
+            undo.addEventListener("click", (ev) => { ev.stopPropagation(); undoVitamin(name); refresh(); });
+            card.appendChild(undo);
+          }
+        } else {
+          const btns = document.createElement("div"); btns.className = "vc-edit-btns";
+          const ren = document.createElement("button"); ren.type = "button"; ren.className = "vit-edit-btn"; ren.textContent = "✎";
           ren.setAttribute("aria-label", `Rename ${name}`);
           ren.addEventListener("click", (ev) => { ev.stopPropagation(); openRenameVitamin(name, refresh); });
-          row.appendChild(ren);
-          const del = document.createElement("button");
-          del.type = "button"; del.className = "vit-edit-btn";
-          del.textContent = "×";
+          const del = document.createElement("button"); del.type = "button"; del.className = "vit-edit-btn"; del.textContent = "×";
           del.setAttribute("aria-label", `Remove ${name}`);
           del.addEventListener("click", (ev) => { ev.stopPropagation(); removeVitamin(name); refresh(); });
-          row.appendChild(del);
+          btns.appendChild(ren); btns.appendChild(del);
+          card.appendChild(btns);
         }
-        list.appendChild(row);
+        grid.appendChild(card);
       });
 
-      if (editing) {
-        const addRow = document.createElement("div"); addRow.className = "vit-add-row";
+      if (!editing) {
+        const add = document.createElement("button"); add.type = "button"; add.className = "vc-card vc-add";
+        add.setAttribute("aria-label", "Add a habit");
+        addEl(add, "span", "+", "vc-add-plus");
+        addEl(add, "span", "Add", "vc-add-lbl");
+        add.addEventListener("click", () => setEditing(true));
+        grid.appendChild(add);
+      } else {
+        const addRow = document.createElement("div"); addRow.className = "vit-add-row"; addRow.style.gridColumn = "1 / -1";
         const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "e.g. Drink water";
         const addBtn = document.createElement("button"); addBtn.type = "button"; addBtn.className = "vit-add-btn"; addBtn.textContent = "Add";
         addBtn.addEventListener("click", () => {
-          if (addVitamin(inp.value)) { inp.value = ""; refresh(); }
+          if (addVitamin(inp.value)) { inp.value = ""; refresh(); inp.focus(); }
           else toast(inp.value.trim() ? "Already on your list" : "Enter a name");
         });
         addRow.appendChild(inp); addRow.appendChild(addBtn);
-        list.appendChild(addRow);
+        grid.appendChild(addRow);
       }
+
+      if (anim && opts.opened) staggerIn(grid, 26, 12);
     };
     refresh({ opened: true });
-    s.appendChild(list);
+    s.appendChild(grid);
 
     const footer = document.createElement("div"); footer.className = "vit-footer";
     editBtn = makeBtn("Edit list", "ghost", () => setEditing(!editing));
