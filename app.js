@@ -2926,8 +2926,15 @@ function openVitamins() {
     const barFill = document.createElement("i"); bar.appendChild(barFill);
     s.appendChild(bar);
 
+    const allDoneLine = document.createElement("div");
+    allDoneLine.className = "vit-alldone"; allDoneLine.textContent = "All done for today ✓";
+    allDoneLine.style.display = "none";
+    s.appendChild(allDoneLine);
+
     const list = document.createElement("div"); list.className = "vit-list";
 
+    let editBtn;
+    const setEditing = (v) => { editing = v; if (editBtn) editBtn.textContent = editing ? "Done editing" : "Edit list"; refresh(); };
     let wasAllDone = false;   // so the "all done" celebration fires on the crossing, not every render
     const refresh = (opts) => {
       opts = opts || {};
@@ -2942,14 +2949,28 @@ function openVitamins() {
       pill.className = "vit-summary" + (allDone ? " all-done" : "");
       barFill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
 
+      allDoneLine.style.display = allDone && !editing ? "" : "none";
+
       // Reaching the finish line on a tap earns a small celebration once.
       if (allDone && !wasAllDone && opts.tapped && anim) {
         bar.classList.remove("celebrate"); void bar.offsetWidth; bar.classList.add("celebrate");
         pill.classList.remove("pop"); void pill.offsetWidth; pill.classList.add("pop");
+        allDoneLine.classList.remove("in"); void allDoneLine.offsetWidth; allDoneLine.classList.add("in");
         buzz([0, 30, 40, 30, 60]);
       }
       if (!allDone) { bar.classList.remove("celebrate"); pill.classList.remove("pop"); }
       wasAllDone = allDone;
+
+      // Nothing on the list yet — invite the first habit instead of an empty sheet.
+      if (total === 0 && !editing) {
+        const empty = document.createElement("div"); empty.className = "vit-empty";
+        addEl(empty, "div", "🌱", "vit-empty-emoji");
+        addEl(empty, "div", "No daily habits yet", "vit-empty-title");
+        addEl(empty, "div", "Small things, done every day. Add your first one.", "vit-empty-sub");
+        empty.appendChild(makeBtn("Add a habit", "primary", () => setEditing(true)));
+        list.appendChild(empty);
+        return;
+      }
 
       vitaminsList.forEach((name) => {
         const c = vitCount(todayLog[name]);
@@ -2970,38 +2991,43 @@ function openVitamins() {
         const tapBtn = document.createElement("button");
         tapBtn.type = "button"; tapBtn.className = "vit-body";
         const line = document.createElement("span"); line.className = "vit-line";
-        addEl(line, "span", name, "vit-name");
-        if (isTaken && times.length) {
+        const nameWrap = document.createElement("span"); nameWrap.className = "vit-namewrap";
+        addEl(nameWrap, "span", name, "vit-name");
+        const streak = habitStreak(vitaminsLog, name, dayKey);
+        if (!editing && streak > 1) {
+          // the flame grows with the run; a fresh completion makes it flare
+          const tier = streak >= 30 ? " big" : streak >= 7 ? " mid" : "";
+          const flame = addEl(nameWrap, "span", "🔥 " + streak, "vit-streak" + tier);
+          if (justCompleted && anim) flame.classList.add("flare");
+        }
+        line.appendChild(nameWrap);
+        if (!editing && isTaken && times.length) {
           const last = new Date(times[times.length - 1]);
           const label = (c > 1 ? c + "× · " : "") + last.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
           addEl(line, "span", label, "vit-time");
         }
-        const streak = habitStreak(vitaminsLog, name, dayKey);
-        if (streak > 1) {
-          // the flame grows with the run; a fresh completion makes it flare
-          const tier = streak >= 30 ? " big" : streak >= 7 ? " mid" : "";
-          const flame = addEl(line, "span", "🔥 " + streak, "vit-streak" + tier);
-          if (justCompleted && anim) flame.classList.add("flare");
-        }
         tapBtn.appendChild(line);
 
-        // A month of momentum at a glance — a dot per day, filled where done.
-        // On open the filled dots cascade in; a fresh completion pops today's.
-        const dots = document.createElement("span"); dots.className = "vit-dots";
-        const flags = habitLastNDays(vitaminsLog, name, dayKey, 30);
-        flags.forEach((on, idx) => {
-          const dot = document.createElement("i");
-          if (on) {
-            dot.className = "on";
-            if (opts.opened && anim) { dot.classList.add("cascade"); dot.style.animationDelay = Math.min(idx, 29) * 11 + "ms"; }
-          }
-          dots.appendChild(dot);
-        });
-        if (justCompleted && anim) {
+        // A month at a glance — one segment per day, filled where done. On open
+        // the filled ones cascade in; a fresh completion pops today's.
+        if (!editing) {
+          const dots = document.createElement("span"); dots.className = "vit-dots";
+          const flags = habitLastNDays(vitaminsLog, name, dayKey, 30);
+          flags.forEach((on, idx) => {
+            const seg = document.createElement("i");
+            if (on) {
+              seg.className = "on";
+              if (opts.opened && anim) { seg.classList.add("cascade"); seg.style.animationDelay = Math.min(idx, 29) * 11 + "ms"; }
+            }
+            dots.appendChild(seg);
+          });
           const last = dots.lastElementChild;
-          if (last && last.classList.contains("on")) last.classList.add("pop");
+          if (last) {
+            last.classList.add("today");
+            if (justCompleted && anim && last.classList.contains("on")) last.classList.add("pop");
+          }
+          tapBtn.appendChild(dots);
         }
-        tapBtn.appendChild(dots);
 
         tapBtn.addEventListener("click", () => { tapVitamin(name); refresh({ tapped: name }); });
         row.appendChild(tapBtn);
@@ -3047,7 +3073,7 @@ function openVitamins() {
     s.appendChild(list);
 
     const footer = document.createElement("div"); footer.className = "vit-footer";
-    const editBtn = makeBtn("Edit list", "ghost", () => { editing = !editing; editBtn.textContent = editing ? "Done editing" : "Edit list"; refresh(); });
+    editBtn = makeBtn("Edit list", "ghost", () => setEditing(!editing));
     const doneBtn = makeBtn("Done", "ghost", closeSheet);
     footer.appendChild(editBtn); footer.appendChild(doneBtn);
     s.appendChild(footer);

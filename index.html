@@ -1274,23 +1274,34 @@
       -webkit-tap-highlight-color: transparent; display: flex; flex-direction: column; gap: 5px;
     }
     .vit-body:active { opacity: .7; }
-    .vit-line { display: flex; align-items: baseline; gap: 8px; }
-    .vit-name { font-size: 15px; color: var(--text); font-weight: 500; }
+    .vit-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+    .vit-namewrap { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+    .vit-name { font-size: 15px; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .vit-row.taken .vit-name { color: var(--muted); }
-    .vit-time { font-size: 12px; color: var(--faint); }
+    .vit-time { font-size: 12px; color: var(--faint); flex-shrink: 0; }
     .vit-row.taken .vit-time { color: var(--safe); opacity: .7; }
-    .vit-streak { font-size: 12px; color: var(--warn, #eda100); font-weight: 600; margin-left: auto; white-space: nowrap; }
+    .vit-streak { font-size: 12px; color: var(--warn, #eda100); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
     .vit-streak.mid { font-size: 13px; }
     .vit-streak.big { font-size: 15px; }
     .vit-streak.flare { animation: vitFlare 620ms var(--ease-out); transform-origin: left center; }
     @keyframes vitFlare { 0% { transform: scale(1); } 30% { transform: scale(1.5); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } }
-    .vit-dots { display: flex; gap: 2px; flex-wrap: nowrap; }
-    .vit-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--surface-2); flex: 0 0 auto; }
+    /* a month as an even 30-segment bar — reads as one unit, not scattered dots */
+    .vit-dots { display: flex; gap: 2px; width: 100%; }
+    .vit-dots i { flex: 1 1 0; min-width: 0; height: 5px; border-radius: 2px; background: var(--surface-2); }
     .vit-dots i.on { background: var(--safe); }
+    .vit-dots i.today { outline: 1px solid var(--faint); outline-offset: 0; }
     .vit-dots i.cascade { animation: vitDotIn 300ms var(--ease-out) both; }
     .vit-dots i.pop { animation: vitDotPop 460ms var(--ease-out); }
-    @keyframes vitDotIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-    @keyframes vitDotPop { 0% { transform: scale(0); } 60% { transform: scale(1.7); } 100% { transform: scale(1); } }
+    @keyframes vitDotIn { from { transform: scaleY(0.2); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
+    @keyframes vitDotPop { 0% { transform: scaleY(0.2); } 55% { transform: scaleY(1.8); } 100% { transform: scaleY(1); } }
+    /* finish-line line + friendly empty state */
+    .vit-alldone { text-align: center; font-size: 13px; font-weight: 600; color: var(--safe); margin: 4px 0 8px; }
+    .vit-alldone.in { animation: vitAllDoneIn 500ms var(--ease-out); }
+    @keyframes vitAllDoneIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .vit-empty { text-align: center; padding: 26px 12px 16px; }
+    .vit-empty-emoji { font-size: 40px; line-height: 1; }
+    .vit-empty-title { font-size: 16px; font-weight: 600; color: var(--text); margin-top: 10px; }
+    .vit-empty-sub { font-size: 13px; color: var(--muted); margin: 5px auto 16px; max-width: 240px; line-height: 1.4; }
     /* the tap: ring springs, check pops on, a soft burst rings out */
     .vit-circle::before {
       content: ""; position: absolute; inset: -3px; border-radius: 50%;
@@ -1675,7 +1686,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.24</div>
+  <div class="version">v10.25</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
