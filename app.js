@@ -5115,6 +5115,82 @@ function openWeeklyRecap() {
   });
 }
 
+// A once-a-month look back — the calendar month so far, pulling together the
+// numbers, the taper, and (reusing the habit-impact analysis) what helped.
+function openMonthlyReview() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const monthOf = (d) => { const dt = new Date(d.endedAt || d.date); return dt.getFullYear() === y && dt.getMonth() === m; };
+  const mh = history.filter(monthOf);
+  const monthName = now.toLocaleDateString(undefined, { month: "long" });
+  const avg = (arr) => arr.length ? arr.reduce((s, d) => s + d.total, 0) / arr.length : null;
+
+  const lm = new Date(y, m - 1, 1);
+  const lastHist = history.filter((d) => { const dt = new Date(d.endedAt || d.date); return dt.getFullYear() === lm.getFullYear() && dt.getMonth() === lm.getMonth(); });
+  const thisAvg = avg(mh), lastAvg = avg(lastHist);
+
+  openSheet((s) => {
+    addEl(s, "h3", monthName + " review");
+    if (mh.length < 3) {
+      addEl(s, "p", `A few more logged days this month and ${monthName}'s review fills in here.`, "sub");
+      s.appendChild(makeBtn("OK", "primary", closeSheet));
+      return;
+    }
+    addEl(s, "p", "A look back at the month so far.", "sub");
+    const list = document.createElement("div"); list.className = "recap"; s.appendChild(list);
+    const row = (icon, label, value) => {
+      const r = document.createElement("div"); r.className = "recap-row";
+      addEl(r, "span", icon, "recap-ico");
+      const b = document.createElement("div"); b.className = "recap-body";
+      addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
+      r.appendChild(b); list.appendChild(r);
+    };
+
+    const total = mh.reduce((s2, d) => s2 + d.total, 0);
+    row("📊", mh.length + (mh.length === 1 ? " day logged" : " days logged"), fmt(round2(total)) + " tracked");
+
+    if (thisAvg != null && lastAvg != null) {
+      const pct = lastAvg > 0 ? Math.round(((thisAvg - lastAvg) / lastAvg) * 100) : 0;
+      const arrow = pct < 0 ? "📉" : pct > 0 ? "📈" : "▬";
+      row(arrow, `average / day (${pct < 0 ? "▼" : pct > 0 ? "▲" : ""}${Math.abs(pct)}% vs last month)`, fmt(round2(thisAvg)));
+    } else if (thisAvg != null) {
+      row("📊", "average / day", fmt(round2(thisAvg)));
+    }
+
+    if (hasGoal()) {
+      const under = mh.filter((d) => d.total <= goal).length;
+      row("✅", "days under goal", `${under} of ${mh.length}`);
+      const best = underRuns(mh.map((d) => d.total), goal).best;
+      if (best > 0) row("🏆", "best streak under goal", best + (best === 1 ? " day" : " days"));
+      row("📉", "lowest day", fmt(Math.min(...mh.map((d) => d.total))));
+    } else {
+      row("📈", "highest day", fmt(Math.max(...mh.map((d) => d.total))));
+    }
+
+    // taper progress across the month (goal at the 1st vs now)
+    if (hasGoal() && goalLog.length) {
+      const monthStart = new Date(y, m, 1).getTime();
+      let goalStart = null;
+      goalLog.forEach((g) => { if (new Date(g.at).getTime() <= monthStart) goalStart = g.goal; });
+      if (goalStart != null && goalStart !== goal) row("🎯", "your goal this month", `${fmt(goalStart)} → ${fmt(goal)}`);
+    }
+
+    // what helped most — the strongest habit link within the month
+    if (vitaminsList.length) {
+      const ho = habitOutcomes(mh, vitaminsLog, vitaminsList).filter((r) => r.delta < -0.5)[0];
+      if (ho) row("🌱", `${ho.name} helped most`, `${fmt(ho.onAvg)} vs ${fmt(ho.offAvg)}`);
+    }
+
+    // mood
+    const monthStartMs = new Date(y, m, 1).getTime();
+    const moods = Object.keys(moodDaily).filter((k) => { const t = new Date(k).getTime(); return t >= monthStartMs; }).map((k) => moodDaily[k]);
+    if (moods.length) { const am = moods.reduce((a, b2) => a + b2, 0) / moods.length; row("🙂", "average mood", `${moodEmoji(am)} ${am.toFixed(1)}`); }
+
+    addEl(s, "p", "One month at a time. You're doing the work.", "sub");
+    s.appendChild(makeBtn("Nice", "primary", closeSheet));
+  });
+}
+
 // Per-second refresh of just the numbers that move. The panel used to be
 // rebuilt outright every second, which detached every button in it — a tap
 // landing on the swap hit a dead node and did nothing. Same idea as
@@ -6010,6 +6086,7 @@ function openMore() {
     if (features.water) s.appendChild(makeIconBtn("droplet", "Water", "", () => { closeSheet(); openWater(); }));
     if (features.tree) s.appendChild(makeIconBtn("tree", "Your Tree", "", () => { closeSheet(); openTree(); }));
     if (timelineOn) s.appendChild(makeIconBtn("chart", "Your week", "", () => { closeSheet(); openWeeklyRecap(); }));
+    if (timelineOn) s.appendChild(makeIconBtn("chart", "This month", "", () => { closeSheet(); openMonthlyReview(); }));
     if (!features.since && !features.water && !features.tree && !timelineOn) addEl(s, "p", "All extras are off — turn them on in Settings → Features.", "sub");
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
