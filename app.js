@@ -2931,8 +2931,13 @@ function openVitamins() {
     // live in the Habits tab of Insights, so the sheet itself stays calm.
     const grid = document.createElement("div"); grid.className = "vc-grid";
 
-    let editBtn;
-    const setEditing = (v) => { editing = v; if (editBtn) editBtn.textContent = editing ? "Done editing" : "Edit list"; refresh(); };
+    let editBtn, addBtn;
+    const setEditing = (v) => {
+      editing = v;
+      if (editBtn) editBtn.textContent = editing ? "Done editing" : "Edit list";
+      if (addBtn) addBtn.style.display = editing ? "none" : "";   // the add field is in the grid while editing
+      refresh();
+    };
     let wasAllDone = false;   // so the "all done" celebration fires on the crossing, not every render
     const refresh = (opts) => {
       opts = opts || {};
@@ -3012,14 +3017,7 @@ function openVitamins() {
         grid.appendChild(card);
       });
 
-      if (!editing) {
-        const add = document.createElement("button"); add.type = "button"; add.className = "vc-card vc-add";
-        add.setAttribute("aria-label", "Add a habit");
-        addEl(add, "span", "+", "vc-add-plus");
-        addEl(add, "span", "Add", "vc-add-lbl");
-        add.addEventListener("click", () => setEditing(true));
-        grid.appendChild(add);
-      } else {
+      if (editing) {
         const addRow = document.createElement("div"); addRow.className = "vit-add-row"; addRow.style.gridColumn = "1 / -1";
         const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "e.g. Drink water";
         const addBtn = document.createElement("button"); addBtn.type = "button"; addBtn.className = "vit-add-btn"; addBtn.textContent = "Add";
@@ -3037,9 +3035,12 @@ function openVitamins() {
     s.appendChild(grid);
 
     const footer = document.createElement("div"); footer.className = "vit-footer";
+    const leftGroup = document.createElement("div"); leftGroup.className = "vit-footer-left";
+    addBtn = makeBtn("Add", "ghost", () => setEditing(true));
     editBtn = makeBtn("Edit list", "ghost", () => setEditing(!editing));
+    leftGroup.appendChild(addBtn); leftGroup.appendChild(editBtn);
     const doneBtn = makeBtn("Done", "ghost", closeSheet);
-    footer.appendChild(editBtn); footer.appendChild(doneBtn);
+    footer.appendChild(leftGroup); footer.appendChild(doneBtn);
     s.appendChild(footer);
   });
 }

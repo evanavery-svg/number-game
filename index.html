@@ -1343,6 +1343,8 @@
     }
     .vit-add-btn:active { opacity: .8; }
     .vit-footer { display: flex; justify-content: space-between; align-items: center; margin-top: var(--sp-3); }
+    .vit-footer button { white-space: nowrap; }
+    .vit-footer-left { display: flex; align-items: center; gap: var(--sp-4); }
 
     /* Daily Habits — a grid of tappable cards */
     .vc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: var(--sp-3); }
@@ -1389,9 +1391,6 @@
     }
     .vc-undo:active { color: var(--accent); }
     .vc-edit-btns { position: absolute; top: 6px; right: 5px; display: flex; gap: 1px; }
-    .vc-add { background: transparent; border: 1.5px dashed var(--surface-2); }
-    .vc-add-plus { font-size: 28px; font-weight: 300; line-height: 1; color: var(--muted); }
-    .vc-add-lbl { font-size: 13px; font-weight: 600; color: var(--muted); }
 
     .plan-recall {
       background: var(--surface-2); border-left: 3px solid var(--accent);
@@ -1735,7 +1734,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.26</div>
+  <div class="version">v10.27</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
