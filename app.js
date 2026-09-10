@@ -42,6 +42,7 @@ const KEY_FEATURES = "count.features";    // { mood, water, tree, since, vitamin
 const KEY_MEDS_LEGACY = "count.meds";     // [{ id, name, dose, at }] — old medication log, read once to seed the vitamins list, then unused
 const KEY_VITAMINS_LIST = "count.vitaminsList"; // [name, …] — permanent, user-managed, added once and kept
 const KEY_VITAMINS_LOG = "count.vitaminsLog";   // { [sessionDate]: { [name]: count } } — today's tallies auto-reset because today is a fresh key
+const KEY_VITAMINS_SCHED = "count.vitaminsSched"; // { [name]: [weekday…] } — which days a habit is due; absent = every day
 const KEY_BACKUP_AT = "count.backupAt";   // timestamp of the last full backup
 const KEY_BACKUP_NUDGE = "count.backupNudge"; // YYYY-MM-DD of the last backup nudge
 const KEY_ONBOARDED = "count.onboarded";  // bool — first-run intro completed
@@ -318,6 +319,7 @@ if (vitaminsList === null) {
   save(KEY_VITAMINS_LIST, vitaminsList);
 }
 let vitaminsLog = load(KEY_VITAMINS_LOG, {});   // { [sessionDate]: { [name]: count } }
+let vitaminsSched = load(KEY_VITAMINS_SCHED, {}); // { [name]: [weekday…] } — absent/empty = daily
 let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in the header)
 // A goal of 0 is the destination, not "off" — so track "is there a goal" apart
 // from its value. Older installs stored 0 to mean "none": migrate on first run.
@@ -1867,7 +1869,7 @@ function renderHabits() {
   }
 
   const N = 30;
-  const stats = habitStats(vitaminsLog, vitaminsList, sessionDate(), N);
+  const stats = habitStats(vitaminsLog, vitaminsList, sessionDate(), N, vitaminsSched);
   const avg = stats.series.reduce((s, d) => s + d.rate, 0) / stats.series.length;
 
   // ---- summary card: completion trend + headline ----
@@ -3037,6 +3039,18 @@ function addVitamin(name) {
 function removeVitamin(name) {
   vitaminsList = vitaminsList.filter((n) => n !== name);
   save(KEY_VITAMINS_LIST, vitaminsList);
+  if (vitaminsSched[name]) { delete vitaminsSched[name]; save(KEY_VITAMINS_SCHED, vitaminsSched); }
+}
+// Set (or clear) which weekdays a habit is due. Empty/undefined = every day.
+function setVitaminSched(name, days) {
+  if (Array.isArray(days) && days.length && days.length < 7) vitaminsSched[name] = days.slice().sort();
+  else delete vitaminsSched[name];   // all 7 or none = daily, no need to store
+  save(KEY_VITAMINS_SCHED, vitaminsSched);
+}
+const SCHED_ABBR = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+function schedDaysLabel(days) {
+  if (!Array.isArray(days) || !days.length || days.length === 7) return "Daily";
+  return days.slice().sort().map((d) => SCHED_ABBR[d]).join(" ");
 }
 function undoVitamin(name) {
   const d = sessionDate();
@@ -3059,6 +3073,11 @@ function renameVitamin(oldName, newName) {
     vitaminsLog[d][newName] = vitaminsLog[d][oldName];
     delete vitaminsLog[d][oldName];
     save(KEY_VITAMINS_LOG, vitaminsLog);
+  }
+  if (vitaminsSched[oldName]) {
+    vitaminsSched[newName] = vitaminsSched[oldName];
+    delete vitaminsSched[oldName];
+    save(KEY_VITAMINS_SCHED, vitaminsSched);
   }
   return true;
 }
@@ -3094,11 +3113,13 @@ function openVitamins() {
       grid.textContent = "";
       const dayKey = sessionDate();
       const todayLog = vitaminsForDay(vitaminsLog, dayKey);
-      const total = vitaminsList.length;
-      const done = vitaminsList.filter((n) => vitCount(todayLog[n]) > 0).length;
+      const dueToday = vitaminsList.filter((n) => habitDue(vitaminsSched, n, dayKey));
+      const shown = editing ? vitaminsList : dueToday;   // the daily view is only today's due habits
+      const total = dueToday.length;
+      const done = dueToday.filter((n) => vitCount(todayLog[n]) > 0).length;
       const allDone = total > 0 && done >= total;
-      pill.textContent = total ? (allDone ? `✓ ${done}/${total}` : `${done}/${total}`) : "0";
-      pill.className = "vit-summary" + (allDone ? " all-done" : "");
+      pill.textContent = editing ? String(vitaminsList.length) : (total ? (allDone ? `✓ ${done}/${total}` : `${done}/${total}`) : "✓");
+      pill.className = "vit-summary" + (allDone && !editing ? " all-done" : "");
       allDoneLine.style.display = allDone && !editing ? "" : "none";
 
       // Reaching the finish line on a tap earns a small celebration once.
@@ -3111,7 +3132,7 @@ function openVitamins() {
       wasAllDone = allDone;
 
       // Nothing on the list yet — invite the first habit instead of an empty sheet.
-      if (total === 0 && !editing) {
+      if (vitaminsList.length === 0 && !editing) {
         const empty = document.createElement("div"); empty.className = "vit-empty"; empty.style.gridColumn = "1 / -1";
         addEl(empty, "div", "🌱", "vit-empty-emoji");
         addEl(empty, "div", "No daily habits yet", "vit-empty-title");
@@ -3120,12 +3141,21 @@ function openVitamins() {
         grid.appendChild(empty);
         return;
       }
+      // You have habits, but none are scheduled today — a rest day.
+      if (!editing && dueToday.length === 0) {
+        const rest = document.createElement("div"); rest.className = "vit-empty"; rest.style.gridColumn = "1 / -1";
+        addEl(rest, "div", "🌿", "vit-empty-emoji");
+        addEl(rest, "div", "Nothing due today", "vit-empty-title");
+        addEl(rest, "div", "A rest day — your scheduled habits pick back up soon.", "vit-empty-sub");
+        grid.appendChild(rest);
+        return;
+      }
 
-      vitaminsList.forEach((name) => {
+      shown.forEach((name) => {
         const c = vitCount(todayLog[name]);
         const isTaken = c > 0;
         const justCompleted = opts.tapped === name && c === 1;   // today's first completion
-        const streak = habitStreak(vitaminsLog, name, dayKey);
+        const streak = habitStreak(vitaminsLog, name, dayKey, vitaminsSched);
 
         const card = document.createElement(editing ? "div" : "button");
         card.className = "vc-card" + (isTaken ? " done" : "");
@@ -3153,9 +3183,10 @@ function openVitamins() {
             card.appendChild(undo);
           }
         } else {
+          addEl(card, "span", schedDaysLabel(vitaminsSched[name]), "vc-sched");
           const btns = document.createElement("div"); btns.className = "vc-edit-btns";
           const ren = document.createElement("button"); ren.type = "button"; ren.className = "vit-edit-btn"; ren.textContent = "✎";
-          ren.setAttribute("aria-label", `Rename ${name}`);
+          ren.setAttribute("aria-label", `Edit ${name}`);
           ren.addEventListener("click", (ev) => { ev.stopPropagation(); openRenameVitamin(name, refresh); });
           const del = document.createElement("button"); del.type = "button"; del.className = "vit-edit-btn"; del.textContent = "×";
           del.setAttribute("aria-label", `Remove ${name}`);
@@ -3196,13 +3227,34 @@ function openVitamins() {
 
 function openRenameVitamin(oldName, onDone) {
   openSheet((s) => {
-    addEl(s, "h3", "Rename");
-    addEl(s, "label", "New name");
+    addEl(s, "h3", "Edit habit");
+    addEl(s, "label", "Name");
     const inp = document.createElement("input"); inp.type = "text"; inp.value = oldName; inp.maxLength = 40;
     s.appendChild(inp);
+
+    addEl(s, "label", "Repeats");
+    const sel = new Set((vitaminsSched[oldName] && vitaminsSched[oldName].length) ? vitaminsSched[oldName] : [0, 1, 2, 3, 4, 5, 6]);
+    const chips = document.createElement("div"); chips.className = "day-chips";
+    const hint = document.createElement("div"); hint.className = "sub";
+    const updateHint = () => { hint.textContent = (sel.size === 7 || sel.size === 0) ? "Every day" : "Due " + [...sel].sort().map((d) => SCHED_ABBR[d]).join(" "); };
+    for (let d = 0; d < 7; d++) {
+      const chip = document.createElement("button"); chip.type = "button";
+      chip.className = "day-chip" + (sel.has(d) ? " on" : "");
+      chip.textContent = SCHED_ABBR[d];
+      chip.addEventListener("click", () => { sel.has(d) ? sel.delete(d) : sel.add(d); chip.classList.toggle("on"); updateHint(); buzz(6); });
+      chips.appendChild(chip);
+    }
+    s.appendChild(chips); s.appendChild(hint); updateHint();
+
     s.appendChild(makeBtn("Save", "primary", () => {
-      if (renameVitamin(oldName, inp.value)) { closeSheet(); setTimeout(() => { openVitamins(); }, 300); }
-      else toast(inp.value.trim() === oldName ? "Name unchanged" : inp.value.trim() ? "Already on your list" : "Enter a name");
+      const nn = inp.value.trim();
+      let target = oldName;
+      if (nn && nn !== oldName) {
+        if (renameVitamin(oldName, nn)) target = nn;
+        else { toast(vitaminsList.includes(nn) ? "Already on your list" : "Enter a name"); return; }
+      } else if (!nn) { toast("Enter a name"); return; }
+      setVitaminSched(target, [...sel]);
+      closeSheet(); setTimeout(() => { openVitamins(); }, 300);
     }));
     s.appendChild(makeBtn("Cancel", "ghost", () => { closeSheet(); setTimeout(() => { openVitamins(); }, 300); }));
     setTimeout(() => { inp.focus(); inp.select(); }, 50);

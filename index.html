@@ -1413,6 +1413,15 @@
     }
     .vc-undo:active { color: var(--accent); }
     .vc-edit-btns { position: absolute; top: 6px; right: 5px; display: flex; gap: 1px; }
+    .vc-sched { font-size: 11px; font-weight: 600; color: var(--muted); }
+    /* weekday schedule chips in the edit-habit sheet */
+    .day-chips { display: flex; gap: 6px; margin: 6px 0 4px; }
+    .day-chip {
+      flex: 1; min-width: 0; padding: 9px 0; border-radius: 10px; border: none;
+      background: var(--surface-2); color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 600;
+      cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+    }
+    .day-chip.on { background: var(--accent); color: #fff; }
 
     .plan-recall {
       background: var(--surface-2); border-left: 3px solid var(--accent);
@@ -1756,7 +1765,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.28</div>
+  <div class="version">v10.29</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

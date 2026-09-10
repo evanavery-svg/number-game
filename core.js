@@ -311,17 +311,26 @@ function prevDayKey(dayStr) {
   d.setDate(d.getDate() - 1);
   return isoLocal(d);
 }
+// Is a habit "due" on a given day? No schedule (or an empty one) means every
+// day; otherwise only the listed weekdays (0=Sun … 6=Sat). sched is optional so
+// every existing caller keeps its daily behaviour.
+function habitDue(sched, name, dayStr) {
+  const days = sched && sched[name];
+  if (!Array.isArray(days) || !days.length) return true;
+  return days.indexOf(new Date(dayStr + "T12:00:00").getDay()) !== -1;
+}
 // Current run of consecutive days a habit was done, counting back from today.
-// Stays alive on a not-yet-done today (it counts the run ending yesterday), so
-// the streak only breaks once a day is genuinely missed.
-function habitStreak(log, name, todayStr) {
+// Days the habit isn't scheduled are skipped (they never break a streak); a
+// not-yet-done today keeps the run alive (it counts through yesterday).
+function habitStreak(log, name, todayStr, sched) {
   let cur = todayStr;
-  if (!vitTakenOn(log, name, cur)) {
-    cur = prevDayKey(cur);
-    if (!vitTakenOn(log, name, cur)) return 0;
+  if (habitDue(sched, name, cur) && !vitTakenOn(log, name, cur)) cur = prevDayKey(cur);
+  let n = 0, guard = 0;
+  while (guard++ < 4000) {
+    if (!habitDue(sched, name, cur)) { cur = prevDayKey(cur); continue; }   // rest day — skip
+    if (vitTakenOn(log, name, cur)) { n++; cur = prevDayKey(cur); }
+    else break;
   }
-  let n = 0;
-  while (vitTakenOn(log, name, cur)) { n++; cur = prevDayKey(cur); }
   return n;
 }
 // Booleans for the last n days, oldest → newest (today last) — for a dot row.
@@ -331,27 +340,31 @@ function habitLastNDays(log, name, todayStr, n) {
   for (let i = 0; i < n; i++) { out.push(vitTakenOn(log, name, cur)); cur = prevDayKey(cur); }
   return out.reverse();
 }
-// Fraction of `names` done on a given day (0..1). Empty list → 0.
-function habitDayRate(log, names, dayStr) {
+// Fraction of the day's *due* habits that were done (0..1). Empty list → 0; a
+// day with habits but none scheduled → 1 (a clear day counts as complete).
+function habitDayRate(log, names, dayStr, sched) {
   if (!names || !names.length) return 0;
+  const due = names.filter((nm) => habitDue(sched, nm, dayStr));
+  if (!due.length) return 1;
   let done = 0;
-  for (const nm of names) if (vitTakenOn(log, nm, dayStr)) done++;
-  return done / names.length;
+  for (const nm of due) if (vitTakenOn(log, nm, dayStr)) done++;
+  return done / due.length;
 }
-// Habit analytics over the last n days: a per-habit summary (done count, rate,
-// current streak), the daily completion-rate series, and the strongest weekday.
-function habitStats(log, names, todayStr, n) {
+// Habit analytics over the last n days: a per-habit summary (done count of due
+// days, rate, current streak), the daily completion-rate series, and the
+// strongest weekday. Schedule-aware so off-days don't count against a habit.
+function habitStats(log, names, todayStr, n, sched) {
   names = names || [];
   const days = [];
   let cur = todayStr;
   for (let i = 0; i < n; i++) { days.push(cur); cur = prevDayKey(cur); }
   days.reverse();   // oldest → newest
   const per = names.map((nm) => {
-    let done = 0;
-    for (const d of days) if (vitTakenOn(log, nm, d)) done++;
-    return { name: nm, done, n, rate: n ? done / n : 0, streak: habitStreak(log, nm, todayStr) };
+    let done = 0, due = 0;
+    for (const d of days) if (habitDue(sched, nm, d)) { due++; if (vitTakenOn(log, nm, d)) done++; }
+    return { name: nm, done, n: due, rate: due ? done / due : 0, streak: habitStreak(log, nm, todayStr, sched) };
   });
-  const series = days.map((d) => ({ day: d, rate: habitDayRate(log, names, d) }));
+  const series = days.map((d) => ({ day: d, rate: habitDayRate(log, names, d, sched) }));
   const byDow = [0, 1, 2, 3, 4, 5, 6].map(() => ({ sum: 0, count: 0 }));
   for (const s of series) {
     const dow = new Date(s.day + "T12:00:00").getDay();
@@ -915,7 +928,7 @@ if (typeof module !== "undefined" && module.exports) {
     dailyTotals, levelMetOn, trendFlat, medianRungDays, suggestTaper,
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
     dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, vitaminsForDay,
-    vitTakenOn, prevDayKey, habitStreak, habitLastNDays, habitDayRate, habitStats,
+    vitTakenOn, prevDayKey, habitDue, habitStreak, habitLastNDays, habitDayRate, habitStats,
     habitOutcomes, linFit, projectTrend, underRuns, median, DAYPARTS, weekHeat, strongestSignal,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,

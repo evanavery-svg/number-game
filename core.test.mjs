@@ -753,6 +753,34 @@ test("habitLastNDays returns oldest→newest booleans", () => {
   assert.deepEqual(core.habitLastNDays(log, "Water", "2026-08-13", 3), [true, false, true]);
 });
 
+test("habitDue respects a weekday schedule, defaults to daily", () => {
+  const sched = { Run: [1, 3, 5] };   // Mon/Wed/Fri
+  assert.equal(core.habitDue(sched, "Run", "2026-08-10"), true);   // Mon
+  assert.equal(core.habitDue(sched, "Run", "2026-08-11"), false);  // Tue
+  assert.equal(core.habitDue(sched, "Run", "2026-08-12"), true);   // Wed
+  assert.equal(core.habitDue(sched, "Other", "2026-08-11"), true); // no schedule → daily
+  assert.equal(core.habitDue({ Run: [] }, "Run", "2026-08-11"), true); // empty → daily
+});
+
+test("habitStreak skips rest days instead of breaking on them", () => {
+  const sched = { Run: [1, 3, 5] };   // Mon/Wed/Fri
+  // done on Wed 08-12 and Mon 08-10; Tue/Thu are rest days and must not break it
+  const log = { "2026-08-10": { Run: ["t"] }, "2026-08-12": { Run: ["t"] } };
+  // today = Fri 08-14, not yet done — the run through Wed is still alive → 2
+  assert.equal(core.habitStreak(log, "Run", "2026-08-14", sched), 2);
+  // a plain daily streak would have broken on Tue (only counts today+yesterday)
+  assert.equal(core.habitStreak(log, "Run", "2026-08-14"), 0);
+});
+
+test("habitStats counts only due days for the rate", () => {
+  const sched = { Run: [1, 3, 5] };
+  // window of 3 days ending Wed 08-12: Mon(due,done), Tue(rest), Wed(due,done)
+  const log = { "2026-08-10": { Run: ["t"] }, "2026-08-12": { Run: ["t"] } };
+  const s = core.habitStats(log, ["Run"], "2026-08-12", 3, sched);
+  const r = s.per[0];
+  assert.equal(r.done, 2); assert.equal(r.n, 2); assert.equal(r.rate, 1);  // both due days done
+});
+
 test("habitDayRate is the fraction of the list done that day", () => {
   const log = { "2026-08-12": { Water: ["t"], Stretch: ["t"] } };
   assert.equal(core.habitDayRate(log, ["Water", "Stretch", "Read"], "2026-08-12"), 2 / 3);
