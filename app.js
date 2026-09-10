@@ -116,7 +116,10 @@ const el = {
   ladderCard: document.getElementById("ladderCard"),
   progressCard: document.getElementById("progressCard"),
   habitsSummaryCard: document.getElementById("habitsSummaryCard"),
+  habitsImpactCard: document.getElementById("habitsImpactCard"),
   habitsListCard: document.getElementById("habitsListCard"),
+  weekHeatCard: document.getElementById("weekHeatCard"),
+  topInsight: document.getElementById("topInsight"),
   recordsCard: document.getElementById("recordsCard"),
   trendCard: document.getElementById("trendCard"),
   shapeCard: document.getElementById("shapeCard"),
@@ -1315,10 +1318,10 @@ function renderRangeRow() {
 // all three on every render meant a 371-cell year grid and every history row
 // were reconstructed for panels nobody had open.
 const SEG_RENDER = {
-  overview: () => { renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
+  overview: () => { renderTopInsight(); renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
   journey:  () => { renderLadder(); renderProgress(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
-  habits:   () => { renderHabits(); },
-  patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderMood(); renderConnections(); renderWins(); },
+  habits:   () => { renderHabits(); renderHabitImpact(); },
+  patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderWeekHeat(); renderMood(); renderConnections(); renderWins(); },
 };
 function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
 
@@ -1402,6 +1405,49 @@ function checkDayRisk() {
 }
 
 // The same reading, readable on demand rather than only when it interrupts.
+// One headline at the top of Overview: the single strongest pattern across
+// weekday, mood and habit completion — the analysis you already compute, made
+// discoverable instead of buried across tabs.
+function renderTopInsight() {
+  const card = el.topInsight;
+  if (!card) return;
+  const days = history.filter((d) => typeof d.total === "number");
+  const overall = days.length ? days.reduce((s, d) => s + d.total, 0) / days.length : 0;
+  if (days.length < 10 || overall <= 0) { card.style.display = "none"; return; }
+  const cands = [];
+
+  // biggest weekday deviation from your overall average
+  const wkSum = new Array(7).fill(0), wkN = new Array(7).fill(0);
+  days.forEach((d) => { const wd = new Date(d.endedAt || d.date).getDay(); wkSum[wd] += d.total; wkN[wd]++; });
+  let bw = null;
+  for (let i = 0; i < 7; i++) {
+    if (wkN[i] >= 2) { const pct = Math.round(((wkSum[i] / wkN[i]) - overall) / overall * 100); if (!bw || Math.abs(pct) > Math.abs(bw.pct)) bw = { pct, wd: i }; }
+  }
+  if (bw && Math.abs(bw.pct) >= 15) cands.push({ pct: bw.pct, phrase: `on <b>${WK_NAME[bw.wd]}</b>` });
+
+  // rough-mood vs good-mood days
+  const lows = days.filter((d) => d.mood != null && d.mood <= 2);
+  const highs = days.filter((d) => d.mood != null && d.mood >= 4);
+  if (lows.length >= 2 && highs.length >= 2) {
+    const aLow = lows.reduce((s, d) => s + d.total, 0) / lows.length;
+    const aHigh = highs.reduce((s, d) => s + d.total, 0) / highs.length;
+    if (aHigh > 0) { const pct = Math.round((aLow - aHigh) / aHigh * 100); if (Math.abs(pct) >= 15) cands.push({ pct, phrase: "on <b>rough-mood days</b>" }); }
+  }
+
+  // strongest habit link
+  if (vitaminsList.length) {
+    const ho = habitOutcomes(history, vitaminsLog, vitaminsList)[0];
+    if (ho && ho.offAvg > 0) { const pct = Math.round((ho.onAvg - ho.offAvg) / ho.offAvg * 100); if (Math.abs(pct) >= 15) cands.push({ pct, phrase: `on days you do <b>${ho.name}</b>` }); }
+  }
+
+  const top = strongestSignal(cands);
+  if (!top) { card.style.display = "none"; return; }
+  const more = top.pct > 0;
+  const cls = more ? "mc-down" : "mc-up";   // more taps is the worse direction for a limit
+  card.style.display = "block";
+  card.innerHTML = `<span class="ti-ico">✨</span><span>You log <span class="${cls}">${Math.abs(top.pct)}% ${more ? "more" : "less"}</span> ${top.phrase}</span>`;
+}
+
 function renderRisk() {
   const line = el.riskLine;
   if (!line) return;
@@ -1865,6 +1911,32 @@ function renderHabits() {
   listCard.appendChild(list);
 }
 
+// Which habits track with a lower (or higher) count — the habits log crossed
+// with the day's tap total. Only meaningful once a goal is set and there's a
+// spread of done/not-done days.
+function renderHabitImpact() {
+  const card = el.habitsImpactCard;
+  if (!card) return;
+  if (!vitaminsList.length || !hasGoal()) { card.style.display = "none"; return; }
+  const rows = habitOutcomes(history, vitaminsLog, vitaminsList).filter((r) => Math.abs(r.delta) >= 0.5);
+  if (!rows.length) { card.style.display = "none"; return; }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "What moves your count", "section-title");
+  addEl(card, "div", `Your daily ${countLabel || "count"} on days you do each habit vs days you don't.`, "sub");
+  const list = document.createElement("div"); list.className = "imp-list";
+  rows.slice(0, 6).forEach((r) => {
+    const row = document.createElement("div"); row.className = "imp-row";
+    addEl(row, "span", r.name, "imp-name");
+    const good = r.delta < 0;   // lower count on days you do it = helpful (toward a limit)
+    const val = document.createElement("span");
+    val.className = "imp-delta " + (good ? "mc-up" : "mc-down");
+    val.innerHTML = `${good ? "▼" : "▲"} ${fmt(Math.abs(r.delta))}<span class="imp-sub">${fmt(r.onAvg)} vs ${fmt(r.offAvg)}</span>`;
+    row.appendChild(val);
+    list.appendChild(row);
+  });
+  card.appendChild(list);
+}
+
 // All-time highlights.
 function renderRecords() {
   const card = el.recordsCard;
@@ -1899,6 +1971,17 @@ function renderRecords() {
     row("📆", (hasGoal() ? "Lightest week" : "Biggest week") + " (of " + wLabel + ")", fmt(round2(weeks[pick])));
   }
   row("Σ", "All-time total", fmt(round2(totals.reduce((a, b) => a + b, 0))));
+
+  // Where your streaks tend to break — the median completed under-goal run + 1.
+  if (hasGoal()) {
+    const { runs } = underRuns(totals, goal);
+    if (runs.length >= 3) {
+      const wall = Math.round(median(runs)) + 1;
+      const line = document.createElement("div"); line.className = "wk-callout";
+      line.innerHTML = `Your under-goal streaks usually reach <b>${median(runs)} day${median(runs) === 1 ? "" : "s"}</b> — day <b>${wall}</b> is where they most often break.`;
+      card.appendChild(line);
+    }
+  }
 }
 
 // Trend — a 7-day rolling average line over the last ~12 weeks, so a real
@@ -1951,6 +2034,25 @@ function renderTrend() {
     cap.innerHTML = `${pct < 0 ? "▼" : "▲"} ${Math.abs(pct)}% over ${weeks} weeks — now ~<b>${fmt(round2(last))}</b>/day`;
   }
   card.appendChild(cap);
+
+  // A data-driven ETA from the actual daily totals (least-squares fit), distinct
+  // from the goal-ladder projection — "at the pace you're actually going".
+  if (hasGoal()) {
+    const rawPts = [];
+    values.forEach((v, i) => { if (v != null) rawPts.push([i, v]); });
+    if (rawPts.length >= 8) {
+      // aim for the goal if still above it, otherwise for zero (the finish line)
+      let pr = goal > 0 ? projectTrend(rawPts, goal) : null;
+      let label = goal === 0 ? "zero" : fmt(goal);
+      if (!pr || pr.days == null) { pr = projectTrend(rawPts, 0); label = "zero"; }
+      if (pr && pr.days != null && pr.days >= 2 && pr.days <= 400) {
+        const when = new Date(today0.getTime() + pr.days * 864e5);
+        const fc = document.createElement("div"); fc.className = "mood-corr";
+        fc.innerHTML = `🎯 On your current tapping trend, you'd reach <b>${label}</b> around <b>${when.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</b>`;
+        card.appendChild(fc);
+      }
+    }
+  }
 }
 
 // A GitHub-style heatmap of the past year — the whole streak at a glance.
@@ -2562,6 +2664,53 @@ function renderTimeOfDay() {
   ["12 AM", "6 AM", "12 PM", "6 PM", "12 AM"].forEach((t) => addEl(labels, "span", t));
   card.appendChild(labels);
   card.appendChild(callout);
+}
+
+const HEAT_WK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// When in the week taps cluster — a weekday × daypart grid, so a pattern like
+// "Friday evenings" pops out that the separate weekday/time charts can't show.
+function renderWeekHeat() {
+  const card = el.weekHeatCard;
+  if (!card) return;
+  const times = [];
+  const gather = (arr) => (arr || []).forEach((raw) => { const t = tapEntry(raw).t; if (t != null) times.push(t); });
+  history.forEach((d) => gather(d.tapTimes));
+  gather(tapLog);
+  const { grid, max, total } = weekHeat(times);
+  if (total < 10) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", "When in the week", "section-title");
+    addEl(card, "div", "Once more taps are logged, the busiest days and times of the week fill in here.", "card-empty");
+    return;
+  }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "When in the week", "section-title");
+
+  // find the busiest cell for a callout
+  let peak = { wd: 0, part: 0, n: -1 };
+  grid.forEach((parts, wd) => parts.forEach((n, part) => { if (n > peak.n) peak = { wd, part, n }; }));
+
+  const wrap = document.createElement("div"); wrap.className = "heat";
+  // header row: daypart labels
+  addEl(wrap, "span", "", "heat-corner");
+  DAYPARTS.forEach((p) => addEl(wrap, "span", p, "heat-col"));
+  grid.forEach((parts, wd) => {
+    addEl(wrap, "span", HEAT_WK[wd], "heat-row-lbl");
+    parts.forEach((n, part) => {
+      const cell = document.createElement("span");
+      cell.className = "heat-cell" + (wd === peak.wd && part === peak.part ? " peak" : "");
+      cell.style.opacity = n === 0 ? "" : String(0.18 + 0.82 * (n / max));
+      if (n === 0) cell.classList.add("empty");
+      cell.title = `${HEAT_WK[wd]} ${DAYPARTS[part]}: ${n} tap${n === 1 ? "" : "s"}`;
+      wrap.appendChild(cell);
+    });
+  });
+  card.appendChild(wrap);
+
+  const cap = document.createElement("div"); cap.className = "wk-callout";
+  const sh = Math.round((peak.n / total) * 100);
+  cap.innerHTML = `Busiest: <b>${HEAT_WK[peak.wd]} ${DAYPARTS[peak.part].toLowerCase()}</b> — ${sh}% of taps`;
+  card.appendChild(cap);
 }
 
 // isoLocal / sessionDate (4am cutoff) live in core.js

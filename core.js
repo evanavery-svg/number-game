@@ -362,6 +362,96 @@ function habitStats(log, names, todayStr, n) {
   return { per, series, bestDow, bestAvg };
 }
 
+// ---- deeper analysis ----
+// Average daily total on days a habit was done vs not — which habits track
+// with a lower (or higher) count. Needs a couple of days on each side to mean
+// anything; sorted by the size of the gap.
+function habitOutcomes(history, log, names) {
+  const out = [];
+  (names || []).forEach((name) => {
+    let onSum = 0, onN = 0, offSum = 0, offN = 0;
+    (history || []).forEach((d) => {
+      if (!d || typeof d.total !== "number") return;
+      if (vitTakenOn(log, name, d.date)) { onSum += d.total; onN++; }
+      else { offSum += d.total; offN++; }
+    });
+    if (onN < 2 || offN < 2) return;
+    const onAvg = onSum / onN, offAvg = offSum / offN;
+    out.push({ name, onAvg: round2(onAvg), offAvg: round2(offAvg), onN, offN, delta: round2(onAvg - offAvg) });
+  });
+  out.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  return out;
+}
+
+// Least-squares fit over [x, y] points → { slope, intercept, n }.
+function linFit(points) {
+  const n = (points || []).length;
+  if (n < 2) return null;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  points.forEach((p) => { sx += p[0]; sy += p[1]; sxx += p[0] * p[0]; sxy += p[0] * p[1]; });
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return null;
+  const slope = (n * sxy - sx * sy) / denom;
+  return { slope, intercept: (sy - slope * sx) / n, n };
+}
+// Project the fitted line to when y reaches target. `days` counts from the last
+// x; null when the trend runs the wrong way (it never gets there).
+function projectTrend(points, target) {
+  const f = linFit(points);
+  if (!f) return null;
+  const lastX = points[points.length - 1][0];
+  const yNow = f.slope * lastX + f.intercept;
+  let days = null;
+  if (f.slope !== 0) {
+    const cross = (target - f.intercept) / f.slope - lastX;
+    if (cross > 0 && ((f.slope < 0 && target <= yNow) || (f.slope > 0 && target >= yNow))) days = Math.round(cross);
+  }
+  return { slope: f.slope, yNow, days };
+}
+
+// Completed runs of consecutive at-or-under-goal days, the in-progress one, and
+// the best ever — the raw material for "where your streaks usually break".
+function underRuns(totals, goal) {
+  const runs = []; let cur = 0;
+  (totals || []).forEach((t) => {
+    if (t <= goal) cur++;
+    else { if (cur > 0) runs.push(cur); cur = 0; }
+  });
+  const best = Math.max(cur, runs.length ? Math.max.apply(null, runs) : 0);
+  return { runs, current: cur, best };
+}
+
+function median(arr) {
+  const a = (arr || []).slice().sort((x, y) => x - y);
+  if (!a.length) return null;
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+// A 7 × 4 (weekday × daypart) grid of tap counts from ms timestamps — when in
+// the week taps actually cluster.
+const DAYPARTS = ["Night", "Morning", "Afternoon", "Evening"];
+function weekHeat(times) {
+  const grid = Array.from({ length: 7 }, () => [0, 0, 0, 0]);
+  let max = 0, total = 0;
+  (times || []).forEach((t) => {
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return;
+    const h = d.getHours();
+    const part = h < 6 ? 0 : h < 12 ? 1 : h < 18 ? 2 : 3;
+    grid[d.getDay()][part]++; total++;
+    if (grid[d.getDay()][part] > max) max = grid[d.getDay()][part];
+  });
+  return { grid, max, total };
+}
+
+// Pick the strongest of a set of { label, pct, ... } signals, by |pct|.
+function strongestSignal(signals) {
+  const list = (signals || []).filter((s) => s && isFinite(s.pct));
+  if (!list.length) return null;
+  return list.slice().sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))[0];
+}
+
 // ---- growth tree milestones ----
 // A pop-up at 25/50/75% of the way to a prestige, not just on full-grown —
 // a 30-day stretch is long enough that a quarter/half/three-quarters cue is
@@ -826,6 +916,7 @@ if (typeof module !== "undefined" && module.exports) {
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
     dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, vitaminsForDay,
     vitTakenOn, prevDayKey, habitStreak, habitLastNDays, habitDayRate, habitStats,
+    habitOutcomes, linFit, projectTrend, underRuns, median, DAYPARTS, weekHeat, strongestSignal,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,

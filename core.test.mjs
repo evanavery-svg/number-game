@@ -776,6 +776,71 @@ test("habitStats summarizes per-habit rate, streak, series, and best weekday", (
   assert.equal(s.bestDow, 2);            // Tuesday (both done) is the strongest day
 });
 
+test("habitOutcomes contrasts avg total on done vs not-done days", () => {
+  const log = {
+    "2026-08-10": { Meditate: ["t"] },
+    "2026-08-11": { Meditate: ["t"] },
+    // 08-12, 08-13 not done
+  };
+  const history = [
+    { date: "2026-08-10", total: 2 },
+    { date: "2026-08-11", total: 4 },
+    { date: "2026-08-12", total: 8 },
+    { date: "2026-08-13", total: 6 },
+  ];
+  const [m] = core.habitOutcomes(history, log, ["Meditate"]);
+  assert.equal(m.name, "Meditate");
+  assert.equal(m.onAvg, 3);   // (2+4)/2
+  assert.equal(m.offAvg, 7);  // (8+6)/2
+  assert.equal(m.delta, -4);
+  assert.equal(m.onN, 2); assert.equal(m.offN, 2);
+  // too little signal on one side → dropped
+  assert.deepEqual(core.habitOutcomes(history, { "2026-08-10": { Rare: ["t"] } }, ["Rare"]), []);
+});
+
+test("linFit / projectTrend fit a line and forecast a crossing", () => {
+  const pts = [[0, 10], [1, 8], [2, 6], [3, 4]];   // slope -2, intercept 10
+  const f = core.linFit(pts);
+  assert.equal(core.round2(f.slope), -2);
+  assert.equal(core.round2(f.intercept), 10);
+  const p = core.projectTrend(pts, 0);   // from x=3 (y=4), reach 0 in 2 more days
+  assert.equal(core.round2(p.slope), -2);
+  assert.equal(core.round2(p.yNow), 4);
+  assert.equal(p.days, 2);
+  // wrong-way trend never reaches a lower target
+  assert.equal(core.projectTrend([[0, 1], [1, 2], [2, 3]], 0).days, null);
+});
+
+test("underRuns finds at-or-under-goal streaks and the current one", () => {
+  const r = core.underRuns([2, 2, 8, 3, 3, 3, 9, 1], 5);
+  assert.deepEqual(r.runs, [2, 3]);   // completed runs before an over-goal day
+  assert.equal(r.current, 1);         // trailing in-progress run
+  assert.equal(r.best, 3);
+});
+
+test("median handles odd and even counts", () => {
+  assert.equal(core.median([3, 1, 2]), 2);
+  assert.equal(core.median([1, 2, 3, 4]), 2.5);
+  assert.equal(core.median([]), null);
+});
+
+test("weekHeat buckets timestamps into weekday × daypart", () => {
+  const mon9 = new Date(2026, 7, 10, 9, 0).getTime();   // Mon morning
+  const mon10 = new Date(2026, 7, 10, 10, 0).getTime(); // Mon morning
+  const fri20 = new Date(2026, 7, 14, 20, 0).getTime(); // Fri evening
+  const h = core.weekHeat([mon9, mon10, fri20, NaN]);
+  assert.equal(h.total, 3);
+  assert.equal(h.grid[1][1], 2);   // Monday (1), Morning (1)
+  assert.equal(h.grid[5][3], 1);   // Friday (5), Evening (3)
+  assert.equal(h.max, 2);
+});
+
+test("strongestSignal picks the largest magnitude", () => {
+  const s = core.strongestSignal([{ label: "a", pct: 12 }, { label: "b", pct: -40 }, { label: "c", pct: 5 }]);
+  assert.equal(s.label, "b");
+  assert.equal(core.strongestSignal([]), null);
+});
+
 test("treeMilestoneHit fires once per quarter crossed, never at 100%", () => {
   // a single day's growth (progress += 1) crossing the 25% line (day 8 of 30)
   assert.equal(core.treeMilestoneHit(7, 8, 30), 25);

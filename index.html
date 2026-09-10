@@ -784,6 +784,28 @@
     .hb-val { font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
     .hb-track { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
     .hb-track i { display: block; height: 100%; border-radius: 99px; background: var(--safe); transition: width var(--dur-slow) var(--ease-out); }
+    /* top-of-Overview headline insight */
+    .top-insight {
+      display: flex; align-items: flex-start; gap: 8px;
+      background: var(--surface-2); border-radius: 14px; padding: 11px 14px;
+      margin-bottom: var(--sp-3); font-size: 13px; color: var(--text); line-height: 1.35;
+    }
+    .top-insight .ti-ico { flex-shrink: 0; }
+    /* what-moves-your-count list */
+    .imp-list { display: flex; flex-direction: column; margin-top: var(--sp-2); }
+    .imp-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface-2); }
+    .imp-row:last-child { border-bottom: none; }
+    .imp-name { font-size: 14px; font-weight: 500; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .imp-delta { font-size: 14px; font-weight: 700; white-space: nowrap; text-align: right; }
+    .imp-delta .imp-sub { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+    /* weekday × daypart heatmap */
+    .heat { display: grid; grid-template-columns: auto repeat(4, 1fr); gap: 3px; margin-top: var(--sp-3); }
+    .heat-corner { }
+    .heat-col { font-size: 10px; color: var(--muted); text-align: center; padding-bottom: 2px; }
+    .heat-row-lbl { font-size: 11px; color: var(--muted); align-self: center; padding-right: 4px; }
+    .heat-cell { height: 24px; border-radius: 5px; background: var(--safe); }
+    .heat-cell.empty { background: var(--surface-2); opacity: 1; }
+    .heat-cell.peak { outline: 1.5px solid var(--text); outline-offset: -1.5px; }
     /* reaching-zero celebration */
     .win-card { text-align: center; background: var(--bg); border-radius: 18px; padding: var(--sp-6) var(--sp-5) var(--sp-5); margin: var(--sp-3) 0 var(--sp-2); box-shadow: inset 0 0 0 1.5px var(--safe); }
     .win-emoji { font-size: 54px; line-height: 1; }
@@ -1734,7 +1756,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.27</div>
+  <div class="version">v10.28</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1805,6 +1827,7 @@
       <div class="panel-body">
         <!-- OVERVIEW: where you stand right now -->
         <div class="seg-page" id="segOverview">
+          <div class="top-insight" id="topInsight" style="display:none"></div>
           <div class="range-row" id="rangeRow"></div>
           <div class="insights-grid" id="insightsGrid"></div>
           <button class="more-stats" id="moreStats">More stats</button>
@@ -1833,6 +1856,7 @@
         <!-- HABITS: how the daily checklist is going -->
         <div class="seg-page" id="segHabits" style="display:none">
           <div class="chart-card" id="habitsSummaryCard" style="display:none"></div>
+          <div class="chart-card" id="habitsImpactCard" style="display:none"></div>
           <div class="chart-card" id="habitsListCard" style="display:none"></div>
         </div>
 
@@ -1841,6 +1865,7 @@
           <div class="chart-card" id="shapeCard" style="display:none"></div>
           <div class="chart-card" id="weekdayCard" style="display:none"></div>
           <div class="chart-card" id="timeCard" style="display:none"></div>
+          <div class="chart-card" id="weekHeatCard" style="display:none"></div>
           <div class="chart-card" id="moodCard" style="display:none"></div>
           <div class="chart-card" id="connCard" style="display:none"></div>
           <div class="chart-card" id="winsCard" style="display:none"></div>
