@@ -1,6 +1,6 @@
 // Service worker: caches the app so it opens instantly and works offline.
 // Bump CACHE when you change any file, so phones pick up the new version.
-const CACHE = "app-v130";
+const CACHE = "app-v131";
 const ASSETS = [
   ".",
   "index.html",

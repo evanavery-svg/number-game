@@ -364,9 +364,15 @@ function habitStats(log, names, todayStr, n, sched) {
     for (const d of days) if (habitDue(sched, nm, d)) { due++; if (vitTakenOn(log, nm, d)) done++; }
     return { name: nm, done, n: due, rate: due ? done / due : 0, streak: habitStreak(log, nm, todayStr, sched) };
   });
-  const series = days.map((d) => ({ day: d, rate: habitDayRate(log, names, d, sched) }));
+  const series = days.map((d) => {
+    const due = names.filter((nm) => habitDue(sched, nm, d)).length;
+    return { day: d, rate: habitDayRate(log, names, d, sched), due };
+  });
+  // Rest days (nothing scheduled) score a free 1.0, so they can't be a fair
+  // basis for "your strongest weekday" — count only days something was due.
   const byDow = [0, 1, 2, 3, 4, 5, 6].map(() => ({ sum: 0, count: 0 }));
   for (const s of series) {
+    if (!s.due) continue;
     const dow = new Date(s.day + "T12:00:00").getDay();
     byDow[dow].sum += s.rate; byDow[dow].count++;
   }

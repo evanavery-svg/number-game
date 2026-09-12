@@ -1870,7 +1870,10 @@ function renderHabits() {
 
   const N = 30;
   const stats = habitStats(vitaminsLog, vitaminsList, sessionDate(), N, vitaminsSched);
-  const avg = stats.series.reduce((s, d) => s + d.rate, 0) / stats.series.length;
+  // Average over days something was actually due — rest days (a free 100%)
+  // would otherwise inflate "how much of your habits you complete."
+  const realDays = stats.series.filter((d) => d.due);
+  const avg = realDays.length ? realDays.reduce((s, d) => s + d.rate, 0) / realDays.length : 0;
 
   // ---- summary card: completion trend + headline ----
   sum.style.display = "block"; sum.textContent = "";

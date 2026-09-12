@@ -781,6 +781,18 @@ test("habitStats counts only due days for the rate", () => {
   assert.equal(r.done, 2); assert.equal(r.n, 2); assert.equal(r.rate, 1);  // both due days done
 });
 
+test("habitStats: a rest-day weekday can't win 'strongest day'", () => {
+  // Run only on Mon/Wed/Fri, never done. Sunday has nothing due (a free 1.0)
+  // and must NOT be crowned the strongest day over the due weekdays.
+  const sched = { Run: [1, 3, 5] };
+  const s = core.habitStats({}, ["Run"], "2026-08-15", 14, sched);  // 08-15 is a Fri
+  const sun = s.series.find((d) => new Date(d.day + "T12:00:00").getDay() === 0);
+  assert.equal(sun.rate, 1);          // rest day still reads as complete for the chart
+  assert.equal(sun.due, 0);           // but it had nothing due
+  assert.notEqual(s.bestDow, 0);      // so Sunday is not "your strongest day"
+  assert.equal(s.bestAvg, 0);         // the due days were all missed → 0, not inflated
+});
+
 test("habitDayRate is the fraction of the list done that day", () => {
   const log = { "2026-08-12": { Water: ["t"], Stretch: ["t"] } };
   assert.equal(core.habitDayRate(log, ["Water", "Stretch", "Read"], "2026-08-12"), 2 / 3);
