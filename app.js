@@ -3250,12 +3250,10 @@ function openVitamins() {
     s.appendChild(grid);
 
     const footer = document.createElement("div"); footer.className = "vit-footer";
-    const leftGroup = document.createElement("div"); leftGroup.className = "vit-footer-left";
     addBtn = makeBtn("Add", "ghost", () => setEditing(true));
     editBtn = makeBtn("Edit list", "ghost", () => setEditing(!editing));
-    leftGroup.appendChild(addBtn); leftGroup.appendChild(editBtn);
     const doneBtn = makeBtn("Done", "ghost", closeSheet);
-    footer.appendChild(leftGroup); footer.appendChild(doneBtn);
+    footer.appendChild(addBtn); footer.appendChild(editBtn); footer.appendChild(doneBtn);
     s.appendChild(footer);
   });
 }
