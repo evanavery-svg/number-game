@@ -43,6 +43,8 @@ const KEY_MEDS_LEGACY = "count.meds";     // [{ id, name, dose, at }] — old me
 const KEY_VITAMINS_LIST = "count.vitaminsList"; // [name, …] — permanent, user-managed, added once and kept
 const KEY_VITAMINS_LOG = "count.vitaminsLog";   // { [sessionDate]: { [name]: count } } — today's tallies auto-reset because today is a fresh key
 const KEY_VITAMINS_SCHED = "count.vitaminsSched"; // { [name]: [weekday…] } — which days a habit is due; absent = every day
+const VIT_HOLD_MS = 550;      // press-and-hold on a done habit card to reset it to zero
+const VIT_HOLD_BAR_MS = 400;  // the charging bar runs for the last part of the hold (keep in sync with .vc-hold CSS)
 const KEY_BACKUP_AT = "count.backupAt";   // timestamp of the last full backup
 const KEY_BACKUP_NUDGE = "count.backupNudge"; // YYYY-MM-DD of the last backup nudge
 const KEY_ONBOARDED = "count.onboarded";  // bool — first-run intro completed
@@ -3055,13 +3057,13 @@ function schedDaysLabel(days) {
   if (!Array.isArray(days) || !days.length || days.length === 7) return "Daily";
   return days.slice().sort().map((d) => SCHED_ABBR[d]).join(" ");
 }
-function undoVitamin(name) {
+// Wipe today's whole tally for a habit — back to zero. The hold-to-reset
+// gesture on a card uses this (a single long press, not repeated undos).
+function clearVitamin(name) {
   const d = sessionDate();
-  if (!vitaminsLog[d] || !Array.isArray(vitaminsLog[d][name]) || !vitaminsLog[d][name].length) return false;
-  vitaminsLog[d][name].pop();
-  if (!vitaminsLog[d][name].length) delete vitaminsLog[d][name];
+  if (!vitaminsLog[d] || !(name in vitaminsLog[d])) return false;
+  delete vitaminsLog[d][name];
   save(KEY_VITAMINS_LOG, vitaminsLog);
-  buzz(10);
   return true;
 }
 function renameVitamin(oldName, newName) {
@@ -3177,14 +3179,44 @@ function openVitamins() {
             const flame = addEl(card, "span", "🔥 " + streak, "vit-streak" + tier);
             if (justCompleted && anim) flame.classList.add("flare");
           }
-          card.addEventListener("click", () => { tapVitamin(name); refresh({ tapped: name }); });
+          // Tap to log; press-and-hold a done habit to reset it to zero. A thin
+          // bar charges up during the hold (after a short delay so a normal tap
+          // doesn't flash it) and the reset fires when it fills.
           if (isTaken) {
-            const undo = document.createElement("button");
-            undo.type = "button"; undo.className = "vc-undo"; undo.textContent = "↩";
-            undo.setAttribute("aria-label", `Undo ${name}`);
-            undo.addEventListener("click", (ev) => { ev.stopPropagation(); undoVitamin(name); refresh(); });
-            card.appendChild(undo);
+            card.setAttribute("aria-label", "Add another " + name + ", or hold to reset");
+            addEl(card, "span", "", "vc-hold");
           }
+          let holdTimer = null, armTimer = null, longFired = false, sx = 0, sy = 0;
+          const cancelHold = () => {
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+            if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+            card.classList.remove("resetting");
+          };
+          card.addEventListener("pointerdown", (ev) => {
+            longFired = false;
+            if (!isTaken) return;   // nothing to reset — a plain tap logs another
+            sx = ev.clientX; sy = ev.clientY;
+            armTimer = setTimeout(() => { armTimer = null; card.classList.add("resetting"); }, VIT_HOLD_MS - VIT_HOLD_BAR_MS);
+            holdTimer = setTimeout(() => {
+              holdTimer = null; longFired = true;
+              card.classList.remove("resetting");
+              clearVitamin(name);
+              buzz([0, 35, 25, 45]);
+              toast(name + " reset");
+              refresh();
+            }, VIT_HOLD_MS);
+          });
+          card.addEventListener("pointermove", (ev) => {
+            if ((holdTimer || armTimer) && (Math.abs(ev.clientX - sx) > 10 || Math.abs(ev.clientY - sy) > 10)) cancelHold();
+          });
+          card.addEventListener("pointerup", cancelHold);
+          card.addEventListener("pointerleave", cancelHold);
+          card.addEventListener("pointercancel", cancelHold);
+          card.addEventListener("contextmenu", (ev) => ev.preventDefault());   // no long-press callout on mobile
+          card.addEventListener("click", (ev) => {
+            if (longFired) { longFired = false; ev.preventDefault(); return; }   // the hold already reset it
+            tapVitamin(name); refresh({ tapped: name });
+          });
         } else {
           addEl(card, "span", schedDaysLabel(vitaminsSched[name]), "vc-sched");
           const btns = document.createElement("div"); btns.className = "vc-edit-btns";
