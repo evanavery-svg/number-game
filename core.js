@@ -880,7 +880,10 @@ function dateTaken(history, date, except) {
 // This mapping is where the wrong-day and off-by-one bugs lived, so it's kept
 // out of the DOM code where it can be tested directly. `totals` is keyed by
 // YYYY-MM-DD; `todayStr` is the session day, not the wall-clock one.
+// `goal` may be a number, or a function (ds) => number so each day can be judged
+// against the goal that was in effect that day (the taper ladder), not today's.
 function calendarCells(year, month, totals, todayStr, goal, hasGoalFlag) {
+  const goalOf = typeof goal === "function" ? goal : () => goal;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells = [];
   for (let i = 0, lead = new Date(year, month, 1).getDay(); i < lead; i++) cells.push({ blank: true });
@@ -890,7 +893,7 @@ function calendarCells(year, month, totals, todayStr, goal, hasGoalFlag) {
     const total = has ? totals[ds] : null;
     cells.push({
       blank: false, day, ds, total, isToday: ds === todayStr,
-      state: !has ? "empty" : !hasGoalFlag ? "logged" : (total <= goal ? "under" : "over"),
+      state: !has ? "empty" : !hasGoalFlag ? "logged" : (total <= goalOf(ds) ? "under" : "over"),
     });
   }
   return cells;

@@ -288,6 +288,16 @@ test("calendarCells lays out a month and tags each day", () => {
   assert.equal(core.calendarCells(2028, 1, {}, "x", 4, true).filter((c) => !c.blank).length, 29);
 });
 
+test("calendarCells judges each day against a per-day goal", () => {
+  // same total (6) two days; the goal was 8 on the 2nd, lowered to 4 by the 3rd.
+  const totals = { "2026-07-02": 6, "2026-07-03": 6 };
+  const goalOf = (ds) => (ds >= "2026-07-03" ? 4 : 8);
+  const cells = core.calendarCells(2026, 6, totals, "x", goalOf, true);
+  const byDs = (ds) => cells.find((c) => c.ds === ds);
+  assert.equal(byDs("2026-07-02").state, "under");   // 6 <= 8 (goal that day)
+  assert.equal(byDs("2026-07-03").state, "over");     // 6 > 4 (goal after taper)
+});
+
 test("sinceCardModel is the one source for the Time Since numbers", () => {
   const now = new Date(2026, 6, 30, 12).getTime();
   const m = core.sinceCardModel({ start: new Date(now - 2 * core.DAY).getTime() }, now);

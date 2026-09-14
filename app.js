@@ -351,6 +351,20 @@ function currentSuggestion() {
 }
 // Is a daily goal active? (0 counts — it's the finish line.)
 function hasGoal() { return !!goalOn; }
+// The goal that was in effect on a given day — so a day the Journey tab colored
+// green stays green after you lower your taper, judged against the goal at the
+// time rather than today's. Uses the goal ladder (goalLog); falls back to the
+// current goal when there's no history to go on.
+function goalForDay(dayStr) {
+  if (!goalLog || !goalLog.length) return goal;
+  const t = new Date(dayStr + "T23:59:59").getTime();   // end of that day
+  let best = -Infinity, g = null;
+  for (const e of goalLog) {
+    const at = new Date(e.at).getTime();
+    if (!isNaN(at) && at <= t && at >= best) { best = at; g = e.goal; }
+  }
+  return g == null ? goalLog[0].goal : g;   // day predates the ladder → its first rung
+}
 // Record a goal change so the ladder and the zero projection can see it.
 function noteGoalChange(v) {
   const last = goalLog.length ? goalLog[goalLog.length - 1] : null;
@@ -2090,7 +2104,7 @@ function renderYear() {
     const ds = isoLocal(d), tt = d.getTime();
     if (tt > today0.getTime()) cell.classList.add("future");
     else if (ds in totals) {
-      if (hasGoal()) cell.classList.add(totals[ds] <= goal ? "under" : "over");
+      if (hasGoal()) cell.classList.add(totals[ds] <= goalForDay(ds) ? "under" : "over");
       else cell.classList.add("logged");
       cell.title = `${ds}: ${fmt(totals[ds])}`;
     } else cell.classList.add("empty");
@@ -2435,7 +2449,7 @@ function renderCalendar() {
   detail.textContent = "Tap a day to see that day's total.";
 
   // the month's shape comes from core.js so it can be tested without a DOM
-  calendarCells(y, m, totals, todayStr, goal, hasGoal()).forEach((c) => {
+  calendarCells(y, m, totals, todayStr, goalForDay, hasGoal()).forEach((c) => {
     const cell = document.createElement("div");
     if (c.blank) { cell.className = "cal-day blank"; grid.appendChild(cell); return; }
     cell.className = "cal-day " + c.state;
@@ -2470,7 +2484,7 @@ function selectCalDay(ds, cell, detail, todayStr) {
   if (h) {
     const bits = [fmt(h.total)];
     if (h.taps) bits.push(`${h.taps} tap${h.taps === 1 ? "" : "s"}`);
-    if (hasGoal()) bits.push(h.total <= goal ? "under goal ✓" : `${fmt(round2(h.total - goal))} over`);
+    if (hasGoal()) { const dg = goalForDay(ds); bits.push(h.total <= dg ? "under goal ✓" : `${fmt(round2(h.total - dg))} over`); }
     b.textContent = nice; main = " — " + bits.join(" · ");
     if ((h.note || "").trim()) note = h.note;
   } else if (ds === todayStr && today > 0) {
