@@ -195,6 +195,34 @@
       --water: #22c4d6; --water-2: #7ae3ef;
       --num-lo: #7fc9bf;
     }
+    :root[data-theme="ember"] {    /* Ember — warm charcoal & glowing coal */
+      --bg: #130d0b; --surface: #201512; --surface-2: #30201b;
+      --text: #f3e9e4; --muted: #b09a90; --faint: #7c6a61;
+      --accent: #ff5a36; --accent-2: #ff7a5c; --r-acc-1: #ff7a5c; --r-acc-2: #ff5a36;
+      --btn-glow: rgba(255,90,54,0.42); --btn-text: #ffffff;
+      --water: #3f7fa8; --water-2: #6fa6c8;
+    }
+    :root[data-theme="gilded"] {   /* Gilded — near-black & warm gold */
+      --bg: #0d0b07; --surface: #1a160d; --surface-2: #2a2413;
+      --text: #f2ecdd; --muted: #a99f86; --faint: #766d56;
+      --accent: #d9b44a; --accent-2: #e9c968; --r-acc-1: #e9c968; --r-acc-2: #d9b44a;
+      --btn-glow: rgba(217,180,74,0.36); --btn-text: #241c07;   /* light accent ⇒ dark label */
+      --water: #3f7fa8; --water-2: #6fa6c8;
+    }
+    :root[data-theme="meadow"] {   /* Meadow — deep green & fresh emerald */
+      --bg: #08140f; --surface: #10201a; --surface-2: #1a3128;
+      --text: #e6f2ec; --muted: #93b0a4; --faint: #5f7d70;
+      --accent: #34d399; --accent-2: #5fe3b3; --r-acc-1: #5fe3b3; --r-acc-2: #34d399;
+      --btn-glow: rgba(52,211,153,0.36); --btn-text: #04231a;   /* bright accent ⇒ dark label */
+      --water: #2bb4c4; --water-2: #6fd8e3;
+    }
+    :root[data-theme="orchid"] {   /* Orchid — deep indigo & soft violet */
+      --bg: #100c1c; --surface: #1b1430; --surface-2: #291f47;
+      --text: #ece7f7; --muted: #a99cc4; --faint: #726587;
+      --accent: #a78bfa; --accent-2: #c0acff; --r-acc-1: #c0acff; --r-acc-2: #a78bfa;
+      --btn-glow: rgba(167,139,250,0.38); --btn-text: #180f2e;  /* light accent ⇒ dark label */
+      --num-lo: #b7a6e0;
+    }
     /* ---- light themes ----
        The shared :root[data-theme] block above assumes a dark ground, so each
        of these has to re-invert hairlines, shadows, key fills, the button
@@ -233,6 +261,23 @@
       --glow-safe: rgba(10,107,61,0.30); --glow-warn: rgba(138,86,0,0.30); --glow-over: rgba(179,38,30,0.34);
       --num-lo: #0a6b3d; --num-mid: #8a5600; --num-hi: #b3261e;
       --water: #0b4fd8; --water-2: #2668ee;
+    }
+    :root[data-theme="blush"] {    /* Blush — warm pink cream & deep rose */
+      --bg: #fbeff2; --surface: #fffafb; --surface-2: #f3dfe5;
+      --text: #26181d; --muted: #6f5b62; --faint: #9a8a90;
+      --accent: #c53d6a; --accent-2: #db5a83; --r-acc-1: #db5a83; --r-acc-2: #c53d6a;
+      --btn-glow: rgba(197,61,106,0.26); --btn-text: #ffffff;
+      --hair: rgba(60,20,35,0.10);
+      --card-shadow: 0 1px 2px rgba(120,40,70,0.06), 0 12px 26px rgba(120,40,70,0.10);
+      --key: rgba(0,0,0,0.05); --key-press: rgba(0,0,0,0.12);
+      --safe: #1a7a52; --warn: #a8710f; --over: #b23b2c;
+      --r-safe-1: #35a271; --r-safe-2: #1a7a52;
+      --r-warn-1: #d19a3a; --r-warn-2: #a8710f;
+      --r-over-1: #d4614f; --r-over-2: #b23b2c;
+      --halo-safe: rgba(26,122,82,0.16); --halo-warn: rgba(168,113,15,0.18); --halo-over: rgba(178,59,44,0.18);
+      --glow-safe: rgba(26,122,82,0.32); --glow-warn: rgba(168,113,15,0.32); --glow-over: rgba(178,59,44,0.36);
+      --num-lo: #1a7a52; --num-mid: #a8710f; --num-hi: #b23b2c;
+      --water: #1f6f8b; --water-2: #3d95b3;
     }
     /* SVG ring gradient stops read from variables so themes retint them */
     #gradAccent stop:nth-child(1) { stop-color: var(--r-acc-1); }
@@ -1686,7 +1731,7 @@
   <script>
     // Apply the saved (or auto-rotated) theme before first paint — no colour flash.
     try {
-      var order = ["default","blue","forest","teal","grove","dusk","nocturne","roast","plum","abyss","paper","clarity"];
+      var order = ["default","blue","forest","teal","grove","dusk","nocturne","roast","plum","abyss","ember","gilded","meadow","orchid","paper","clarity","blush"];
       var t;
       if (JSON.parse(localStorage.getItem("count.themeAuto"))) {
         var d = new Date();
@@ -1770,7 +1815,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.35</div>
+  <div class="version">v10.36</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
