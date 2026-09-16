@@ -54,6 +54,7 @@ const KEY_LABEL = "count.label";          // what you're counting (optional)
 // goal — distinct from having no goal at all (that's KEY_GOAL_ON).
 const KEY_GOAL_ON = "count.goalOn";       // bool — is a daily goal active (0 is valid)
 const KEY_GOAL_LOG = "count.goalLog";     // [{ at, goal }] every goal change, for the ladder
+const KEY_STREAK_GRACE = "count.streakGrace"; // bool — let one over-goal slip not reset the streak
 const KEY_TAPER = "count.taper";          // { on, step, everyDays } step-down plan
 const KEY_TAPER_ASK = "count.taperAsk";   // ISO date a step down was last offered
 const KEY_ZERO_ASK = "count.zeroAsk";     // bool — already offered the Time Since handoff
@@ -248,6 +249,7 @@ let haptic = load(KEY_HAPTIC, true);
 let sound = load(KEY_SOUND, false);
 let reminderOn = load(KEY_REMIND, false);
 let reminderTime = load(KEY_REMIND_TIME, "20:00");
+let streakGrace = load(KEY_STREAK_GRACE, true);   // one over-goal slip won't reset the under-goal streak
 let since = load(KEY_SINCE, []);
 let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
 let moodDaily = load(KEY_MOOD_DAILY, {});   // once-a-day mood pulse, keyed by day
@@ -1166,16 +1168,17 @@ function countUpText(node, value, dur) {
   requestAnimationFrame(tick);
 }
 
-// Goal is a ceiling: streak = consecutive recent days that stayed at or under it.
-function underStreak() {
-  if (!hasGoal()) return 0;
-  let s = 0;
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].total <= goal) s++; else break;
-  }
-  if (taps > 0 && today <= goal) s++;   // today counts once started and still under
-  return s;
+// Goal is a ceiling: streak = consecutive recent days that stayed at or under
+// it. With streak grace on, one over-goal slip is bridged rather than resetting
+// the run (shown transparently with a shield, never hidden). `graced` says a
+// bridge is currently in effect.
+function underStreakInfo() {
+  if (!hasGoal()) return { streak: 0, graced: 0 };
+  const totals = history.map((d) => d.total);
+  if (taps > 0 && today <= goal) totals.push(today);   // today counts once started and still under
+  return streakWithGrace(totals, goal, streakGrace ? 1 : 0);
 }
+function underStreak() { return underStreakInfo().streak; }
 
 // Which colour zone today sits in relative to the goal.
 function zoneOf() {
@@ -2829,13 +2832,15 @@ function renderTop(animate) {
   el.total.style.color = numberColor();   // white → green → orange → red toward the goal
 
   // streak line — tinted green while alive (Feature 2); a warm hello on a blank first run (Feature 7)
-  const streak = underStreak();
+  const streakInfo = underStreakInfo();
+  const streak = streakInfo.streak;
   const firstRun = history.length === 0 && taps === 0 && today === 0;
   if (mile) {
     el.meta.textContent = `🎉 ${mile.label}`;
     el.meta.classList.add("streak");
   } else if (streak > 0) {
-    el.meta.textContent = `✓ ${streak} ${streak === 1 ? "day" : "days"} under goal`;
+    // a shield marks a streak currently held together by grace — honest, not hidden
+    el.meta.textContent = `✓ ${streak} ${streak === 1 ? "day" : "days"} under goal${streakInfo.graced > 0 ? " · 🛡 grace" : ""}`;
     el.meta.classList.add("streak");
   } else {
     el.meta.classList.remove("streak");
@@ -3970,6 +3975,9 @@ function openTrackingSettings() {
     addEl(s, "label", "Daily goal — leave blank for none, 0 is the finish line");
     const goalInput = numInput(hasGoal() ? fmt(goal) : "", "0");
     s.appendChild(goalInput);
+    // one slip won't reset your streak — the day is bridged and marked with a shield
+    const graceToggle = makeToggle(s, "Streak grace — one slip won't reset it", streakGrace);
+    graceToggle.addEventListener("change", () => { streakGrace = graceToggle.checked; save(KEY_STREAK_GRACE, streakGrace); buzz(8); render(); });
     s.appendChild(makeBtn("Save", "primary", () => {
       const ns = parseFloat(stepInput.value);
       if (isNaN(ns) || ns <= 0) { toast("Step must be greater than 0"); return; }

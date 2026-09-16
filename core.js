@@ -440,6 +440,23 @@ function underRuns(totals, goal) {
   return { runs, current: cur, best };
 }
 
+// The current run of at-or-under-goal days, counting back from the most recent.
+// Up to graceMax over-goal days may be "graced" — bridged so one slip doesn't
+// reset the run. A graced day isn't counted (it wasn't under goal) but doesn't
+// end the run. `totals` holds only logged days in chronological order, so gaps
+// (unlogged days) never break a run — only an ungraced over-goal day does.
+function streakWithGrace(totals, goal, graceMax) {
+  const arr = totals || [];
+  const cap = Math.max(0, graceMax | 0);
+  let streak = 0, graced = 0;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i] <= goal) streak++;
+    else if (graced < cap) graced++;   // bridge one slip; don't count it, don't reset
+    else break;
+  }
+  return { streak, graced };
+}
+
 function median(arr) {
   const a = (arr || []).slice().sort((x, y) => x - y);
   if (!a.length) return null;
@@ -938,7 +955,7 @@ if (typeof module !== "undefined" && module.exports) {
     dayRisk, periodStats, comparePeriods, milestoneToday, variantForDay,
     dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, vitaminsForDay,
     vitTakenOn, prevDayKey, habitDue, habitStreak, habitLastNDays, habitDayRate, habitStats,
-    habitOutcomes, linFit, projectTrend, underRuns, median, DAYPARTS, weekHeat, strongestSignal,
+    habitOutcomes, linFit, projectTrend, underRuns, streakWithGrace, median, DAYPARTS, weekHeat, strongestSignal,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,

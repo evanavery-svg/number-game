@@ -791,6 +791,22 @@ test("habitStats counts only due days for the rate", () => {
   assert.equal(r.done, 2); assert.equal(r.n, 2); assert.equal(r.rate, 1);  // both due days done
 });
 
+test("streakWithGrace bridges one slip but not two", () => {
+  const goal = 5;
+  // no grace: an over-goal day at the end resets the run
+  assert.deepEqual(core.streakWithGrace([3, 3, 3, 9], goal, 0), { streak: 0, graced: 0 });
+  // grace bridges the most recent slip, keeping the older run
+  assert.deepEqual(core.streakWithGrace([3, 3, 3, 9], goal, 1), { streak: 3, graced: 1 });
+  // a slip in the middle is bridged too
+  assert.deepEqual(core.streakWithGrace([3, 9, 3, 3], goal, 1), { streak: 3, graced: 1 });
+  // two slips exceed one grace — the run stops at the second
+  assert.deepEqual(core.streakWithGrace([3, 9, 3, 9], goal, 1), { streak: 1, graced: 1 });
+  // at-or-under counts (boundary), all-under needs no grace
+  assert.deepEqual(core.streakWithGrace([5, 5, 5], goal, 1), { streak: 3, graced: 0 });
+  // empty / no goal-met days
+  assert.deepEqual(core.streakWithGrace([], goal, 1), { streak: 0, graced: 0 });
+});
+
 test("habitStats: a rest-day weekday can't win 'strongest day'", () => {
   // Run only on Mon/Wed/Fri, never done. Sunday has nothing due (a free 1.0)
   // and must NOT be crowned the strongest day over the due weekdays.
