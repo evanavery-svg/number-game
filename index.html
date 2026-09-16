@@ -629,6 +629,14 @@
 
     .history { padding: var(--sp-1) 0; margin-bottom: var(--sp-4); max-height: 42vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .history .section-title { margin: 14px 18px var(--sp-1); }
+    .hist-head { display: flex; align-items: center; justify-content: space-between; }
+    .hist-head .section-title { margin-right: 0; }
+    .hist-add {
+      margin: 14px 18px var(--sp-1); padding: 6px 12px; border: none; border-radius: 999px;
+      background: var(--surface-2); color: var(--accent); font-family: inherit; font-size: 13px; font-weight: 700;
+      cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform var(--dur-fast) ease, background var(--dur-fast) ease;
+    }
+    .hist-add:active { transform: scale(0.95); background: var(--surface); }
     .hist-row { padding: 13px 18px; border-top: 1px solid var(--hair); cursor: pointer; transition: background var(--dur-base) ease; }
     .hist-row:first-of-type { border-top: none; }
     .hist-row:active { background: var(--surface-2); }
@@ -1836,7 +1844,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.39</div>
+  <div class="version">v10.40</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -1928,7 +1936,10 @@
           <div class="chart-card" id="yearCard" style="display:none"></div>
           <div class="chart-card" id="lifeCard" style="display:none"></div>
           <div class="history" id="history">
-            <div class="section-title">History</div>
+            <div class="hist-head">
+              <div class="section-title">History</div>
+              <button type="button" class="hist-add" id="histAddBtn">+ Add a day</button>
+            </div>
             <div class="hist-empty" id="histEmpty">No previous days yet.</div>
           </div>
         </div>

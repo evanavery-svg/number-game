@@ -4463,6 +4463,56 @@ function openHistorySheet(idx) {
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
   });
 }
+// Backfill a day you never logged — it slots into history by date, with the
+// same future/duplicate-date guards the edit sheet uses. Doesn't touch today's
+// live count or the tree (a past day isn't today's momentum).
+function openAddPastDay() {
+  openSheet((s) => {
+    addEl(s, "h3", "Add a past day");
+    addEl(s, "p", "Log a day you missed — it slots into your history by date.", "sub");
+
+    addEl(s, "label", "Date");
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    const yest = new Date(); yest.setDate(yest.getDate() - 1);
+    dateInput.value = isoLocal(yest);
+    dateInput.max = isoLocal(new Date());
+    s.appendChild(dateInput);
+
+    addEl(s, "label", "Total for that day");
+    const input = numInput("", "0"); input.inputMode = "decimal";
+    input.placeholder = "e.g. " + fmt(hasGoal() ? goal : step);
+    s.appendChild(input);
+
+    addEl(s, "label", "Note (optional)");
+    const ta = document.createElement("textarea"); ta.rows = 2; ta.placeholder = "Anything about that day";
+    s.appendChild(ta);
+
+    const commit = () => {
+      const v = parseFloat(input.value);
+      if (isNaN(v) || v < 0) { toast("Enter a number ≥ 0"); return; }
+      const ds = dateInput.value;
+      if (!ds) { toast("Pick a date"); return; }
+      if (isFutureDate(ds, isoLocal(new Date()))) { toast("That date hasn't happened yet"); return; }
+      if (dateTaken(history, ds, null)) { toast("That day already has an entry — tap it in the list to edit"); return; }
+      const [y, mo, d] = ds.split("-").map(Number);
+      const when = new Date(y, mo - 1, d, 12, 0, 0);
+      const entry = {
+        date: isoLocal(when), label: dayLabel(when), total: round2(v), taps: 0,
+        endedAt: when.toISOString(), note: ta.value.replace(/\s*\n\s*/g, " ").trim(), tapTimes: [],
+      };
+      history.push(entry);
+      history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
+      save(KEY_HISTORY, history); invalidatePulse();
+      closeSheet(); render();
+      toast(`Added ${entry.label} · ${fmt(entry.total)}`);
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+    s.appendChild(makeBtn("Add day", "primary", commit));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => { input.focus(); }, 60);
+  });
+}
 function numInput(value, min) {
   const i = document.createElement("input");
   i.type = "number"; i.step = "0.01"; if (min != null) i.min = min;
@@ -6233,6 +6283,7 @@ el.end.addEventListener("click", openEndDay);
 syncVitaminsBtn();
 el.gear.addEventListener("click", openSettings);
 el.moreBtn.addEventListener("click", openMore);
+document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
 el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSettings(); } });
