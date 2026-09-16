@@ -50,13 +50,20 @@ await page.waitForTimeout(150);
 const after = await page.evaluate(() => JSON.parse(localStorage.getItem("count.today") || "0"));
 check("tap increases today", after > before);
 
-// undo
-await page.click("#undoBtn");
-await page.waitForTimeout(150);
-check("undo restores today", (await page.evaluate(() => JSON.parse(localStorage.getItem("count.today") || "0"))) === before);
+// undo via swipe down on number
+await page.evaluate(() => {
+  const el = document.getElementById("totalWrap");
+  const r = el.getBoundingClientRect();
+  const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+  el.dispatchEvent(new TouchEvent("touchstart", { touches: [new Touch({ identifier: 0, target: el, clientX: cx, clientY: cy })], bubbles: true }));
+  el.dispatchEvent(new TouchEvent("touchmove", { touches: [new Touch({ identifier: 0, target: el, clientX: cx, clientY: cy + 80 })], bubbles: true }));
+  el.dispatchEvent(new TouchEvent("touchend", { changedTouches: [new Touch({ identifier: 0, target: el, clientX: cx, clientY: cy + 80 })], bubbles: true }));
+});
+await page.waitForTimeout(200);
+check("swipe-undo restores today", (await page.evaluate(() => JSON.parse(localStorage.getItem("count.today") || "0"))) === before);
 
-// insights opens and renders the grid
-await page.click("#statsBtn");
+// insights opens via openInsights
+await page.evaluate(() => window.openInsights());
 await page.waitForTimeout(400);
 check("insights panel opens", await page.evaluate(() => document.getElementById("insightsOverlay").classList.contains("show")));
 check("range switcher present", (await page.$$("#rangeRow .range-chip")).length === 4);
@@ -70,8 +77,6 @@ check("settings menu renders rows", (await page.$$("#sheet .sheet-btn.with-ico")
 await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Tracking"))?.click());
 await page.waitForTimeout(500);
 check("settings sub-sheet opens", (await page.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Tracking");
-await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Back")?.click());
-await page.waitForTimeout(500);
 await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Done")?.click());
 await page.waitForTimeout(300);
 
@@ -119,7 +124,7 @@ check("number stays centred in the ring after End Day", centred);
 
 // a logged calendar day opens the full editor, not the light backfill sheet
 {
-  await page.click("#statsBtn");
+  await page.evaluate(() => window.openInsights());
   await page.waitForTimeout(500);
   // the calendar lives on the Journey tab — go there the way a user would
   await page.evaluate(() => [...document.querySelectorAll("#segRow .seg-btn")].find((b) => b.textContent === "Journey")?.click());

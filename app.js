@@ -84,12 +84,11 @@ const el = {
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
-  moreBtn: document.getElementById("moreBtn"),
-  undo: document.getElementById("undoBtn"),
+  trackingBtn: document.getElementById("trackingBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
-  statsBtn: document.getElementById("statsBtn"),
+  swipeHint: document.getElementById("swipeHint"),
   insightsOverlay: document.getElementById("insightsOverlay"),
   insightsClose: document.getElementById("insightsClose"),
   insightsGrid: document.getElementById("insightsGrid"),
@@ -748,9 +747,8 @@ function runPassiveNotice() {
 // a dot on ⋯ rather than relying on a toast you might have missed.
 function markNotice() { save(KEY_RECAP_SEEN, ""); refreshNoticeDot(); }
 function refreshNoticeDot() {
-  if (!el.moreBtn) return;
   const pending = timelineOn && load(KEY_RECAP_LAST, null) === weekKey() && load(KEY_RECAP_SEEN, "") !== weekKey();
-  el.moreBtn.classList.toggle("has-notice", !!pending);
+  el.gear.classList.toggle("has-notice", !!pending);
 }
 
 function runDailyGates(force) {
@@ -2907,7 +2905,7 @@ function renderTop(animate) {
   }
 
   renderPulse();
-  el.undo.disabled = taps === 0;
+  showSwipeHint();
   announceTotal();
 }
 
@@ -3400,10 +3398,56 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
-  // the reverse of the tap bump — the number dips back down
   if (!reduceMotion()) { el.total.classList.remove("unbump"); void el.total.offsetWidth; el.total.classList.add("unbump"); }
   renderTop(true);
+  toast("Undone");
 }
+
+const KEY_SWIPE_HINT = "count.swipeHint";
+let swipeHintShown = load(KEY_SWIPE_HINT, false);
+let swipeHintTimer = null;
+function showSwipeHint() {
+  if (swipeHintShown || taps === 0) { el.swipeHint.classList.remove("show"); return; }
+  el.swipeHint.classList.add("show");
+  clearTimeout(swipeHintTimer);
+  swipeHintTimer = setTimeout(() => {
+    el.swipeHint.classList.remove("show");
+    swipeHintShown = true; save(KEY_SWIPE_HINT, true);
+  }, 5000);
+}
+
+(function wireSwipeUndo() {
+  const THRESHOLD = 60;
+  let sy = 0, active = false, dy = 0;
+  el.totalWrap.addEventListener("touchstart", (e) => {
+    if (taps === 0) return;
+    sy = e.touches[0].clientY; active = true; dy = 0;
+    el.totalWrap.classList.remove("undo-snap");
+  }, { passive: true });
+  el.totalWrap.addEventListener("touchmove", (e) => {
+    if (!active) return;
+    dy = e.touches[0].clientY - sy;
+    if (dy < 0) dy = 0;
+    if (dy > 0) {
+      el.totalWrap.classList.add("swiping");
+      el.totalWrap.style.setProperty("--swipe-y", Math.min(dy * 0.5, 50) + "px");
+    }
+  }, { passive: true });
+  const end = () => {
+    if (!active) return;
+    active = false;
+    el.totalWrap.classList.remove("swiping");
+    el.totalWrap.style.removeProperty("--swipe-y");
+    if (dy >= THRESHOLD) {
+      undo(); buzz(12);
+      if (!swipeHintShown) { swipeHintShown = true; save(KEY_SWIPE_HINT, true); el.swipeHint.classList.remove("show"); }
+    }
+    if (dy > 0) { el.totalWrap.classList.add("undo-snap"); setTimeout(() => el.totalWrap.classList.remove("undo-snap"), 350); }
+    dy = 0;
+  };
+  el.totalWrap.addEventListener("touchend", end, { passive: true });
+  el.totalWrap.addEventListener("touchcancel", end, { passive: true });
+})();
 
 // End Day: a short daily wind-down — log the total plus an optional mood
 // check-in, factor chips, tiny wins and a worry dump. `resume` is true only
@@ -3970,21 +4014,28 @@ function openSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Settings");
     const row = (icon, label, fn) => s.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); setTimeout(fn, 300); }, { chevron: true }));
+    const act = (icon, label, fn) => s.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); fn(); }));
+    act("chart", "Insights", openInsights);
+    if (features.since) act("clock", "Time Since", requestSince);
+    if (features.water) act("droplet", "Water", openWater);
+    if (features.tree) act("tree", "Your Tree", openTree);
+    if (timelineOn) act("chart", "Your week", openWeeklyRecap);
+    if (timelineOn) act("chart", "This month", openMonthlyReview);
+    const sep = document.createElement("hr");
+    sep.style.cssText = "border:none;border-top:1px solid var(--hair);margin:8px 0";
+    s.appendChild(sep);
     row("target", "Tracking", openTrackingSettings);
     row("sliders", "Taper to zero", openTaperSettings);
     row("chart", "Features", openFeatureSettings);
     row("palette", "Appearance", openAppearanceSettings);
     row("bell", "Reminders", openReminderSettings);
     row("lock", "Privacy", openPrivacySettings);
-    // Show backup age on the row itself — buried inside the sheet, a stale
-    // backup is something you only find out about after losing something.
     const bkAt = load(KEY_BACKUP_AT, 0) || 0;
     const bkDays = bkAt ? Math.floor((Date.now() - bkAt) / 864e5) : null;
     const bkLabel = bkDays === null ? "Data & backup · never backed up"
       : bkDays <= 0 ? "Data & backup · backed up today"
       : `Data & backup · ${bkDays}d since backup`;
     row("database", bkLabel, openDataSettings);
-    // time-sensitive, so it stays on the top level rather than being buried
     if (lastEnded) {
       s.appendChild(makeIconBtn("undo", `Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
     }
@@ -4024,7 +4075,7 @@ function openTrackingSettings() {
       save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
       closeSheet(); render();
     }));
-    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+    s.appendChild(makeBtn("Done", "ghost", closeSheet));
   });
 }
 
@@ -6319,12 +6370,11 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
     addTap(ev);
   });
 })();
-el.undo.addEventListener("click", undo);
+el.trackingBtn.addEventListener("click", openTrackingSettings);
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.end.addEventListener("click", openEndDay);
 syncVitaminsBtn();
 el.gear.addEventListener("click", openSettings);
-el.moreBtn.addEventListener("click", openMore);
 document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
@@ -6350,7 +6400,6 @@ el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key 
   });
 })();
 el.overlay.addEventListener("click", (e) => { if (e.target === el.overlay) closeSheet(); });
-el.statsBtn.addEventListener("click", openInsights);
 el.dayGate.addEventListener("click", hideDayGreeting);   // tap anywhere to move on
 el.insightsClose.addEventListener("click", closeInsights);
 el.moreStats.addEventListener("click", () => {
