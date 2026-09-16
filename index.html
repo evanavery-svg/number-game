@@ -551,6 +551,16 @@
       transform: scale(0.975) translateY(2px);
       filter: brightness(0.94);
     }
+    /* hold-to-log-an-amount: a wash sweeps up the button while you press.
+       currentColor is the button's own label colour, so it reads on every theme. */
+    .add-charge {
+      position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background: currentColor; border-radius: 28px;
+      transform: scaleY(0); transform-origin: bottom; opacity: 0;
+    }
+    .add-btn.charging .add-charge { animation: addCharge 320ms linear forwards; }
+    @keyframes addCharge { from { transform: scaleY(0); opacity: 0.14; } to { transform: scaleY(1); opacity: 0.14; } }
+    @media (prefers-reduced-motion: reduce) { .add-btn.charging .add-charge { animation: none; transform: scaleY(1); opacity: 0.14; } }
     .add-label, .add-btn small { position: relative; z-index: 1; }
     .add-btn small { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; opacity: 0.5; margin-top: 10px; }
     /* touch ripple from the tap point */
@@ -1815,6 +1825,7 @@
 
 
   <button class="add-btn" id="addBtn" aria-label="Add — tap to add a step, press and hold to log a custom amount">
+    <span class="add-charge" aria-hidden="true"></span>
     <span class="add-label">+ 0.50</span>
     <small>tap to add</small>
   </button>
@@ -1825,7 +1836,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.38</div>
+  <div class="version">v10.39</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

@@ -3012,11 +3012,13 @@ function openQuickAmount() {
     addEl(s, "label", "Or a custom amount");
     const input = numInput(fmt(base), "0.01"); input.inputMode = "decimal";
     s.appendChild(input);
-    s.appendChild(makeBtn("Add", "primary", () => {
+    const commit = () => {
       const v = round2(parseFloat(input.value));
       if (isNaN(v) || v <= 0) { toast("Enter an amount greater than 0"); return; }
       closeSheet(); applyDelta(v);
-    }));
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+    s.appendChild(makeBtn("Add", "primary", commit));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
     setTimeout(() => { input.focus(); input.select(); }, 60);
   });
@@ -3461,12 +3463,14 @@ function openEndDay(resume) {
     const customInput = numInput("", "0");
     customInput.placeholder = "Custom amount";
     customInput.value = "";
-    const customBtn = makeBtn("Add", "link", () => {
+    const commitCustom = () => {
       const v = parseFloat(customInput.value);
       if (isNaN(v) || v === 0) { toast("Enter an amount"); return; }
       addAmount(v);
       customInput.value = "";
-    });
+    };
+    customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commitCustom(); } });
+    const customBtn = makeBtn("Add", "link", commitCustom);
     customRow.append(customInput, customBtn);
     adder.appendChild(customRow);
     refreshTotal();
@@ -6194,20 +6198,25 @@ function openMore() {
 // ---- wire up ----
 // Tap the + button to add a step; press and hold it to log a custom amount.
 // A quick tap still adds normally; movement or an early release cancels the hold.
-const ADD_HOLD_MS = 450;
+const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short delay so a quick tap doesn't flash it
 (function wireAddButton() {
-  let holdTimer = null, longFired = false, sx = 0, sy = 0;
-  const cancel = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+  let holdTimer = null, armTimer = null, longFired = false, sx = 0, sy = 0;
+  const cancel = () => {
+    clearTimeout(holdTimer); clearTimeout(armTimer); holdTimer = armTimer = null;
+    el.add.classList.remove("charging");
+  };
   el.add.addEventListener("pointerdown", (ev) => {
     longFired = false; sx = ev.clientX; sy = ev.clientY;
     cancel();
+    armTimer = setTimeout(() => { armTimer = null; el.add.classList.add("charging"); }, ADD_HOLD_ARM);
     holdTimer = setTimeout(() => {
       holdTimer = null; longFired = true;
+      el.add.classList.remove("charging");
       buzz(18); openQuickAmount();
     }, ADD_HOLD_MS);
   });
   el.add.addEventListener("pointermove", (ev) => {
-    if (holdTimer && (Math.abs(ev.clientX - sx) > 10 || Math.abs(ev.clientY - sy) > 10)) cancel();
+    if ((holdTimer || armTimer) && (Math.abs(ev.clientX - sx) > 10 || Math.abs(ev.clientY - sy) > 10)) cancel();
   });
   el.add.addEventListener("pointerup", cancel);
   el.add.addEventListener("pointerleave", cancel);
