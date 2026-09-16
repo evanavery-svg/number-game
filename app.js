@@ -3433,14 +3433,17 @@ function openEndDay(resume) {
     };
     const btnRow = document.createElement("div");
     btnRow.className = "tap-adder-btns";
-    const stepBtn = document.createElement("button");
-    stepBtn.type = "button"; stepBtn.className = "tap-adder-btn";
-    stepBtn.textContent = `+ ${fmt(step)}`;
-    stepBtn.addEventListener("click", () => addAmount(step));
-    const oneBtn = document.createElement("button");
-    oneBtn.type = "button"; oneBtn.className = "tap-adder-btn";
-    oneBtn.textContent = "+ 1";
-    oneBtn.addEventListener("click", () => addAmount(1));
+    // quick amounts (multiples of your step) so catching up a whole missed day
+    // doesn't take a dozen taps — the same set the home + button offers
+    const base = step > 0 ? step : 1;
+    const quick = [...new Set([base, base * 2, base * 5, base * 10].map((n) => round2(n)))].filter((n) => n > 0);
+    quick.forEach((n) => {
+      const qb = document.createElement("button");
+      qb.type = "button"; qb.className = "tap-adder-btn";
+      qb.textContent = `+ ${fmt(n)}`;
+      qb.addEventListener("click", () => addAmount(n));
+      btnRow.appendChild(qb);
+    });
     const undoBtn = document.createElement("button");
     undoBtn.type = "button"; undoBtn.className = "tap-adder-btn ghost";
     undoBtn.textContent = "Undo";
@@ -3450,7 +3453,7 @@ function openEndDay(resume) {
       draft.extra = round2(draft.extra - (last.amt || 0));
       refreshTotal();
     });
-    btnRow.append(stepBtn, oneBtn, undoBtn);
+    btnRow.appendChild(undoBtn);
     adder.appendChild(btnRow);
     // custom amount
     const customRow = document.createElement("div");
