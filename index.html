@@ -1473,6 +1473,16 @@
     }
     .day-chip.on { background: var(--accent); color: #fff; }
 
+    /* quick-amount sheet — hold the + button to log several at once */
+    .qa-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+    .qa-chip {
+      flex: 1 1 0; min-width: 64px; padding: 15px 0; border-radius: 13px; border: none;
+      background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 17px; font-weight: 700;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+      transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
+    }
+    .qa-chip:active { transform: scale(0.95); background: var(--surface); }
+
     .plan-recall {
       background: var(--surface-2); border-left: 3px solid var(--accent);
       border-radius: 8px; padding: var(--sp-3); margin-top: var(--sp-3);
@@ -1804,7 +1814,7 @@
   </div>
 
 
-  <button class="add-btn" id="addBtn" aria-label="Add one">
+  <button class="add-btn" id="addBtn" aria-label="Add — tap to add a step, press and hold to log a custom amount">
     <span class="add-label">+ 0.50</span>
     <small>tap to add</small>
   </button>
@@ -1815,7 +1825,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.36</div>
+  <div class="version">v10.37</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

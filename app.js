@@ -2976,6 +2976,50 @@ function confirmOver(amt) {
 function addTap(e) {
   spawnRipple(e);
   applyDelta(step);
+  maybeQuickAddHint();
+}
+
+// Reveal the hold-to-add-several gesture once, right when repeated tapping
+// starts to feel like work (a few taps in) — not on a nagging first run.
+const KEY_QA_HINT = "count.qaHintSeen";
+let qaHintSeen = load(KEY_QA_HINT, false);
+function maybeQuickAddHint() {
+  if (qaHintSeen || taps < 3) return;
+  qaHintSeen = true; save(KEY_QA_HINT, true);
+  toast("Tip: press and hold ＋ to log several at once", 4200);
+}
+
+// Log more than one step without tapping over and over: a few quick amounts
+// (multiples of your step) plus a custom field. Opened by holding the + button.
+// Amounts still pass through applyDelta, so a goal-crossing add is confirmed
+// and Undo reverses the whole amount as one entry.
+function openQuickAmount() {
+  const base = step > 0 ? step : 1;
+  const quick = [...new Set([base, base * 2, base * 5, base * 10].map((n) => round2(n)))].filter((n) => n > 0);
+  openSheet((s) => {
+    addEl(s, "h3", "Log an amount");
+    addEl(s, "p", "Add several at once instead of tapping.", "sub");
+
+    const chips = document.createElement("div"); chips.className = "qa-chips";
+    quick.forEach((n) => {
+      const c = document.createElement("button"); c.type = "button"; c.className = "qa-chip";
+      c.textContent = "+" + fmt(n);
+      c.addEventListener("click", () => { closeSheet(); applyDelta(n); });
+      chips.appendChild(c);
+    });
+    s.appendChild(chips);
+
+    addEl(s, "label", "Or a custom amount");
+    const input = numInput(fmt(base), "0.01"); input.inputMode = "decimal";
+    s.appendChild(input);
+    s.appendChild(makeBtn("Add", "primary", () => {
+      const v = round2(parseFloat(input.value));
+      if (isNaN(v) || v <= 0) { toast("Enter an amount greater than 0"); return; }
+      closeSheet(); applyDelta(v);
+    }));
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    setTimeout(() => { input.focus(); input.select(); }, 60);
+  });
 }
 
 // Log a tap straight from the URL (?add=1, ?add=0.5) so a Home Screen
@@ -6145,7 +6189,32 @@ function openMore() {
 }
 
 // ---- wire up ----
-el.add.addEventListener("click", addTap);
+// Tap the + button to add a step; press and hold it to log a custom amount.
+// A quick tap still adds normally; movement or an early release cancels the hold.
+const ADD_HOLD_MS = 450;
+(function wireAddButton() {
+  let holdTimer = null, longFired = false, sx = 0, sy = 0;
+  const cancel = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+  el.add.addEventListener("pointerdown", (ev) => {
+    longFired = false; sx = ev.clientX; sy = ev.clientY;
+    cancel();
+    holdTimer = setTimeout(() => {
+      holdTimer = null; longFired = true;
+      buzz(18); openQuickAmount();
+    }, ADD_HOLD_MS);
+  });
+  el.add.addEventListener("pointermove", (ev) => {
+    if (holdTimer && (Math.abs(ev.clientX - sx) > 10 || Math.abs(ev.clientY - sy) > 10)) cancel();
+  });
+  el.add.addEventListener("pointerup", cancel);
+  el.add.addEventListener("pointerleave", cancel);
+  el.add.addEventListener("pointercancel", cancel);
+  el.add.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  el.add.addEventListener("click", (ev) => {
+    if (longFired) { longFired = false; ev.preventDefault(); return; }   // the hold opened the sheet
+    addTap(ev);
+  });
+})();
 el.undo.addEventListener("click", undo);
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.end.addEventListener("click", openEndDay);
