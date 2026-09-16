@@ -1743,8 +1743,51 @@
       .version { padding: var(--sp-1) 0 2px; }
     }
 
+    /* ---- motion, round two: small beats on surfaces that used to just appear ---- */
+    /* toast springs in with a hair of overshoot instead of sliding */
+    .toast.show { animation: toastPop .5s var(--ease-out); }
+    @keyframes toastPop {
+      0% { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(0.96); }
+      60% { opacity: 1; transform: translateX(-50%) translateY(3px) scale(1.01); }
+      100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    }
+    /* undo: the number dips back down — the reverse of the tap bump */
+    .total .value.unbump { animation: unbump .38s var(--ease-out); }
+    @keyframes unbump { 0% { transform: scale(1); } 40% { transform: scale(0.92) translateY(3px); opacity: 0.55; } 100% { transform: scale(1); opacity: 1; } }
+    /* crossing into a new colour zone gets a beat so the change registers */
+    .ring-wrap.flash .ring { animation: ringFlash .7s ease-out; }
+    @keyframes ringFlash { 0% { filter: brightness(1); } 30% { filter: brightness(1.4) saturate(1.2); } 100% { filter: brightness(1); } }
+    /* the streak line pops when it grows */
+    .total .meta.pop { animation: metaPop .48s var(--ease-out); }
+    @keyframes metaPop { 0% { transform: scale(1); } 40% { transform: scale(1.14); } 100% { transform: scale(1); } }
+    /* calendar / heatmap cells arrive as a wave; month nav slides the grid */
+    .cal-day.wave, .year-cell.wave { animation: cellIn .36s var(--ease-out) backwards; animation-delay: calc(var(--w, 0) * 1ms); }
+    @keyframes cellIn { from { opacity: 0; transform: scale(0.55); } }
+    .cal.from-left { animation: calFromLeft .34s var(--ease-out); }
+    .cal.from-right { animation: calFromRight .34s var(--ease-out); }
+    @keyframes calFromLeft { from { opacity: 0; transform: translateX(-26px); } }
+    @keyframes calFromRight { from { opacity: 0; transform: translateX(26px); } }
+    /* the selected insights tab pops into place */
+    .seg-btn.on { animation: segPop .3s var(--ease-out); }
+    @keyframes segPop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+    /* stat tiles: a light sweep on reveal, a squeeze on press */
+    .tile { position: relative; overflow: hidden; transition: transform var(--dur-fast) ease; }
+    .tile:active { transform: scale(0.97); }
+    .tile.shine::after, .sheet-btn.primary.shine::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(115deg, transparent 38%, rgba(255,255,255,0.16) 50%, transparent 62%);
+      transform: translateX(-130%); animation: shine .9s ease-out forwards; animation-delay: calc(var(--sh, 0) * 1ms);
+    }
+    .sheet-btn.primary { position: relative; overflow: hidden; }
+    @keyframes shine { to { transform: translateX(130%); } }
+    /* the theme dot you just picked pops */
+    .theme-swatch.on .theme-dot { animation: swatchPop .36s var(--ease-out); }
+    @keyframes swatchPop { 0% { transform: scale(0.8); } 60% { transform: scale(1.14); } 100% { transform: scale(1); } }
+
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
+      .toast.show, .total .value.unbump, .ring-wrap.flash .ring, .total .meta.pop, .cal-day.wave, .year-cell.wave,
+      .cal.from-left, .cal.from-right, .seg-btn.on, .tile.shine::after, .sheet-btn.primary.shine::after, .theme-swatch.on .theme-dot,
       .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .add-btn, .row, .version,
@@ -1844,7 +1887,7 @@
     <button class="end" id="endBtn">End Day</button>
   </div>
 
-  <div class="version">v10.41</div>
+  <div class="version">v10.42</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

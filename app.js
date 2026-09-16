@@ -379,6 +379,7 @@ let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
 let waterPresets = load(KEY_WATER_PRESETS, [4, 8, 12, 16, 20, 24]);
 let calOffset = 0;                   // Insights calendar: months back from the current one
+let calSlide = null;                 // "from-left" / "from-right": which way the next calendar render slides in
 let insightRange = 30;               // Insights stat window in days (Infinity = all time)
 // Theme keys must match the CSS blocks + the head inline script's `order`.
 const THEMES = [
@@ -1324,6 +1325,9 @@ function showSegment() {
   const body = el.insightsOverlay.querySelector(".panel-body");
   if (body) body.scrollTop = 0;
   renderSegment();   // build only the tab now on screen
+  // the tab's cards cascade in behind the page fade
+  const activePage = document.getElementById((segList().find((s) => s.key === insightSeg) || SEGMENTS[0]).page);
+  if (activePage) staggerIn(activePage, 45, 10);
 }
 function renderRangeRow() {
   const row = el.rangeRow;
@@ -2119,6 +2123,8 @@ function renderYear() {
     if (ds === todayStr) cell.classList.add("today");
     grid.appendChild(cell);
   }
+  // the year sweeps in column by column (grid flows by column, 7 per week)
+  if (!reduceMotion()) [...grid.children].forEach((c, i) => { c.style.setProperty("--w", Math.floor(i / 7) * 7); c.classList.add("wave"); });
   card.appendChild(grid);
   if (hasGoal()) {
     const lg = document.createElement("div");
@@ -2436,14 +2442,14 @@ function renderCalendar() {
   const prev = document.createElement("button");
   prev.className = "cal-nav-btn"; prev.textContent = "‹"; prev.setAttribute("aria-label", "Previous month");
   prev.disabled = calOffset >= maxBack;
-  prev.addEventListener("click", () => { if (calOffset < maxBack) { calOffset++; renderCalendar(); } });
+  prev.addEventListener("click", () => { if (calOffset < maxBack) { calOffset++; calSlide = "from-left"; renderCalendar(); } });
   const title = document.createElement("div");
   title.className = "section-title";
   title.textContent = target.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const next = document.createElement("button");
   next.className = "cal-nav-btn"; next.textContent = "›"; next.setAttribute("aria-label", "Next month");
   next.disabled = calOffset <= maxFwd;
-  next.addEventListener("click", () => { if (calOffset > maxFwd) { calOffset--; renderCalendar(); } });
+  next.addEventListener("click", () => { if (calOffset > maxFwd) { calOffset--; calSlide = "from-right"; renderCalendar(); } });
   nav.append(prev, title, next);
   card.appendChild(nav);
 
@@ -2467,6 +2473,12 @@ function renderCalendar() {
     cell.addEventListener("click", () => selectCalDay(c.ds, cell, detail, todayStr));
     grid.appendChild(cell);
   });
+  // cells arrive as a wave; a month flip slides the whole grid in from the side
+  if (!reduceMotion()) {
+    grid.querySelectorAll(".cal-day:not(.blank)").forEach((c, i) => { c.style.setProperty("--w", i * 9); c.classList.add("wave"); });
+    if (calSlide) grid.classList.add(calSlide);
+  }
+  calSlide = null;
   card.appendChild(grid);
   card.appendChild(detail);
 
@@ -2779,8 +2791,8 @@ function openInsights() {
   growBars(el.weekdayCard, ".wk-bar");
   growBars(el.timeCard, ".tod-bar");
   growBars(el.moodCard, ".ms-bar");
-  const cal = el.calCard.querySelector(".cal");
-  if (cal) staggerIn(cal, 6, 40);
+  // the headline tiles catch a light sweep as they land (the calendar waves itself in)
+  if (!reduceMotion()) el.insightsGrid.querySelectorAll(".tile").forEach((t, i) => { t.style.setProperty("--sh", 200 + i * 70); t.classList.add("shine"); });
 }
 function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 
@@ -2812,6 +2824,9 @@ function updateRingCap(frac) {
 // tapping never rebuilds the history list.
 function invalidatePulse() { pulseCache.key = null; }
 
+// Remembered between renders so a zone change or a growing streak can get a
+// beat of motion — only on the change, never on every render.
+let prevZone = null, prevStreak = null;
 function renderTop(animate) {
   const zone = zoneOf();
   setValue(today, animate);
@@ -2829,11 +2844,22 @@ function renderTop(animate) {
   // colour the today area by how close we are to the goal
   el.totalWrap.classList.remove("zone-safe", "zone-warn", "zone-over");
   if (zone !== "none") el.totalWrap.classList.add("zone-" + zone);
+  // crossing into a new zone (safe → warn → over) flashes the ring once
+  if (prevZone !== null && prevZone !== zone && zone !== "none" && !reduceMotion()) {
+    const rw = document.getElementById("ringWrap");
+    if (rw) { rw.classList.remove("flash"); void rw.offsetWidth; rw.classList.add("flash"); }
+  }
+  prevZone = zone;
   el.total.style.color = numberColor();   // white → green → orange → red toward the goal
 
   // streak line — tinted green while alive (Feature 2); a warm hello on a blank first run (Feature 7)
   const streakInfo = underStreakInfo();
   const streak = streakInfo.streak;
+  // the streak line pops when it grows (a new day under goal, or grace kicking in)
+  if (prevStreak !== null && streak > prevStreak && !reduceMotion()) {
+    el.meta.classList.remove("pop"); void el.meta.offsetWidth; el.meta.classList.add("pop");
+  }
+  prevStreak = streak;
   const firstRun = history.length === 0 && taps === 0 && today === 0;
   if (mile) {
     el.meta.textContent = `🎉 ${mile.label}`;
@@ -3013,6 +3039,7 @@ function openQuickAmount() {
       chips.appendChild(c);
     });
     s.appendChild(chips);
+    staggerIn(chips, 22, 8);   // the quick amounts fan in
 
     addEl(s, "label", "Or a custom amount");
     const input = numInput(fmt(base), "0.01"); input.inputMode = "decimal";
@@ -3348,6 +3375,7 @@ function openRenameVitamin(oldName, onDone) {
       chips.appendChild(chip);
     }
     s.appendChild(chips); s.appendChild(hint); updateHint();
+    staggerIn(chips, 16, 7);   // the weekday chips fan in
 
     s.appendChild(makeBtn("Save", "primary", () => {
       const nn = inp.value.trim();
@@ -3372,6 +3400,8 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+  // the reverse of the tap bump — the number dips back down
+  if (!reduceMotion()) { el.total.classList.remove("unbump"); void el.total.offsetWidth; el.total.classList.add("unbump"); }
   renderTop(true);
 }
 
@@ -3838,6 +3868,8 @@ function openSheet(builder) {
   builder(el.sheet);
   el.overlay.classList.add("show");
   staggerIn(el.sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
+  // the primary action catches a single light sweep once the sheet has settled
+  if (!reduceMotion()) el.sheet.querySelectorAll(".sheet-btn.primary").forEach((b) => { b.style.setProperty("--sh", 380); b.classList.add("shine"); });
 }
 function closeSheet() { clearWorryTimer(); if (cravingTimer) { clearInterval(cravingTimer); cravingTimer = null; } el.overlay.classList.remove("show"); }
 
@@ -5271,6 +5303,7 @@ function openWeeklyRecap() {
       const wonWeek = (it.urges || []).filter((t) => new Date(t).getTime() >= weekAgo).length;
       row("🔥", it.name + (wonWeek ? ` · ${wonWeek} urge${wonWeek === 1 ? "" : "s"} resisted` : ""), durLabel(runMs) + " strong");
     });
+    staggerIn(list, 40, 10);   // the recap rows cascade in
     addEl(s, "p", "Small steps, every day. Keep going.", "sub");
     s.appendChild(makeBtn("Nice", "primary", closeSheet));
   });
@@ -5347,6 +5380,7 @@ function openMonthlyReview() {
     const moods = Object.keys(moodDaily).filter((k) => { const t = new Date(k).getTime(); return t >= monthStartMs; }).map((k) => moodDaily[k]);
     if (moods.length) { const am = moods.reduce((a, b2) => a + b2, 0) / moods.length; row("🙂", "average mood", `${moodEmoji(am)} ${am.toFixed(1)}`); }
 
+    staggerIn(list, 40, 10);   // the recap rows cascade in
     addEl(s, "p", "One month at a time. You're doing the work.", "sub");
     s.appendChild(makeBtn("Nice", "primary", closeSheet));
   });
