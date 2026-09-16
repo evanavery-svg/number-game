@@ -84,7 +84,7 @@ const el = {
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   add: document.getElementById("addBtn"),
-  trackingBtn: document.getElementById("trackingBtn"),
+  insightsBtn: document.getElementById("insightsBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
   end: document.getElementById("endBtn"),
   gear: document.getElementById("gearBtn"),
@@ -6370,7 +6370,7 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
     addTap(ev);
   });
 })();
-el.trackingBtn.addEventListener("click", openTrackingSettings);
+el.insightsBtn.addEventListener("click", openInsights);
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.end.addEventListener("click", openEndDay);
 syncVitaminsBtn();
