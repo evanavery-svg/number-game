@@ -7,6 +7,7 @@ const KEY_HISTORY = "count.history";   // [{ date, label, total, taps, endedAt, 
 const KEY_STEP = "count.step";
 const KEY_GOAL = "count.goal";
 const KEY_LASTENDED = "count.lastEnded";
+const KEY_PENDING = "count.pending";     // { date, total, taps, tapTimes } — a day that rolled over before it was finished
 const KEY_HAPTIC = "count.haptic";     // bool
 const KEY_SOUND = "count.sound";       // bool
 const KEY_LOCK_PIN = "count.lockPin";  // sha-256 hash of (pin + salt)
@@ -86,7 +87,8 @@ const el = {
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
-  end: document.getElementById("endBtn"),
+  pendingCard: document.getElementById("pendingCard"),
+  pendingText: document.getElementById("pendingText"),
   gear: document.getElementById("gearBtn"),
   swipeHint: document.getElementById("swipeHint"),
   insightsOverlay: document.getElementById("insightsOverlay"),
@@ -244,6 +246,7 @@ let history = load(KEY_HISTORY, []);
 let step = load(KEY_STEP, 0.5);
 let goal = load(KEY_GOAL, 0);
 let lastEnded = load(KEY_LASTENDED, null);
+let pending = load(KEY_PENDING, null);
 let haptic = load(KEY_HAPTIC, true);
 let sound = load(KEY_SOUND, false);
 let reminderOn = load(KEY_REMIND, false);
@@ -449,7 +452,7 @@ function moodEmoji(v) { const m = MOODS.find((x) => x.v === Math.round(v)); retu
 // return without losing the mood/factors/wins captured so far.
 let endDayDraft = null;
 function freshDraft() {
-  return { date: null, note: "", mood: null, factors: {}, wins: ["", "", ""], worries: [], extra: 0, extraTimes: [] };
+  return { date: null, note: "", mood: null, factors: {}, wins: ["", "", ""], worries: [], extra: 0, extraTimes: [], src: null };
 }
 
 // ---- mandatory daily mood gate ----
@@ -1273,6 +1276,7 @@ function render() {
   if (el.eyebrow) el.eyebrow.textContent = countLabel || "Today";
   renderTop();
   renderInsights();   // no-ops while the panel is closed
+  renderPendingCard();
   renderSinceStrip();
 }
 
@@ -2553,7 +2557,8 @@ function openDayFix(ds) {
       : "Put in what this day actually came to. Days filled in after the fact are marked as such in your exports.", "sub");
 
     addEl(s, "label", "Total for this day");
-    const input = numInput(isToday ? fmt(today) : "", "0");
+    const isPending = !isToday && pending && ds === pending.date;
+    const input = numInput(isToday ? fmt(today) : isPending ? fmt(pending.total) : "", "0");
     s.appendChild(input);
 
     s.appendChild(makeBtn("Save", "primary", () => {
@@ -2566,6 +2571,10 @@ function openDayFix(ds) {
         // and leave undo() with a stale entry to pop.
         taps = 0; tapLog = [];
         save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+        save(KEY_ACT_DATE, sessionDate());
+      } else if (isPending) {
+        pending.total = round2(v); pending.taps = 0; pending.tapTimes = [];
+        save(KEY_PENDING, pending);
       } else {
         history = upsertDay(history, ds, v);
         save(KEY_HISTORY, history); invalidatePulse();
@@ -3455,21 +3464,26 @@ function showSwipeHint() {
 function openEndDay(resume) {
   if (resume !== true) {
     endDayDraft = freshDraft();   // click handler passes an Event, not true
-    // seed the mood picker from today's mandatory check-in, if it happened
-    const dk = load(KEY_ACT_DATE, sessionDate());
+    // a day parked at rollover is finished first; otherwise this is today
+    endDayDraft.src = pending ? "pending" : "live";
+    // seed the mood picker from that day's mandatory check-in, if it happened
+    const dk = pending ? pending.date : load(KEY_ACT_DATE, sessionDate());
     if (moodDaily[dk] != null) endDayDraft.mood = moodDaily[dk];
   }
   const draft = endDayDraft;
-  // the total that will actually be logged = today's taps + any you add here
-  const projected = () => round2(today + draft.extra);
+  const fromPending = draft.src === "pending" && !!pending;
+  const base = fromPending ? pending : { date: load(KEY_ACT_DATE, sessionDate()), total: today, taps };
+  const dayWord = fromPending ? pendingWord() : "today";
+  // the total that will actually be logged = the day's taps + any you add here
+  const projected = () => round2(base.total + draft.extra);
 
   openSheet((s) => {
-    addEl(s, "h3", "End Day");
+    addEl(s, "h3", fromPending ? `Finish ${dayWord}` : "End Day");
     // say plainly where the day landed against the goal (kept live as you add taps)
     const subEl = addEl(s, "p", "", "sub");
     const refreshSub = () => {
       const p = projected();
-      let sub = `Log ${fmt(p)} and start a fresh day.`;
+      let sub = fromPending ? `Log ${fmt(p)} for ${dayWord}.` : `Log ${fmt(p)} and start a fresh day.`;
       if (hasGoal()) {
         sub = p > goal
           ? `Log ${fmt(p)} — ${fmt(round2(p - goal))} over your ${fmt(goal)} goal.`
@@ -3486,7 +3500,7 @@ function openEndDay(resume) {
     // "today") — e.g. tapping through the evening and ending the day the
     // next morning should default to yesterday, not the day you happen to
     // be tapping "End Day" on.
-    dateInput.value = draft.date || load(KEY_ACT_DATE, sessionDate());
+    dateInput.value = draft.date || base.date;
     dateInput.max = isoLocal(new Date());
     s.appendChild(dateInput);
 
@@ -3506,7 +3520,7 @@ function openEndDay(resume) {
       amt = round2(amt);
       if (!amt) return;
       // don't let it go below zero
-      if (round2(draft.extra + amt) < -today) amt = round2(-today - draft.extra);
+      if (round2(draft.extra + amt) < -base.total) amt = round2(-base.total - draft.extra);
       draft.extra = round2(draft.extra + amt);
       draft.extraTimes.push({ t: Date.now() + draft.extraTimes.length, amt, total: projected() });
       refreshTotal();
@@ -3516,8 +3530,8 @@ function openEndDay(resume) {
     btnRow.className = "tap-adder-btns";
     // quick amounts (multiples of your step) so catching up a whole missed day
     // doesn't take a dozen taps — the same set the home + button offers
-    const base = step > 0 ? step : 1;
-    const quick = [...new Set([base, base * 2, base * 5, base * 10].map((n) => round2(n)))].filter((n) => n > 0);
+    const unit = step > 0 ? step : 1;
+    const quick = [...new Set([unit, unit * 2, unit * 5, unit * 10].map((n) => round2(n)))].filter((n) => n > 0);
     quick.forEach((n) => {
       const qb = document.createElement("button");
       qb.type = "button"; qb.className = "tap-adder-btn";
@@ -3556,7 +3570,7 @@ function openEndDay(resume) {
     s.appendChild(adder);
 
     // --- quick mood check-in (tap once) ---
-    addEl(s, "label", "How did today feel?");
+    addEl(s, "label", `How did ${dayWord} feel?`);
     const moodRow = document.createElement("div");
     moodRow.className = "mood-row";
     MOODS.forEach((m) => {
@@ -3576,7 +3590,7 @@ function openEndDay(resume) {
     s.appendChild(moodRow);
 
     // --- daily factors (what correlates with mood over time) ---
-    addEl(s, "label", "Today I…");
+    addEl(s, "label", fromPending ? `${dayWord[0].toUpperCase()}${dayWord.slice(1)} I…` : "Today I…");
     const chipRow = document.createElement("div");
     chipRow.className = "chip-row";
     FACTORS.forEach((f) => {
@@ -3595,7 +3609,7 @@ function openEndDay(resume) {
     s.appendChild(chipRow);
 
     // --- tiny wins log ---
-    addEl(s, "label", "Tiny wins today (no matter how small)");
+    addEl(s, "label", `Tiny wins ${dayWord} (no matter how small)`);
     const winInputs = [];
     for (let i = 0; i < 3; i++) {
       const row = document.createElement("div");
@@ -3640,21 +3654,28 @@ function openEndDay(resume) {
       sync();
       const hasReflection = draft.mood || Object.values(draft.factors).some(Boolean) ||
         draft.wins.some((w) => (w || "").trim()) || draft.worries.length;
-      if (taps === 0 && projected() === 0 && !hasReflection) { toast("Add some taps first"); return; }
-      // fold any missed taps you added here into today's live count so commitDay logs them
+      if (base.taps === 0 && projected() === 0 && !hasReflection) { toast("Add some taps first"); return; }
+      // fold any missed taps you added here into the day's count so commitDay logs them
       if (draft.extraTimes.length) {
-        today = round2(today + draft.extra);
-        if (today < 0) today = 0;
-        taps += draft.extraTimes.length;
-        tapLog = tapLog.concat(draft.extraTimes);
-        save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+        if (fromPending) {
+          pending.total = Math.max(0, round2(pending.total + draft.extra));
+          pending.taps += draft.extraTimes.length;
+          pending.tapTimes = (pending.tapTimes || []).concat(draft.extraTimes);
+          save(KEY_PENDING, pending);
+        } else {
+          today = round2(today + draft.extra);
+          if (today < 0) today = 0;
+          taps += draft.extraTimes.length;
+          tapLog = tapLog.concat(draft.extraTimes);
+          save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+        }
       }
       commitDay(ta.value.replace(/\s*\n\s*/g, " ").trim(), dateInput.value, {
         mood: draft.mood,
         factors: draft.factors,
         wins: draft.wins,
         worries: draft.worries,
-      });
+      }, { from: fromPending ? "pending" : "live" });
       endDayDraft = null;
       closeSheet();
     }));
@@ -3796,17 +3817,23 @@ function openWorryActions(worries) {
     s.appendChild(makeBtn("Back", "ghost", () => openWorrySort(worries)));
   });
 }
-function commitDay(note, dateStr, extras) {
+// opts.from: "live" (today's count, the default) or "pending" (the day parked
+// at rollover). opts.quiet skips the celebration — used when a forgotten day
+// logs itself.
+function commitDay(note, dateStr, extras, opts) {
+  opts = opts || {};
+  const fromPending = opts.from === "pending" && !!pending;
+  const src = fromPending ? pending : { total: today, taps: taps, tapTimes: tapLog };
   const now = new Date();
   // which day this belongs to, and its label — a future date is refused there
   const stamp = dayStamp(dateStr, now);
-  const total = today;
+  const total = src.total;
   const underGoal = hasGoal() && total <= goal;
   const entry = {
     date: stamp.date,
     label: stamp.label,
-    total: total, taps: taps, endedAt: stamp.endedAt,
-    note: note || "", tapTimes: tapLog.slice(),
+    total: total, taps: src.taps || 0, endedAt: stamp.endedAt,
+    note: note || "", tapTimes: (src.tapTimes || []).slice(),
   };
   // optional end-day reflection (mood check-in, factors, tiny wins, worries)
   if (extras) {
@@ -3831,9 +3858,13 @@ function commitDay(note, dateStr, extras) {
   // even when a day is logged under an earlier date
   history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
   lastEnded = entry;
-  today = 0; taps = 0; tapLog = [];
   save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
-  save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+  if (fromPending) {
+    pending = null; save(KEY_PENDING, null);
+  } else {
+    today = 0; taps = 0; tapLog = [];
+    save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+  }
 
   // grow the tree on an under-goal day; a miss makes it droop (no growth)
   let prestiged = false, treeMile = null;
@@ -3848,6 +3879,12 @@ function commitDay(note, dateStr, extras) {
       tree.sad = true;
     }
     save(KEY_TREE, tree);
+  }
+
+  if (opts.quiet) {
+    toast(`${new Date(stamp.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })} logged · ${fmt(total)}`);
+    render();
+    return;
   }
 
   // a fuller "day complete" moment
@@ -3873,7 +3910,7 @@ function commitDay(note, dateStr, extras) {
 
   // refresh the header, then let the number roll down to 0 and the ring drain
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  el.total.textContent = fmt(total);   // seed the count-down start value
+  if (!fromPending) el.total.textContent = fmt(total);   // seed the count-down start value (today's number is untouched by a parked day)
   renderTop(true);
   // history lives inside the Journey tab and renders with it — rebuilding it
   // here was a leftover from before the panel became render-on-open
@@ -3896,12 +3933,19 @@ function undoEndDay() {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].endedAt === lastEnded.endedAt) { history.splice(i, 1); break; }
   }
-  today = round2(today + lastEnded.total);
-  taps = taps + (lastEnded.taps || 0);
-  tapLog = (lastEnded.tapTimes || []).concat(tapLog);
+  if (lastEnded.date < sessionDate() && !pending) {
+    // an earlier day goes back on the card, not into today's count
+    pending = { date: lastEnded.date, total: lastEnded.total, taps: lastEnded.taps || 0, tapTimes: (lastEnded.tapTimes || []).slice() };
+    save(KEY_PENDING, pending);
+  } else {
+    today = round2(today + lastEnded.total);
+    taps = taps + (lastEnded.taps || 0);
+    tapLog = (lastEnded.tapTimes || []).concat(tapLog);
+    save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+    save(KEY_ACT_DATE, sessionDate());
+  }
   lastEnded = null;
-  save(KEY_HISTORY, history); save(KEY_TODAY, today);
-  save(KEY_TAPS, taps); save(KEY_LASTENDED, lastEnded); save(KEY_TAPLOG, tapLog);
+  save(KEY_HISTORY, history); save(KEY_LASTENDED, lastEnded);
   toast("End Day undone");
   render();
 }
@@ -4527,7 +4571,7 @@ function openHistorySheet(idx) {
       // Two rows on one date break the calendar — only one is reachable, while
       // both keep counting toward averages and streaks. Refuse rather than
       // merge: combining two days' notes and tap times can't be undone.
-      if (ds && dateTaken(history, ds, day)) { toast("That day already has an entry"); return; }
+      if (ds && (dateTaken(history, ds, day) || (pending && ds === pending.date))) { toast("That day already has an entry"); return; }
       if (ds) {
         const [y, mo, d] = ds.split("-").map(Number);
         if (y && mo && d) {
@@ -4585,6 +4629,7 @@ function openAddPastDay() {
       const ds = dateInput.value;
       if (!ds) { toast("Pick a date"); return; }
       if (isFutureDate(ds, isoLocal(new Date()))) { toast("That date hasn't happened yet"); return; }
+      if (pending && ds === pending.date) { toast("That day is waiting on the card — finish it there"); return; }
       if (dateTaken(history, ds, null)) { toast("That day already has an entry — tap it in the list to edit"); return; }
       const [y, mo, d] = ds.split("-").map(Number);
       const when = new Date(y, mo - 1, d, 12, 0, 0);
@@ -4950,6 +4995,39 @@ function pinField() {
 // A dependable in-app nudge, plus a best-effort OS notification. On iOS a
 // PWA can only deliver notifications while it's open, so the in-app banner
 // is the reliable part.
+// ---- day rollover ----
+// A new session day starts at 0 on its own. Whatever was counted on an earlier
+// day is parked as `pending` and finished from the card under the ring, using
+// the same End Day sheet. A pending day still waiting past the *next* rollover
+// logs itself quietly, so history never has a hole.
+function rolloverIfStale() {
+  const t = sessionDate();
+  let changed = false;
+  if (pending && pending.date < prevDayKey(t)) { commitDay("", pending.date, null, { from: "pending", quiet: true }); changed = true; }
+  const act = load(KEY_ACT_DATE, null);
+  if (act && act < t && (taps > 0 || today > 0)) {
+    if (pending) commitDay("", pending.date, null, { from: "pending", quiet: true });   // only one day waits at a time
+    pending = { date: act, total: today, taps: taps, tapTimes: tapLog.slice() };
+    today = 0; taps = 0; tapLog = [];
+    save(KEY_PENDING, pending); save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+    changed = true;
+  }
+  if (changed) render();
+  return changed;
+}
+function pendingWord() {
+  if (!pending) return "";
+  return pending.date === prevDayKey(sessionDate())
+    ? "yesterday"
+    : new Date(pending.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" });
+}
+function renderPendingCard() {
+  if (!el.pendingCard) return;
+  if (!pending) { el.pendingCard.style.display = "none"; return; }
+  el.pendingText.textContent = `Finish ${pendingWord()} · ${fmt(pending.total)} so far`;
+  el.pendingCard.style.display = "flex";
+}
+
 function hasActivityToday() {
   // the session day, not the wall-clock one — between midnight and 4am those
   // differ, and a day logged at 1am would otherwise look unlogged
@@ -6372,11 +6450,29 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
 })();
 el.insightsBtn.addEventListener("click", openInsights);
 el.vitaminsBtn.addEventListener("click", openVitamins);
-el.end.addEventListener("click", openEndDay);
+el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
 el.gear.addEventListener("click", openSettings);
 document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
+// Press and hold the ring to end the day (a parked day is finished first). A
+// quick tap still opens Settings; drifting more than 10px hands off to the
+// swipe-down undo instead.
+(function wireRingHold() {
+  let holdTimer = null, armTimer = null, fired = false, sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(holdTimer); clearTimeout(armTimer); holdTimer = armTimer = null; el.ringWrap.classList.remove("charging"); };
+  el.ringWrap.addEventListener("pointerdown", (ev) => {
+    fired = false; sx = ev.clientX; sy = ev.clientY; cancel();
+    armTimer = setTimeout(() => { armTimer = null; el.ringWrap.classList.add("charging"); }, ADD_HOLD_ARM);
+    holdTimer = setTimeout(() => { holdTimer = null; fired = true; el.ringWrap.classList.remove("charging"); buzz(18); openEndDay(); }, ADD_HOLD_MS);
+  });
+  el.ringWrap.addEventListener("pointermove", (ev) => {
+    if ((holdTimer || armTimer) && (Math.abs(ev.clientX - sx) > 10 || Math.abs(ev.clientY - sy) > 10)) cancel();
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((t) => el.ringWrap.addEventListener(t, cancel));
+  el.ringWrap.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  el.ringWrap.addEventListener("click", (ev) => { if (fired) { fired = false; ev.preventDefault(); ev.stopImmediatePropagation(); } });
+})();
 el.ringWrap.addEventListener("click", openSettings);  // tap the ring to set/adjust the goal
 el.ringWrap.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSettings(); } });
 
@@ -6419,6 +6515,7 @@ el.waterOverlay.addEventListener("click", (e) => { if (e.target === el.waterOver
 el.treeClose.addEventListener("click", closeTree);
 el.treeOverlay.addEventListener("click", (e) => { if (e.target === el.treeOverlay) closeTree(); });
 
+rolloverIfStale();
 render();
 
 // Launch flourish: the number rolls up from 0 and the ring sweeps to its fill
@@ -6448,6 +6545,7 @@ window.addEventListener("storage", (e) => {
   today = load(KEY_TODAY, 0);
   taps = load(KEY_TAPS, 0);
   tapLog = load(KEY_TAPLOG, []);
+  pending = load(KEY_PENDING, null);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
   goalOn = load(KEY_GOAL_ON, goalOn);   // already migrated by now; keep what we have otherwise
@@ -6457,6 +6555,7 @@ window.addEventListener("storage", (e) => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   maybeLock();
+  rolloverIfStale();   // came back on a new day → yesterday parks, today reads 0
   checkReminder();
   // coming back is an "open" too — same budget, or everything stacks again
   resetInterruptBudget();
@@ -6469,6 +6568,7 @@ document.addEventListener("visibilitychange", () => {
 checkReminder();
 scheduleReminders();
 setInterval(() => {
+  rolloverIfStale();   // a phone left open crosses the 4am line here
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight
   if (lockSet() && el.lock.style.display !== "flex" && !document.hidden) save(KEY_UNLOCK_AT, Date.now());

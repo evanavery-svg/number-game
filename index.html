@@ -374,7 +374,10 @@
       aspect-ratio: 1 / 1;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer;
+      transition: transform var(--dur-base) var(--ease-out);
     }
+    /* press-and-hold to end the day: the ring squeezes while the hold charges */
+    .ring-wrap.charging { transform: scale(0.96); }
     /* soft coloured aura behind the ring, tinted by the current zone */
     .ring-wrap::before {
       content: "";
@@ -1227,6 +1230,9 @@
     }
     .reminder span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reminder-x { background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: var(--sp-1) 2px; }
+    .pending-card { width: 100%; text-align: left; cursor: pointer; font-family: inherit; transition: transform var(--dur-fast) ease, background var(--dur-base) ease; }
+    .pending-card b { color: var(--accent); font-size: 20px; line-height: 1; font-weight: 700; }
+    .pending-card:active { transform: scale(0.98); background: var(--surface-2); }
 
     /* ---- compact "time since" strip on the main page ---- */
     .since-strip { display: flex; gap: var(--sp-2); overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 6px 0 2px; padding-bottom: 2px; scrollbar-width: none; }
@@ -1812,7 +1818,7 @@
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap, .ring-wrap.charging, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -1848,11 +1854,16 @@
     <button class="reminder-x" id="reminderDismiss" aria-label="Dismiss">✕</button>
   </div>
 
+  <!-- a day that rolled over before it was finished waits here; tap to finish it -->
+  <button class="reminder pending-card" id="pendingCard" style="display:none">
+    <span id="pendingText"></span><b aria-hidden="true">›</b>
+  </button>
+
   <!-- compact live "time since" strip — tap any chip to open the full panel -->
   <div class="since-strip" id="sinceStrip" style="display:none"></div>
 
   <div class="total" id="totalWrap">
-    <div class="ring-wrap" id="ringWrap" role="button" tabindex="0" aria-label="Adjust goal">
+    <div class="ring-wrap" id="ringWrap" role="button" tabindex="0" aria-label="Adjust goal — press and hold to end the day">
       <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
         <defs>
           <linearGradient id="gradAccent" x1="0" y1="0" x2="1" y2="1">
@@ -1894,12 +1905,11 @@
   </button>
 
   <div class="row">
-    <button class="end" id="endBtn">End Day</button>
     <button id="vitaminsBtn" style="display:none">Daily Habits</button>
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.45</div>
+  <div class="version">v10.46</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

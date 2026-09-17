@@ -103,7 +103,7 @@ await page.waitForTimeout(300);
 
 // end day logs an entry
 await page.click("#addBtn"); await page.waitForTimeout(120);
-await page.click("#endBtn");
+await page.evaluate(() => openEndDay());
 await page.waitForTimeout(300);
 const histLenBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("count.history") || "[]").length);
 await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Log day"))?.click());
@@ -176,6 +176,68 @@ check("number stays centred in the ring after End Day", centred);
   await page.waitForTimeout(300);
   await page.click("#insightsClose");
   await page.waitForTimeout(300);
+}
+
+// rollover: a day left running rolls into a pending card at the next session
+// day, the home count reads 0, an older forgotten day logs itself, and the
+// card opens the End Day sheet on the parked day
+{
+  const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p3 = await ctx3.newPage();
+  p3.on("pageerror", (e) => errors.push("rollover: " + String(e)));
+  const shift = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const yday = shift(1), old3 = shift(3);
+  await p3.addInitScript(({ dk, yday, old3 }) => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "10"); localStorage.setItem("count.goalOn", "true"); localStorage.setItem("count.step", "1");
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk)); localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+    localStorage.setItem("count.today", "3"); localStorage.setItem("count.taps", "3");
+    localStorage.setItem("count.tapLog", JSON.stringify([{ t: 1, amt: 1, total: 1 }, { t: 2, amt: 1, total: 2 }, { t: 3, amt: 1, total: 3 }]));
+    localStorage.setItem("count.actDate", JSON.stringify(yday));
+    localStorage.setItem("count.pending", JSON.stringify({ date: old3, total: 2, taps: 2, tapTimes: [] }));
+  }, { dk, yday, old3 });
+  await p3.goto(BASE); await p3.waitForTimeout(600);
+  const st = await p3.evaluate(() => ({
+    today: JSON.parse(localStorage.getItem("count.today") || "0"),
+    pending: JSON.parse(localStorage.getItem("count.pending") || "null"),
+    hist: JSON.parse(localStorage.getItem("count.history") || "[]"),
+    card: getComputedStyle(document.getElementById("pendingCard")).display !== "none",
+    text: document.getElementById("pendingText").textContent,
+    shown: document.getElementById("total").textContent,
+  }));
+  check("rollover zeroes today", st.today === 0 && st.shown === "0");
+  check("rollover parks yesterday as pending", !!st.pending && st.pending.date === yday && st.pending.total === 3 && st.pending.taps === 3);
+  check("an older pending day logs itself quietly", st.hist.some((d) => d.date === old3 && d.total === 2));
+  check("pending card shows the parked total", st.card && /yesterday/.test(st.text) && /3/.test(st.text));
+  await p3.click("#pendingCard"); await p3.waitForTimeout(400);
+  const sheet = await p3.evaluate(() => ({ h3: document.querySelector("#sheet h3")?.textContent || "", date: document.querySelector("#sheet input[type=date]")?.value }));
+  check("pending card opens the End Day sheet on that day", /^Finish yesterday/.test(sheet.h3) && sheet.date === yday);
+  await p3.evaluate(() => [...document.querySelectorAll("#sheet .tap-adder-btn")].find((b) => b.textContent.trim() === "+ 1")?.click());
+  await p3.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Log day"))?.click());
+  await p3.waitForTimeout(500);
+  const after3 = await p3.evaluate(() => ({
+    pending: JSON.parse(localStorage.getItem("count.pending") || "null"),
+    hist: JSON.parse(localStorage.getItem("count.history") || "[]"),
+    today: JSON.parse(localStorage.getItem("count.today") || "0"),
+    card: getComputedStyle(document.getElementById("pendingCard")).display !== "none",
+  }));
+  const yrow = after3.hist.find((d) => d.date === yday);
+  check("finishing the card logs yesterday with the extra chip", !!yrow && yrow.total === 4 && yrow.taps === 4);
+  check("finishing the card clears pending and leaves today at 0", after3.pending === null && after3.today === 0 && !after3.card);
+  // press-and-hold the ring opens End Day for today; a drag does not
+  const rb = await p3.$eval("#ringWrap", (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await p3.mouse.move(rb.x, rb.y); await p3.mouse.down(); await p3.waitForTimeout(150); await p3.mouse.move(rb.x + 30, rb.y); await p3.waitForTimeout(500); await p3.mouse.up();
+  await p3.waitForTimeout(100);
+  const dragH3 = await p3.evaluate(() => document.getElementById("overlay").classList.contains("show") ? (document.querySelector("#sheet h3")?.textContent || "") : "");
+  check("a drag on the ring does not open End Day", dragH3 !== "End Day");
+  await p3.evaluate(() => document.getElementById("overlay").classList.remove("show"));
+  await p3.mouse.move(rb.x, rb.y); await p3.mouse.down(); await p3.waitForTimeout(650); await p3.mouse.up(); await p3.waitForTimeout(100);
+  const holdH3 = await p3.evaluate(() => document.getElementById("overlay").classList.contains("show") ? (document.querySelector("#sheet h3")?.textContent || "") : "");
+  check("holding the ring opens End Day for today", holdH3 === "End Day");
+  check("hold does not also open Settings", holdH3 !== "Settings");
+  await ctx3.close();
 }
 
 // morning greeting: shows once on a fresh day, then clears itself
