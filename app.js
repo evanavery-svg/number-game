@@ -89,7 +89,6 @@ const el = {
   vitaminsBtn: document.getElementById("vitaminsBtn"),
   pendingCard: document.getElementById("pendingCard"),
   pendingText: document.getElementById("pendingText"),
-  gear: document.getElementById("gearBtn"),
   swipeHint: document.getElementById("swipeHint"),
   insightsOverlay: document.getElementById("insightsOverlay"),
   insightsClose: document.getElementById("insightsClose"),
@@ -749,10 +748,7 @@ function runPassiveNotice() {
 // The weekly recap is the one deferred item with somewhere to live, so it gets
 // a dot on ⋯ rather than relying on a toast you might have missed.
 function markNotice() { save(KEY_RECAP_SEEN, ""); refreshNoticeDot(); }
-function refreshNoticeDot() {
-  const pending = timelineOn && load(KEY_RECAP_LAST, null) === weekKey() && load(KEY_RECAP_SEEN, "") !== weekKey();
-  el.gear.classList.toggle("has-notice", !!pending);
-}
+function refreshNoticeDot() {}
 
 function runDailyGates(force) {
   if (el.dayGate.classList.contains("show")) return;
@@ -6452,7 +6448,6 @@ el.insightsBtn.addEventListener("click", openInsights);
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
-el.gear.addEventListener("click", openSettings);
 document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
 // Press and hold the ring to end the day (a parked day is finished first). A

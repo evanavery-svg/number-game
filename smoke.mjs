@@ -71,7 +71,7 @@ await page.click("#insightsClose");
 await page.waitForTimeout(200);
 
 // settings opens as a menu, and a sub-sheet opens from it
-await page.click("#gearBtn");
+await page.evaluate(() => openSettings());
 await page.waitForTimeout(300);
 check("settings menu renders rows", (await page.$$("#sheet .sheet-btn.with-ico")).length >= 6);
 await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Tracking"))?.click());
@@ -84,7 +84,7 @@ await page.waitForTimeout(300);
 // A mismatch is invisible until a specific calendar day rotates onto it, so
 // assert the two lists are identical rather than waiting to find out.
 {
-  await page.click("#gearBtn");
+  await page.evaluate(() => openSettings());
   await page.waitForTimeout(300);
   await page.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.includes("Appearance"))?.click());
   await page.waitForTimeout(500);
