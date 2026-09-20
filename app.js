@@ -91,7 +91,6 @@ const el = {
   paceToday: document.getElementById("paceToday"),
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
-  urgeBtn: document.getElementById("urgeBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
   pendingCard: document.getElementById("pendingCard"),
   pendingText: document.getElementById("pendingText"),
@@ -3458,27 +3457,18 @@ function showSwipeHint() {
   el.totalWrap.addEventListener("touchstart", (e) => {
     if (taps === 0) return;
     sy = e.touches[0].clientY; active = true; dy = 0;
-    el.totalWrap.classList.remove("undo-snap");
   }, { passive: true });
   el.totalWrap.addEventListener("touchmove", (e) => {
     if (!active) return;
-    dy = e.touches[0].clientY - sy;
-    if (dy < 0) dy = 0;
-    if (dy > 0) {
-      el.totalWrap.classList.add("swiping");
-      el.totalWrap.style.setProperty("--swipe-y", Math.min(dy * 0.5, 50) + "px");
-    }
+    dy = Math.max(0, e.touches[0].clientY - sy);
   }, { passive: true });
   const end = () => {
     if (!active) return;
     active = false;
-    el.totalWrap.classList.remove("swiping");
-    el.totalWrap.style.removeProperty("--swipe-y");
     if (dy >= THRESHOLD) {
       undo(); buzz(12);
       if (!swipeHintShown) { swipeHintShown = true; save(KEY_SWIPE_HINT, true); el.swipeHint.classList.remove("show"); }
     }
-    if (dy > 0) { el.totalWrap.classList.add("undo-snap"); setTimeout(() => el.totalWrap.classList.remove("undo-snap"), 350); }
     dy = 0;
   };
   el.totalWrap.addEventListener("touchend", end, { passive: true });
@@ -4524,7 +4514,8 @@ function openDataSettings() {
     addEl(s, "p", lastBk ? `Last full backup: ${Math.floor((Date.now() - lastBk) / 864e5)} days ago.` : "No full backup yet — your data lives only on this device.", "sub");
     s.appendChild(makeBtn("Full backup (everything)", "primary", () => { closeSheet(); startFullBackup(); }));
     s.appendChild(makeBtn("Restore from backup", "", () => { closeSheet(); startRestore(); }));
-    s.appendChild(makeBtn("Export backup (CSV)", "link", exportCsv));
+    s.appendChild(makeBtn("Export spreadsheet (CSV)", "link", exportCsv));
+    addEl(s, "p", "Every day with its mood, factors, wins, worries, habits and tap times — one row each, for a spreadsheet. Unlike a full backup this file isn't encrypted, so it reads as plain text wherever it lands.", "sub");
     s.appendChild(makeBtn("Check my data", "", () => { closeSheet(); setTimeout(openHealthCheck, 300); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
@@ -4717,10 +4708,42 @@ function numInput(value, min) {
 }
 
 // ---- backup export (csvField in core.js quotes the notes) ----
+// One row per day, with everything that day recorded. Each factor gets its own
+// column rather than one joined list, because that's the shape you can pivot or
+// correlate in a spreadsheet without unpacking anything first.
+function csvRowFor(d, inProgress) {
+  const facs = d.factors || [];
+  const wins = d.wins || [];
+  const vits = vitaminsForDay(vitaminsLog, d.date);
+  const vitCount = (v) => (Array.isArray(v) ? v.length : Number(v) || 0);
+  return [
+    d.date, d.endedAt || "", inProgress ? "yes" : "", fmt(d.total), d.taps || 0,
+    d.mood == null ? "" : d.mood,
+    d.mood == null ? "" : (MOODS.find((m) => m.v === Math.round(d.mood)) || {}).cap || "",
+    ...FACTORS.map((f) => (facs.includes(f.key) ? "yes" : "")),
+    wins[0] || "", wins[1] || "", wins[2] || "",
+    (d.worries || []).map((w) => {
+      const where = w.control === "in" ? "in my control" : w.control === "out" ? "out of my control" : "unsorted";
+      return w.text + " [" + where + "]" + (w.action ? " -> " + w.action : "");
+    }).join(" | "),
+    Object.keys(vits).map((n) => `${n}x${vitCount(vits[n])}`).join("; "),
+    (d.tapTimes || []).map((raw) => new Date(tapEntry(raw).t).toISOString()).join(" "),
+    d.note || "",
+  ];
+}
+
 function exportCsv() {
-  const rows = [["date", "ended_at", "total", "taps", "note"]];
-  history.forEach((d) => rows.push([d.date, d.endedAt, fmt(d.total), d.taps, d.note || ""]));
-  if (taps > 0 || today > 0) rows.push(["(today, in progress)", "", fmt(today), taps, ""]);
+  const rows = [[
+    "date", "ended_at", "in_progress", "total", "taps", "mood", "mood_label",
+    ...FACTORS.map((f) => "factor_" + f.key),
+    "win_1", "win_2", "win_3", "worries", "habits", "tap_times", "note",
+  ]];
+  history.forEach((d) => rows.push(csvRowFor(d, false)));
+  // today hasn't been logged yet, but it's still data — give it a real date and
+  // a flag rather than a label in the date column, so the file stays parseable
+  if (taps > 0 || today > 0) {
+    rows.push(csvRowFor({ date: sessionDate(), endedAt: "", total: today, taps: taps, tapTimes: tapLog }, true));
+  }
   const csv = rows.map((r) => r.map(csvField).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -6539,7 +6562,6 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
   });
 })();
 el.insightsBtn.addEventListener("click", openInsights);
-el.urgeBtn.addEventListener("click", () => openCravingTimer(null));
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();

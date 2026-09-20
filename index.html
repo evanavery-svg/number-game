@@ -673,8 +673,6 @@
     .swipe-hint.show { opacity: 1; }
     @keyframes swipeArrow { 0%,100%{transform:translateY(0)} 50%{transform:translateY(5px)} }
     .swipe-hint .arrow { display: inline-block; animation: swipeArrow 1.2s ease infinite; margin-right: 4px; }
-    .total.swiping .ring-wrap, .total.swiping .bar-wrap { transform: translateY(var(--swipe-y, 0px)); transition: none; }
-    .total.undo-snap .ring-wrap, .total.undo-snap .bar-wrap { transform: translateY(0); transition: transform 0.3s var(--ease-spring); }
 
     /* ---- bottom sheet ---- */
     .overlay {
@@ -1068,7 +1066,6 @@
     .craving-clock { font-size: var(--fs-display); font-weight: 300; letter-spacing: -2px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: var(--sp-2) 0 2px; }
     .craving-line { text-align: center; font-size: 14px; color: var(--muted); min-height: 20px; }
     .craving-plan { text-align: center; font-size: 13px; font-weight: 600; color: var(--accent); margin-top: var(--sp-2); }
-    .home-urge { display: block; margin: var(--sp-3) auto 0; }
     /* weekly recap */
     .recap { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 var(--sp-1); }
     .recap-row { display: flex; align-items: center; gap: 13px; padding: 11px 2px; border-top: 1px solid var(--hair); }
@@ -1897,15 +1894,12 @@
     <small>tap to add</small>
   </button>
 
-  <!-- the toolkit, one tap from the button you reach for when the urge hits -->
-  <button class="urge-btn home-urge" id="urgeBtn">Feeling an urge?</button>
-
   <div class="row">
     <button id="vitaminsBtn" style="display:none">Daily Habits</button>
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.48</div>
+  <div class="version">v10.49</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

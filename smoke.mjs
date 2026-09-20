@@ -50,17 +50,24 @@ await page.waitForTimeout(150);
 const after = await page.evaluate(() => JSON.parse(localStorage.getItem("count.today") || "0"));
 check("tap increases today", after > before);
 
-// undo via swipe down on number
-await page.evaluate(() => {
+// undo via swipe down on number. The ring must not travel with the finger —
+// it used to slide down over the meta line underneath it.
+const swipe = await page.evaluate(() => {
   const el = document.getElementById("totalWrap");
+  const ring = document.getElementById("ringWrap");
   const r = el.getBoundingClientRect();
   const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+  const topAt = () => Math.round(ring.getBoundingClientRect().top);
+  const rest = topAt();
   el.dispatchEvent(new TouchEvent("touchstart", { touches: [new Touch({ identifier: 0, target: el, clientX: cx, clientY: cy })], bubbles: true }));
   el.dispatchEvent(new TouchEvent("touchmove", { touches: [new Touch({ identifier: 0, target: el, clientX: cx, clientY: cy + 80 })], bubbles: true }));
+  const during = topAt();
   el.dispatchEvent(new TouchEvent("touchend", { changedTouches: [new Touch({ identifier: 0, target: el, clientX: cx, clientY: cy + 80 })], bubbles: true }));
+  return { rest, during };
 });
 await page.waitForTimeout(200);
 check("swipe-undo restores today", (await page.evaluate(() => JSON.parse(localStorage.getItem("count.today") || "0"))) === before);
+check("the ring stays put during a swipe", swipe.during === swipe.rest);
 
 // insights opens via openInsights
 await page.evaluate(() => window.openInsights());
@@ -351,18 +358,8 @@ check("number stays centred in the ring after End Day", centred);
   await p6.evaluate(() => closeSheet());
   await p6.waitForTimeout(300);
 
-  // the home pill opens the toolkit with no tracker present
-  check("no tracker is set up", (await p6.evaluate(() => localStorage.getItem("count.since"))) === null);
-  await p6.click("#urgeBtn");
-  await p6.waitForTimeout(400);
-  check("the urge pill opens the toolkit", (await p6.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Ride it out");
-  await p6.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent.includes("I made it"))?.click());
-  await p6.waitForTimeout(400);
-  const wins = await p6.evaluate(() => JSON.parse(localStorage.getItem("count.urgeWins") || "[]"));
-  check("riding it out from the counter is recorded", wins.length === 1);
-  check("the win is not attributed to a tracker", (await p6.evaluate(() => localStorage.getItem("count.since"))) === null);
-
   // the over-goal sheet keeps its two answers and adds one optional way out
+  check("no tracker is set up", (await p6.evaluate(() => localStorage.getItem("count.since"))) === null);
   await p6.evaluate(() => { today = 4; save(KEY_TODAY, 4); renderTop(); });
   await p6.click("#addBtn");
   await p6.waitForTimeout(400);
@@ -374,6 +371,13 @@ check("number stays centred in the ring after End Day", centred);
   await p6.waitForTimeout(400);
   check("taking five minutes opens the toolkit", (await p6.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Ride it out");
   check("taking five minutes does not log the tap", (await p6.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === beforeFive);
+
+  // finishing it records the win against no tracker
+  await p6.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent.includes("I made it"))?.click());
+  await p6.waitForTimeout(400);
+  const wins = await p6.evaluate(() => JSON.parse(localStorage.getItem("count.urgeWins") || "[]"));
+  check("riding it out from the counter is recorded", wins.length === 1);
+  check("the win is not attributed to a tracker", (await p6.evaluate(() => localStorage.getItem("count.since"))) === null);
   await ctx6.close();
 }
 
@@ -423,6 +427,45 @@ check("number stays centred in the ring after End Day", centred);
   await p7.waitForTimeout(200);
   check("the pace line can be turned off", (await p7.evaluate(() => getComputedStyle(document.getElementById("paceToday")).display)) === "none");
   await ctx7.close();
+}
+
+// the CSV carries the whole day, not just the total
+{
+  const ctx8 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p8 = await ctx8.newPage();
+  p8.on("pageerror", (e) => errors.push("csv: " + String(e)));
+  await p8.addInitScript(() => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.vitaminsLog", JSON.stringify({ "2026-01-02": { "Vitamin D": 2 } }));
+  });
+  await p8.goto(BASE);
+  await p8.waitForTimeout(600);
+  const out = await p8.evaluate(() => {
+    const day = {
+      date: "2026-01-02", endedAt: "2026-01-02T23:00:00.000Z", total: 3, taps: 3,
+      note: "a note, with a comma", mood: 2, factors: ["sleep", "alcohol"],
+      wins: ["made the bed"],
+      worries: [{ text: "deadline", control: "in", action: "email friday" }],
+      tapTimes: [Date.parse("2026-01-02T21:05:00.000Z")],
+    };
+    const head = ["date", "ended_at", "in_progress", "total", "taps", "mood", "mood_label",
+      ...FACTORS.map((f) => "factor_" + f.key), "win_1", "win_2", "win_3", "worries", "habits", "tap_times", "note"];
+    const row = csvRowFor(day, false);
+    const at = (name) => row[head.indexOf(name)];
+    return { len: row.length === head.length, mood: at("mood_label"), sleep: at("factor_sleep"),
+      exercise: at("factor_exercise"), win: at("win_1"), worries: at("worries"),
+      habits: at("habits"), taps: at("tap_times"), note: at("note"),
+      quoted: csvField(at("note")) };
+  });
+  check("every exported day has a full row", out.len);
+  check("the export carries mood", out.mood === "Low");
+  check("the export marks the factors that applied", out.sleep === "yes" && out.exercise === "");
+  check("the export carries tiny wins", out.win === "made the bed");
+  check("the export carries worries with their next action", /deadline/.test(out.worries) && /email friday/.test(out.worries));
+  check("the export carries habits", /Vitamin D/.test(out.habits));
+  check("the export carries tap times", /2026-01-02T21:05/.test(out.taps));
+  check("a note containing a comma is quoted", out.quoted.startsWith('"') && out.quoted.endsWith('"'));
+  await ctx8.close();
 }
 
 check("no JS errors during smoke", errors.length === 0);
