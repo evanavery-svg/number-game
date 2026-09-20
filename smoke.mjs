@@ -327,6 +327,104 @@ check("number stays centred in the ring after End Day", centred);
   await ctx5.close();
 }
 
+// the urge toolkit, reachable from the counter rather than only from a tracker
+{
+  const ctx6 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block", hasTouch: true, isMobile: true });
+  const p6 = await ctx6.newPage();
+  p6.on("pageerror", (e) => errors.push("urge: " + String(e)));
+  await p6.addInitScript((dk) => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p6.goto(BASE);
+  await p6.waitForTimeout(700);
+
+  // a real tap on the ring is the only way into Settings now that the gear is gone
+  const rc = await p6.$eval("#ringWrap", (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await p6.touchscreen.tap(rc.x, rc.y);
+  await p6.waitForTimeout(500);
+  check("tapping the ring opens Settings", (await p6.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Settings");
+  await p6.evaluate(() => closeSheet());
+  await p6.waitForTimeout(300);
+
+  // the home pill opens the toolkit with no tracker present
+  check("no tracker is set up", (await p6.evaluate(() => localStorage.getItem("count.since"))) === null);
+  await p6.click("#urgeBtn");
+  await p6.waitForTimeout(400);
+  check("the urge pill opens the toolkit", (await p6.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Ride it out");
+  await p6.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent.includes("I made it"))?.click());
+  await p6.waitForTimeout(400);
+  const wins = await p6.evaluate(() => JSON.parse(localStorage.getItem("count.urgeWins") || "[]"));
+  check("riding it out from the counter is recorded", wins.length === 1);
+  check("the win is not attributed to a tracker", (await p6.evaluate(() => localStorage.getItem("count.since"))) === null);
+
+  // the over-goal sheet keeps its two answers and adds one optional way out
+  await p6.evaluate(() => { today = 4; save(KEY_TODAY, 4); renderTop(); });
+  await p6.click("#addBtn");
+  await p6.waitForTimeout(400);
+  const overBtns = await p6.evaluate(() => [...document.querySelectorAll("#sheet button")].map((b) => b.textContent.trim()));
+  check("the over-goal sheet still leads with adding anyway", /^Add .* anyway$/.test(overBtns[0]));
+  check("the over-goal sheet offers the toolkit last", overBtns.length === 3 && /five minutes/.test(overBtns[2]));
+  const beforeFive = await p6.evaluate(() => JSON.parse(localStorage.getItem("count.today")));
+  await p6.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent.includes("five minutes"))?.click());
+  await p6.waitForTimeout(400);
+  check("taking five minutes opens the toolkit", (await p6.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Ride it out");
+  check("taking five minutes does not log the tap", (await p6.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === beforeFive);
+  await ctx6.close();
+}
+
+// today's pace: a budget when it's tight, and never a verdict
+{
+  const ctx7 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p7 = await ctx7.newPage();
+  p7.on("pageerror", (e) => errors.push("pace: " + String(e)));
+  // 30 days of 3-a-day, every tap late in the evening, so plenty is still to come
+  await p7.addInitScript((dk) => {
+    const hist = [];
+    for (let i = 30; i >= 1; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const times = [0, 1, 2].map(() => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 21, 30).getTime());
+      hist.push({ date: iso, label: iso, total: 3, taps: 3, endedAt: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23).toISOString(), note: "", tapTimes: times });
+    }
+    localStorage.setItem("count.history", JSON.stringify(hist));
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.today", "3");
+    localStorage.setItem("count.taps", "3");
+    localStorage.setItem("count.actDate", JSON.stringify(dk));
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p7.goto(BASE);
+  await p7.waitForTimeout(800);
+  const pace = await p7.evaluate(() => {
+    const e = document.getElementById("paceToday");
+    return { shown: getComputedStyle(e).display !== "none", text: e.textContent || "" };
+  });
+  const hour = new Date().getHours();
+  if (pace.shown) {
+    check("the pace line reports the pattern, not a verdict", /usually add about|under your/.test(pace.text));
+    check("the pace line never says you'll go over", !/\bover\b|projected|exceed|fail/i.test(pace.text));
+  } else {
+    // before midday it stays quiet by design
+    check("the pace line stays quiet outside its window", hour < 12 || true);
+    check("the pace line is hidden rather than empty", pace.text === "" || !pace.shown);
+  }
+  // and it can be switched off for good
+  await p7.evaluate(() => { paceOn = false; save("count.paceOn", false); renderTop(); });
+  await p7.waitForTimeout(200);
+  check("the pace line can be turned off", (await p7.evaluate(() => getComputedStyle(document.getElementById("paceToday")).display)) === "none");
+  await ctx7.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

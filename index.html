@@ -521,6 +521,10 @@
     .total .meta.streak { color: var(--safe); }
     .goal-label { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; letter-spacing: 0.2px; min-height: 14px; transition: color var(--dur-slow) ease; }
     .goal-label.hint { color: var(--accent); }
+    /* deliberately stops at --warn: this line never turns red at you */
+    .pace-today { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; }
+    .pace-today b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .pace-today.tight b { color: var(--warn); }
 
 
     /* ---- big button ---- */
@@ -1063,6 +1067,8 @@
     .urge-btn:active { transform: scale(0.96); }
     .craving-clock { font-size: var(--fs-display); font-weight: 300; letter-spacing: -2px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: var(--sp-2) 0 2px; }
     .craving-line { text-align: center; font-size: 14px; color: var(--muted); min-height: 20px; }
+    .craving-plan { text-align: center; font-size: 13px; font-weight: 600; color: var(--accent); margin-top: var(--sp-2); }
+    .home-urge { display: block; margin: var(--sp-3) auto 0; }
     /* weekly recap */
     .recap { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 var(--sp-1); }
     .recap-row { display: flex; align-items: center; gap: 13px; padding: 11px 2px; border-top: 1px solid var(--hair); }
@@ -1879,6 +1885,8 @@
     <!-- one insight at a time; tap to cycle. Always present, never dismissed. -->
     <button class="pulse-strip" id="pulse" style="display:none" aria-live="polite"></button>
     <div class="goal-label" id="goalText"></div>
+    <!-- where today is heading, but only while that's still useful to know -->
+    <div class="pace-today" id="paceToday" style="display:none" aria-live="polite"></div>
     <div class="swipe-hint" id="swipeHint"><span class="arrow">↓</span> swipe down to undo</div>
   </div>
 
@@ -1889,12 +1897,15 @@
     <small>tap to add</small>
   </button>
 
+  <!-- the toolkit, one tap from the button you reach for when the urge hits -->
+  <button class="urge-btn home-urge" id="urgeBtn">Feeling an urge?</button>
+
   <div class="row">
     <button id="vitaminsBtn" style="display:none">Daily Habits</button>
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.47</div>
+  <div class="version">v10.48</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

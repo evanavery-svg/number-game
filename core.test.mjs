@@ -973,3 +973,105 @@ test("resetPatterns links slips to lower-mood days when given moods", () => {
   };
   assert.equal(core.resetPatterns(item, moods).moodGap, "low");
 });
+
+// ---- today's pace ----
+
+test("hourHistogram buckets by local hour and skips garbage", () => {
+  const at = (h) => new Date(2026, 6, 14, h, 30).getTime();
+  const { hours, total } = core.hourHistogram([at(9), at(9), at(20), null, undefined, "nonsense", NaN]);
+  assert.equal(total, 3);
+  assert.equal(hours[9], 2);
+  assert.equal(hours[20], 1);
+  assert.equal(hours.length, 24);
+});
+
+test("hourHistogram handles an empty list", () => {
+  const { hours, total } = core.hourHistogram([]);
+  assert.equal(total, 0);
+  assert.equal(hours.filter((x) => x !== 0).length, 0);
+  assert.equal(core.hourHistogram(null).total, 0);
+});
+
+// a histogram with `n` taps, all landing in hour `h`
+const allAt = (h, n) => { const a = new Array(24).fill(0); a[h] = n; return a; };
+
+test("dayProjection needs a real sample before it says anything", () => {
+  assert.equal(core.dayProjection(allAt(20, 39), 14, 2, 5, 3), null);
+  assert.ok(core.dayProjection(allAt(20, 40), 14, 2, 5, 3));
+});
+
+test("dayProjection anchors the remainder to the daily average", () => {
+  const p = core.dayProjection(allAt(20, 60), 14, 2, 5, 3);
+  assert.equal(p.share, 1);                    // every tap lands after 14:00
+  assert.equal(p.remaining, 3);                // so the whole daily average is still to come
+  assert.equal(p.projected, 5);                // 2 already + 3 expected
+  assert.equal(p.over, false);                 // exactly at the goal is not over
+  assert.equal(p.headroom, 3);
+});
+
+test("dayProjection counts strictly after the current hour", () => {
+  // all taps in hour 14, read at hour 14: the hour in progress is not counted
+  assert.equal(core.dayProjection(allAt(14, 60), 14, 2, 5, 3), null);
+  const spread = new Array(24).fill(0);
+  spread[14] = 50; spread[15] = 50;
+  const p = core.dayProjection(spread, 14, 2, 5, 3);
+  assert.equal(p.share, 0.5);                  // only hour 15 counts as "after"
+});
+
+test("dayProjection stays quiet when it has nothing honest to say", () => {
+  assert.equal(core.dayProjection(allAt(20, 60), 23, 2, 5, 3), null, "no hours left");
+  assert.equal(core.dayProjection(allAt(20, 60), 9, 2, 5, 3), null, "before midday");
+  assert.equal(core.dayProjection(allAt(20, 60), 14, 2, 5, 0), null, "no daily average");
+  assert.equal(core.dayProjection(allAt(20, 60), 14, 0, 5, 3), null, "nothing logged today");
+  assert.equal(core.dayProjection(allAt(20, 60), 14, 2, 0, 3), null, "no goal to pace against");
+  const spent = new Array(24).fill(0);
+  spent[20] = 1; spent[8] = 99;                // share 1/100: the day is effectively done
+  assert.equal(core.dayProjection(spent, 14, 2, 5, 3), null, "nothing left to expect");
+});
+
+// An evening-heavy pattern gives a share near 1 at midday. That's the person
+// this line exists for, so it must not be gated away as degenerate.
+test("dayProjection still speaks for an evening-heavy day", () => {
+  const p = core.dayProjection(allAt(21, 80), 13, 3, 5, 4);
+  assert.ok(p, "an evening pattern at 1pm should still produce a projection");
+  assert.equal(p.share, 1);
+  assert.equal(p.projected, 7);
+  assert.equal(p.over, true);
+});
+
+test("dayProjection flags a day heading over", () => {
+  const p = core.dayProjection(allAt(20, 60), 14, 4, 5, 3);
+  assert.equal(p.projected, 7);
+  assert.equal(p.over, true);
+  assert.equal(p.headroom, 1);
+});
+
+test("paceCopy hides a day you'll comfortably clear", () => {
+  const p = core.dayProjection(allAt(20, 60), 14, 1, 10, 3);   // projects 4 of 10
+  assert.equal(core.paceCopy(p, 1, 10), null);
+});
+
+test("paceCopy reassures on a day landing under", () => {
+  const p = core.dayProjection(allAt(20, 60), 14, 2, 5, 3);    // projects exactly 5
+  const c = core.paceCopy(p, 2, 5);
+  assert.equal(c.cls, "ok");
+  assert.match(c.text, /under your/);
+});
+
+test("paceCopy tells a day heading the wrong way what's still coming", () => {
+  const p = core.dayProjection(allAt(20, 60), 14, 4, 5, 3);
+  const c = core.paceCopy(p, 4, 5);
+  assert.equal(c.cls, "tight");
+  // the expected remainder, not the headroom the add button already shows
+  assert.match(c.text, /usually add about 3 more/);
+  assert.ok(!/1 left/.test(c.text), "must not restate the button's headroom");
+  // it states what's left, never a verdict on the person
+  ["projected", "over", "exceed", "fail"].forEach((w) =>
+    assert.ok(!c.text.toLowerCase().includes(w), `"${w}" must not appear in "${c.text}"`));
+});
+
+test("paceCopy goes quiet once the goal is already gone", () => {
+  const p = core.dayProjection(allAt(20, 60), 14, 5, 5, 3);
+  assert.equal(core.paceCopy(p, 5, 5), null);
+  assert.equal(core.paceCopy(null, 2, 5), null);
+});

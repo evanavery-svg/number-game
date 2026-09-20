@@ -69,6 +69,10 @@ const KEY_GAME_ON = "count.gameOn";             // bool — daily focus game ena
 const KEY_GAME_PLAYED = "count.gamePlayed";     // day key of the last game played
 const KEY_GAME_BEST = "count.gameBest";         // best focus-game score
 const KEY_PLANS = "count.plans";                // [{ id, tag, hour, cue, action }] if-then plans
+// Urges ridden out from the counter. Kept apart from the per-tracker `urges`
+// list, which lives behind the journal passcode and must not surface out here.
+const KEY_URGE_WINS = "count.urgeWins";         // [ISO, …]
+const KEY_PACE_ON = "count.paceOn";             // show where today is heading
 
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
 
@@ -84,8 +88,10 @@ const el = {
   ringProg: document.getElementById("ringProg"),
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
+  paceToday: document.getElementById("paceToday"),
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
+  urgeBtn: document.getElementById("urgeBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
   pendingCard: document.getElementById("pendingCard"),
   pendingText: document.getElementById("pendingText"),
@@ -258,6 +264,8 @@ let gameOn = load(KEY_GAME_ON, true);       // daily focus game (toggle in Setti
 let gamePlayed = load(KEY_GAME_PLAYED, ""); // day key the game was last played
 let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let plans = load(KEY_PLANS, []);            // if-then plans
+let urgeWins = load(KEY_URGE_WINS, []);     // urges ridden out from the counter
+let paceOn = load(KEY_PACE_ON, true);       // a way out for anyone it lands badly for
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
 // One per day, picked by date like the theme rotation — holds still while
@@ -1989,6 +1997,7 @@ function renderRecords() {
     r.appendChild(b); list.appendChild(r);
   };
   if (hasGoal()) row("🏆", "Best streak under goal", bestStreak() + (bestStreak() === 1 ? " day" : " days"));
+  if (urgeWins.length) row("🛡️", "Urges ridden out", String(urgeWins.length));
   const totals = history.map((d) => d.total);
   if (hasGoal()) row("📉", "Lowest day", fmt(Math.min(...totals)));
   else row("📈", "Highest day", fmt(Math.max(...totals)));
@@ -2650,20 +2659,20 @@ function renderWeekday() {
   card.appendChild(callout);
 }
 
+// Every tap time you've logged, flattened — the input to the hour histogram.
+function allTapTimes() {
+  const out = [];
+  const add = (arr) => (arr || []).forEach((raw) => out.push(tapEntry(raw).t));
+  history.forEach((d) => add(d.tapTimes));
+  add(tapLog);
+  return out;
+}
+
 // When you typically tap — every recorded tap time (history + today) bucketed
 // by hour of day, so you can see the rhythm of the habit.
 function renderTimeOfDay() {
   const card = el.timeCard;
-  const hours = new Array(24).fill(0);
-  let count = 0;
-  const addTimes = (arr) => {
-    (arr || []).forEach((raw) => {
-      const d = new Date(tapEntry(raw).t);
-      if (!isNaN(d.getTime())) { hours[d.getHours()]++; count++; }
-    });
-  };
-  history.forEach((d) => addTimes(d.tapTimes));
-  addTimes(tapLog);
+  const { hours, total: count } = hourHistogram(allTapTimes());
 
   if (count < 5) {
     card.style.display = "block"; card.textContent = "";
@@ -2910,8 +2919,27 @@ function renderTop(animate) {
   }
 
   renderPulse();
+  renderPaceToday();
   showSwipeHint();
   announceTotal();
+}
+
+// Where today is heading, shown only while it's still something you can act on.
+// Everything about when this stays quiet lives in dayProjection and paceCopy.
+function renderPaceToday() {
+  const line = el.paceToday;
+  if (!line) return;
+  if (!paceOn || !hasGoal()) { line.style.display = "none"; return; }
+  const recent = history.slice(-30);
+  if (!recent.length) { line.style.display = "none"; return; }
+  const avgDaily = recent.reduce((s, d) => s + d.total, 0) / recent.length;
+  const { hours } = hourHistogram(allTapTimes());
+  const copy = paceCopy(dayProjection(hours, new Date().getHours(), today, goal, avgDaily), today, goal);
+  if (!copy) { line.style.display = "none"; return; }
+  line.style.display = "block";
+  line.className = "pace-today " + copy.cls;
+  line.innerHTML = copy.text.replace(/(\d[\d.,]*)/g, "<b>$1</b>");
+  line.setAttribute("aria-label", copy.text);
 }
 
 // How many history rows to build. A year of use is 365 rows, and nobody
@@ -3005,6 +3033,9 @@ function confirmOver(amt) {
     addEl(s, "p", `You're at ${fmt(today)} of ${fmt(goal)}. Adding ${fmt(amt)} puts you ${fmt(round2(today + amt - goal))} over.`, "sub");
     s.appendChild(makeBtn(`Add ${fmt(amt)} anyway`, "danger", () => { closeSheet(); applyDelta(amt, true); }));
     s.appendChild(makeBtn(`Stay at ${fmt(today)}`, "primary", closeSheet));
+    // An offer, not a gate: third, low-emphasis, and it drops the pending amount
+    // rather than deferring it — finishing the timer must not circle back here.
+    s.appendChild(makeBtn("Give it five minutes", "ghost", () => openCravingTimer(null)));
   });
 }
 function addTap(e) {
@@ -3651,6 +3682,20 @@ function openEndDay(resume) {
       const hasReflection = draft.mood || Object.values(draft.factors).some(Boolean) ||
         draft.wins.some((w) => (w || "").trim()) || draft.worries.length;
       if (base.taps === 0 && projected() === 0 && !hasReflection) { toast("Add some taps first"); return; }
+      // The parked day can be logged out from under this sheet — by the rollover
+      // tick crossing 4am, or by another tab. Committing anyway would file today's
+      // count under that day's date and wipe today, so stop here instead.
+      if (fromPending && !pending) {
+        endDayDraft = null; closeSheet();
+        toast("That day was already logged");
+        return;
+      }
+      // Two rows on one date break the calendar, so the day editor refuses it —
+      // refuse here too, while the sheet is still open and the date can be changed.
+      if (dateTaken(history, dayStamp(dateInput.value, new Date()).date)) {
+        toast("That day already has an entry");
+        return;
+      }
       // fold any missed taps you added here into the day's count so commitDay logs them
       if (draft.extraTimes.length) {
         if (fromPending) {
@@ -3818,7 +3863,11 @@ function openWorryActions(worries) {
 // logs itself.
 function commitDay(note, dateStr, extras, opts) {
   opts = opts || {};
-  const fromPending = opts.from === "pending" && !!pending;
+  // Asked for the parked day but it's gone (already logged by the rollover tick
+  // or another tab): refuse rather than silently falling back to today's count,
+  // which would file today under that day's date and then zero it.
+  if (opts.from === "pending" && !pending) return;
+  const fromPending = opts.from === "pending";
   const src = fromPending ? pending : { total: today, taps: taps, tapTimes: tapLog };
   const now = new Date();
   // which day this belongs to, and its label — a future date is refused there
@@ -3929,8 +3978,17 @@ function undoEndDay() {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].endedAt === lastEnded.endedAt) { history.splice(i, 1); break; }
   }
-  if (lastEnded.date < sessionDate() && !pending) {
-    // an earlier day goes back on the card, not into today's count
+  if (lastEnded.date < sessionDate()) {
+    // An earlier day goes back on the card, never into today's count. If the card
+    // is already holding a day we'd have to destroy one of them, so put the entry
+    // back in history and say so instead.
+    if (pending) {
+      history.push(lastEnded);
+      history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
+      save(KEY_HISTORY, history);
+      toast("Finish the day on the card first");
+      return;
+    }
     pending = { date: lastEnded.date, total: lastEnded.total, taps: lastEnded.taps || 0, tapTimes: (lastEnded.tapTimes || []).slice() };
     save(KEY_PENDING, pending);
   } else {
@@ -4269,6 +4327,12 @@ function openAppearanceSettings() {
       sheenOn = sheenToggle.checked; save(KEY_SHEEN, sheenOn); buzz(8); renderTop();
     });
     addEl(s, "p", "A slow sheen around the ring — a different one each day.", "sub");
+
+    const paceToggle = makeToggle(s, "Show today's pace", paceOn);
+    paceToggle.addEventListener("change", () => {
+      paceOn = paceToggle.checked; save(KEY_PACE_ON, paceOn); buzz(8); renderTop();
+    });
+    addEl(s, "p", "A line under the ring in the afternoon, when it still helps to know.", "sub");
 
     autoInput = makeToggle(s, "Switch theme every day", themeAuto);
     autoInput.addEventListener("change", () => {
@@ -5000,11 +5064,22 @@ function rolloverIfStale() {
   const t = sessionDate();
   let changed = false;
   if (pending && pending.date < prevDayKey(t)) { commitDay("", pending.date, null, { from: "pending", quiet: true }); changed = true; }
-  const act = load(KEY_ACT_DATE, null);
+  let act = load(KEY_ACT_DATE, null);
+  // A count restored from a backup that predates KEY_ACT_DATE has no day to
+  // belong to. Without one it would never park and never commit, so adopt the
+  // newest tap's day, or today's if even that is missing.
+  if (!act && (taps > 0 || today > 0)) {
+    const last = tapLog.length ? tapEntry(tapLog[tapLog.length - 1]).t : null;
+    act = last && !isNaN(new Date(last).getTime()) ? isoLocal(new Date(last)) : t;
+    save(KEY_ACT_DATE, act);
+  }
   if (act && act < t && (taps > 0 || today > 0)) {
     if (pending) commitDay("", pending.date, null, { from: "pending", quiet: true });   // only one day waits at a time
     pending = { date: act, total: today, taps: taps, tapTimes: tapLog.slice() };
     today = 0; taps = 0; tapLog = [];
+    // the live count is today's now — leaving this on the parked day would make
+    // End Day default to a date that already has an entry
+    save(KEY_ACT_DATE, t);
     save(KEY_PENDING, pending); save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
     changed = true;
   }
@@ -5214,7 +5289,8 @@ function appendRecovery(card, it) {
 // so the moment itself doesn't need a decision. Deciding ahead of time is one
 // of the better-supported findings in behaviour change (implementation
 // intentions), which is more than can be said for most of this app.
-// Lives behind the journal passcode with everything else it touches.
+// The plans themselves are ordinary app data, not journal data: they're keyed
+// on their own and already surface outside the locked page (checkDayRisk).
 function savePlans() { save(KEY_PLANS, plans); }
 
 function appendPlans(card, pat) {
@@ -5234,7 +5310,7 @@ function appendPlans(card, pat) {
     del.addEventListener("click", (ev) => {
       ev.stopPropagation();
       plans = plans.filter((x) => x.id !== p.id);
-      savePlans(); buzz(10); renderSince();
+      savePlans(); buzz(10); refreshSince();
     });
     row.appendChild(del);
     list.appendChild(row);
@@ -5285,7 +5361,7 @@ function openPlanSheet(seed) {
       if (!c || !a) { toast("Fill in both halves"); return; }
       plans.push({ id: Date.now(), tag: seed.tag || null, hour: seed.hour == null ? null : seed.hour, cue: c, action: a });
       savePlans(); buzz(12);
-      closeSheet(); renderSince();
+      closeSheet(); refreshSince();
       toast("Plan saved — you'll see it when it's relevant");
     }));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
@@ -5340,10 +5416,18 @@ const CRAVE_LINES = [
   "The wave rises, then it falls.",
   "Almost there — stay with it.",
 ];
+// With a tracker, the win belongs to it. Opened from the counter there is no
+// tracker, so it goes to its own store rather than being attributed to one.
 function logUrgeWin(it) {
-  it.urges = it.urges || [];
-  it.urges.push(new Date().toISOString());
-  save(KEY_SINCE, since);
+  if (it) {
+    it.urges = it.urges || [];
+    it.urges.push(new Date().toISOString());
+    save(KEY_SINCE, since);
+    return;
+  }
+  urgeWins.push(new Date().toISOString());
+  if (urgeWins.length > 500) urgeWins = urgeWins.slice(-500);
+  save(KEY_URGE_WINS, urgeWins);
 }
 function openCravingTimer(it) {
   if (cravingTimer) { clearInterval(cravingTimer); cravingTimer = null; }
@@ -5354,6 +5438,10 @@ function openCravingTimer(it) {
     const wrap = document.createElement("div"); wrap.className = "breath-wrap";
     const orb = document.createElement("div"); orb.className = "breath-orb in"; wrap.appendChild(orb); s.appendChild(wrap);
     const line = addEl(s, "p", CRAVE_LINES[0], "craving-line");
+    // the plan you wrote while calm, for about this hour — no authoring here,
+    // that's a decision for a quieter moment
+    const myPlan = planFor(plans, null, new Date().getHours());
+    if (myPlan && myPlan.action) addEl(s, "div", `Your plan: ${myPlan.action}`, "craving-plan");
     let left = CRAVE_SECONDS, phase = 0;
     const paint = () => { const m = Math.floor(left / 60), sec = left % 60; clock.textContent = `${m}:${String(sec).padStart(2, "0")}`; };
     paint();
@@ -5369,7 +5457,7 @@ function openCravingTimer(it) {
         buzz([0, 40, 60, 40, 60, 90]);
         confettiBurst(window.innerWidth / 2, window.innerHeight / 2, 22);
         toast("You rode it out 🌊 — that's a win", 3600);
-        closeSheet(); renderSince();
+        closeSheet(); refreshSince();
       }
     }, 1000);
     const madeIt = makeBtn("I made it 💪", "primary", () => {
@@ -5379,7 +5467,7 @@ function openCravingTimer(it) {
       const r = madeIt.getBoundingClientRect();   // burst from the button itself
       confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 18);
       toast("Urge beaten 🛡️ — that's a win", 3000);
-      closeSheet(); renderSince();
+      closeSheet(); refreshSince();
     });
     s.appendChild(madeIt);
     s.appendChild(makeBtn("Back", "ghost", () => { clearInterval(cravingTimer); cravingTimer = null; closeSheet(); }));
@@ -5533,6 +5621,12 @@ function tickSince() {
     const fill = card.querySelector(".since-bar i");
     if (fill) fill.style.width = (m.frac * 100) + "%";
   });
+}
+
+// These sheets are reachable from the counter now, where the Time Since page
+// isn't on screen and re-rendering it would throw. Repaint only when it's up.
+function refreshSince() {
+  if (el.sinceOverlay.classList.contains("show")) renderSince();
 }
 
 function renderSince() {
@@ -6445,6 +6539,7 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
   });
 })();
 el.insightsBtn.addEventListener("click", openInsights);
+el.urgeBtn.addEventListener("click", () => openCravingTimer(null));
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
@@ -6541,6 +6636,7 @@ window.addEventListener("storage", (e) => {
   taps = load(KEY_TAPS, 0);
   tapLog = load(KEY_TAPLOG, []);
   pending = load(KEY_PENDING, null);
+  urgeWins = load(KEY_URGE_WINS, []);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
   goalOn = load(KEY_GOAL_ON, goalOn);   // already migrated by now; keep what we have otherwise

@@ -481,6 +481,58 @@ function weekHeat(times) {
   return { grid, max, total };
 }
 
+// Taps bucketed by clock hour, across every day you've logged. Same contract as
+// weekHeat: garbage in the list is skipped rather than throwing.
+function hourHistogram(times) {
+  const hours = new Array(24).fill(0);
+  let total = 0;
+  (times || []).forEach((t) => {
+    if (t == null || t === "") return;   // new Date(null) is a valid 1970 date — drop it before it lands in hour 0
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return;
+    hours[d.getHours()]++; total++;
+  });
+  return { hours, total };
+}
+
+// Where today is heading. Anchors the *remainder* to your daily average rather
+// than scaling today's own pace, which would turn one 8am tap into a projection
+// of thirty — wrong exactly when being wrong does the most harm. The cost is
+// under-reacting to a genuinely bad day, which is the safer direction to err.
+// Returns null whenever there isn't an honest answer; the caller shows nothing.
+function dayProjection(hours, hour, today, goal, avgDaily) {
+  const list = hours || [];
+  let sample = 0;
+  for (let h = 0; h < 24; h++) sample += list[h] || 0;
+  if (sample < 40) return null;
+  if (!(avgDaily > 0) || !(today > 0) || !(goal > 0)) return null;
+  if (!(hour >= 12)) return null;                 // before midday it's just the daily average
+  let after = 0;
+  for (let h = hour + 1; h < 24; h++) after += list[h] || 0;   // strictly after: don't double-count the hour in progress
+  const share = after / sample;
+  // A high share is not a reason to stay quiet: someone whose taps all land in
+  // the evening is exactly who this line is for, and at midday their share is
+  // near 1 legitimately. Only the spent day, with nothing left to expect, is
+  // worth skipping — the midday floor already rules out the degenerate case.
+  if (share < 0.05) return null;
+  const remaining = avgDaily * share;
+  const projected = round2(today + remaining);
+  return { projected, remaining, share, sample, hour, over: projected > goal, headroom: round2(goal - today) };
+}
+
+// The wording, next to the numbers so the two can't drift apart. Three outcomes
+// only. A day you'll comfortably clear says nothing. A day heading the wrong way
+// gets what you don't already know — how much your own pattern still has coming —
+// rather than the headroom, which the add button is already showing you, or a
+// verdict on how the day will end.
+function paceCopy(proj, today, goal) {
+  if (!proj) return null;
+  if (today >= goal) return null;                       // the day already went; a forecast now is just a kick
+  if (proj.projected <= goal * 0.8) return null;        // comfortably under is noise
+  if (!proj.over) return { text: `Today's pace lands around ${fmt(proj.projected)} — under your ${fmt(goal)}`, cls: "ok" };
+  return { text: `You usually add about ${fmt(round2(proj.remaining))} more from here`, cls: "tight" };
+}
+
 // Pick the strongest of a set of { label, pct, ... } signals, by |pct|.
 function strongestSignal(signals) {
   const list = (signals || []).filter((s) => s && isFinite(s.pct));
@@ -956,6 +1008,7 @@ if (typeof module !== "undefined" && module.exports) {
     dayShape, consistency, lifetime, nextTarget, pulseLines, auditHistory, vitaminsForDay,
     vitTakenOn, prevDayKey, habitDue, habitStreak, habitLastNDays, habitDayRate, habitStats,
     habitOutcomes, linFit, projectTrend, underRuns, streakWithGrace, median, DAYPARTS, weekHeat, strongestSignal,
+    hourHistogram, dayProjection, paceCopy,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
