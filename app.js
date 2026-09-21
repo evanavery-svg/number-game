@@ -73,6 +73,10 @@ const KEY_PLANS = "count.plans";                // [{ id, tag, hour, cue, action
 // list, which lives behind the journal passcode and must not surface out here.
 const KEY_URGE_WINS = "count.urgeWins";         // [ISO, …]
 const KEY_PACE_ON = "count.paceOn";             // show where today is heading
+// One factor tested against itself. Its own per-day log, because End Day
+// factors are absent unless you tick something and rollover days have none —
+// an experiment can't tell "no" from "never asked" out of that.
+const KEY_EXPERIMENT = "count.experiment";      // { factor, blockDays, blocks, start, avoidFirst, log, done }
 
 const RING_C = 2 * Math.PI * 54;   // circumference of the progress ring (r=54 in viewBox)
 
@@ -161,6 +165,7 @@ const el = {
   mgGreet: document.getElementById("mgGreet"),
   moodGate: document.getElementById("moodGate"),
   mgFaces: document.getElementById("mgFaces"),
+  mgTitle: document.getElementById("mgTitle"),
   mgTimer: document.getElementById("mgTimer"),
   mgCount: document.getElementById("mgCount"),
   mgBar: document.getElementById("mgBar"),
@@ -269,6 +274,7 @@ let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let plans = load(KEY_PLANS, []);            // if-then plans
 let urgeWins = load(KEY_URGE_WINS, []);     // urges ridden out from the counter
 let paceOn = load(KEY_PACE_ON, true);       // a way out for anyone it lands badly for
+let experiment = load(KEY_EXPERIMENT, null);   // the factor currently under test
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
 // One per day, picked by date like the theme rotation — holds still while
@@ -775,6 +781,9 @@ function runDailyGates(force) {
     showMoodGate(greetLine);
     return;
   }
+  // with the mood check-in off or already answered, the experiment still needs
+  // its day's answer, so it borrows the same screen on its own
+  if (experimentDue()) { blockingSpent = true; showExperimentGate(); return; }
   // no mood check-in due, so the greeting still gets its own moment
   if (greetLine) { blockingSpent = true; maybeDayGreeting(); return; }
   if (gameOn && gamePlayed !== moodGateKey()) { blockingSpent = true; showGameGate(); return; }
@@ -792,6 +801,10 @@ function showMoodGate(greetLine) {
   faces.textContent = "";
   faces.classList.remove("nudge");
   el.mgTimer.style.opacity = "";
+  // the experiment step borrows this screen's heading, so put it back
+  el.mgTitle.textContent = "How are you feeling?";
+  const moodSub = document.querySelector(".mg-sub");
+  if (moodSub) moodSub.textContent = "A quick daily check-in — tap a face";
   MOODS.forEach((m, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -839,7 +852,67 @@ function recordDailyMood(v, faceEl) {
     confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 20);
   }
   el.mgTimer.style.opacity = "0";
-  setTimeout(hideMoodGate, reduceMotion() ? 0 : 640);
+  // an experiment rides along on this screen rather than asking for one of its
+  // own — the day's interruption is already spent here
+  setTimeout(() => { if (experimentDue()) showExperimentStep(); else hideMoodGate(); }, reduceMotion() ? 0 : 640);
+}
+
+// ---- the experiment's daily question ----
+function experimentFactor() {
+  return experiment ? FACTORS.find((f) => f.key === experiment.factor) : null;
+}
+function experimentDue() {
+  if (!experiment || experiment.done) return false;
+  const day = moodGateKey();
+  if (experiment.log && day in experiment.log) return false;
+  return experimentPhase(experiment.start, experiment.blockDays, experiment.blocks, experiment.avoidFirst, day) !== null;
+}
+// Records what actually happened, not whether you kept to the plan. A day you
+// drifted is still a usable data point — it just lands on the other side.
+function recordExperimentDay(had) {
+  if (!experiment) return;
+  experiment.log = experiment.log || {};
+  experiment.log[moodGateKey()] = !!had;
+  save(KEY_EXPERIMENT, experiment);
+  buzz([0, 15, 30]);
+  hideMoodGate();
+  maybeFinishExperiment();
+}
+// The same screen, opened straight onto the question.
+function showExperimentGate() {
+  el.moodGate.style.display = "flex";
+  el.moodGate.classList.remove("out");
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => el.moodGate.classList.add("show"));
+  el.mgBar.classList.remove("run");
+  el.mgBar.style.width = "100%";
+  showExperimentStep();
+}
+function showExperimentStep() {
+  const f = experimentFactor();
+  if (!f) { hideMoodGate(); return; }
+  const phase = experimentPhase(experiment.start, experiment.blockDays, experiment.blocks, experiment.avoidFirst, moodGateKey());
+  if (el.mgGreet) el.mgGreet.style.display = "none";
+  el.mgTimer.style.opacity = "0";
+  el.mgTitle.textContent = `Did you ${f.phrase} today?`;
+  const sub = document.querySelector(".mg-sub");
+  if (sub) sub.textContent = phase === "avoid" ? "You're on an avoid stretch — answer honestly either way" : "Answer honestly — either way is useful";
+  const faces = el.mgFaces;
+  faces.textContent = "";
+  faces.classList.remove("nudge");
+  [["Yes", true, f.emoji], ["No", false, "🚫"]].forEach(([cap, val, emoji], i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "mg-face";
+    b.style.setProperty("--stg", i * 70);
+    const e = document.createElement("span"); e.className = "mg-emoji"; e.textContent = emoji;
+    const c = document.createElement("span"); c.className = "mg-cap"; c.textContent = cap;
+    b.append(e, c);
+    b.addEventListener("click", () => {
+      faces.querySelectorAll(".mg-face").forEach((x) => x.classList.add(x === b ? "chosen" : "dim"));
+      recordExperimentDay(val);
+    });
+    faces.appendChild(b);
+  });
 }
 function hideMoodGate() {
   el.mgTimer.style.opacity = "";
@@ -4119,6 +4192,7 @@ function openSettings() {
     s.appendChild(sep);
     row("target", "Tracking", openTrackingSettings);
     row("sliders", "Taper to zero", openTaperSettings);
+    row("target", experiment && !experiment.done ? "Experiment (running)" : "Run an experiment", openExperiment);
     row("chart", "Features", openFeatureSettings);
     row("palette", "Appearance", openAppearanceSettings);
     row("bell", "Reminders", openReminderSettings);
@@ -5551,6 +5625,153 @@ function openWeeklyRecap() {
 }
 
 // A once-a-month look back — the calendar month so far, pulling together the
+// ---- self-experiment ----
+// Pick one factor, aim to alternate blocks of avoiding it and not, answer one
+// question a day, and see what your own numbers say at the end.
+const EXP_MIN_SIDE = 5;
+
+function experimentTotalDays(e) { return e.blockDays * e.blocks; }
+function experimentDayNo(e) {
+  const i = Math.floor((Date.parse(sessionDate() + "T12:00:00") - Date.parse(e.start + "T12:00:00")) / DAY);
+  return Math.max(0, i) + 1;
+}
+// Past its last day it stops asking and becomes a result.
+function maybeFinishExperiment() {
+  if (!experiment || experiment.done) return;
+  if (experimentDayNo(experiment) <= experimentTotalDays(experiment)) return;
+  experiment.done = true;
+  save(KEY_EXPERIMENT, experiment);
+  toast("Your experiment is done — the result is in Settings", 5000);
+}
+
+function openExperiment() {
+  if (!experiment) { openExperimentSetup(); return; }
+  const f = experimentFactor();
+  const res = experimentVerdict(experiment.log, history, { minSide: EXP_MIN_SIDE });
+  openSheet((s) => {
+    addEl(s, "h3", experiment.done ? "Your result" : "Your experiment");
+    if (!f) {
+      addEl(s, "p", "This experiment refers to something that's no longer tracked.", "sub");
+      s.appendChild(makeBtn("Clear it", "danger", () => { experiment = null; forget(KEY_EXPERIMENT); closeSheet(); }));
+      return;
+    }
+    const dayNo = Math.min(experimentDayNo(experiment), experimentTotalDays(experiment));
+    if (!experiment.done) {
+      const phase = experimentPhase(experiment.start, experiment.blockDays, experiment.blocks, experiment.avoidFirst, sessionDate());
+      addEl(s, "p", `Testing <b>${f.label.toLowerCase()}</b> — day ${dayNo} of ${experimentTotalDays(experiment)}.`, "sub").innerHTML =
+        `Testing <b>${f.label.toLowerCase()}</b> — day ${dayNo} of ${experimentTotalDays(experiment)}.`;
+      if (phase === "avoid" || phase === "allow") {
+        addEl(s, "p", phase === "avoid"
+          ? `This stretch, the aim is to avoid it.`
+          : `This stretch, carry on as normal.`, "sub");
+      }
+    }
+    experimentResultInto(s, res, f);
+    if (!experiment.done) {
+      s.appendChild(makeBtn("Finish it now", "", () => {
+        experiment.done = true; save(KEY_EXPERIMENT, experiment); closeSheet(); setTimeout(openExperiment, 300);
+      }));
+    } else {
+      s.appendChild(makeBtn("Start another", "primary", () => { closeSheet(); setTimeout(openExperimentSetup, 300); }));
+    }
+    s.appendChild(makeBtn("Delete this experiment", "danger", () => {
+      experiment = null; forget(KEY_EXPERIMENT); closeSheet(); toast("Experiment deleted");
+    }));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
+
+// The verdict, and what it rests on. Never a claim the numbers don't carry.
+function experimentResultInto(s, res, f) {
+  const list = document.createElement("div"); list.className = "recap"; s.appendChild(list);
+  const row = (icon, label, value) => {
+    const r = document.createElement("div"); r.className = "recap-row";
+    addEl(r, "span", icon, "recap-ico");
+    const b = document.createElement("div"); b.className = "recap-body";
+    addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
+    r.appendChild(b); list.appendChild(r);
+  };
+  row(f.emoji, `days you did (${res.withN})`, res.withN ? fmt(res.withAvg) : "—");
+  row("🚫", `days you didn't (${res.withoutN})`, res.withoutN ? fmt(res.withoutAvg) : "—");
+
+  const line = addEl(s, "p", "", "sub");
+  if (res.verdict === "thin") {
+    line.innerHTML = `Not enough either side to say anything yet — it takes <b>${EXP_MIN_SIDE}</b> logged days of each.`;
+  } else if (res.verdict === "tooClose") {
+    line.innerHTML = `Too close to call. The gap is <b>${fmt(Math.abs(res.delta))}</b> a day, which is inside the noise of your own week.`;
+  } else {
+    const dir = res.verdict === "lower" ? "lower" : "higher";
+    line.innerHTML = `On days you ${f.phrase}, your count ran <b>${dir}</b> — ${fmt(Math.abs(res.delta))} a day, about ${Math.abs(res.pct)}%.`;
+  }
+  addEl(s, "p", `Based on ${res.matched} answered days that were also logged. This is arithmetic over your own history, not a trial — everything else in your life moved too.`, "card-empty");
+}
+
+function openExperimentSetup() {
+  const draft = { factor: null, blockDays: 7, blocks: 4, avoidFirst: true };
+  const build = (s) => {
+    addEl(s, "h3", "Run an experiment");
+    addEl(s, "p", "Pick one thing, alternate stretches of avoiding it and not, and answer one question a day. At the end you get your own numbers either side.", "sub");
+
+    addEl(s, "label", "What are you testing?");
+    const chips = document.createElement("div"); chips.className = "chip-row"; s.appendChild(chips);
+    FACTORS.forEach((f) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip" + (draft.factor === f.key ? " on" : "");
+      b.textContent = `${f.emoji} ${f.label}`;
+      b.addEventListener("click", () => { draft.factor = f.key; buzz(6); openSheet(build); });
+      chips.appendChild(b);
+    });
+
+    addEl(s, "label", "How long is each stretch?");
+    const lens = document.createElement("div"); lens.className = "chip-row"; s.appendChild(lens);
+    [[3, "3 days"], [7, "a week"], [14, "2 weeks"]].forEach(([d, label]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip" + (draft.blockDays === d ? " on" : "");
+      b.textContent = label;
+      b.addEventListener("click", () => { draft.blockDays = d; buzz(6); openSheet(build); });
+      lens.appendChild(b);
+    });
+
+    addEl(s, "label", "How many stretches?");
+    const blocks = document.createElement("div"); blocks.className = "chip-row"; s.appendChild(blocks);
+    [2, 4].forEach((n) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip" + (draft.blocks === n ? " on" : "");
+      b.textContent = `${n} (${n * draft.blockDays} days)`;
+      b.addEventListener("click", () => { draft.blocks = n; buzz(6); openSheet(build); });
+      blocks.appendChild(b);
+    });
+
+    const f = FACTORS.find((x) => x.key === draft.factor);
+    const preview = addEl(s, "p", "", "sub");
+    if (f) {
+      const total = draft.blockDays * draft.blocks;
+      preview.innerHTML = `${draft.blockDays} days avoiding, ${draft.blockDays} days as normal, ${draft.blocks / 2 > 1 ? `${draft.blocks / 2} times each` : "once each"} — <b>${total} days</b> in all. You'll be asked "did you ${f.phrase} today?" once a day.`;
+      if (draft.blockDays * (draft.blocks / 2) < EXP_MIN_SIDE) {
+        addEl(s, "p", `That's fewer than ${EXP_MIN_SIDE} days a side, so it may well come back with no answer.`, "card-empty");
+      }
+    } else {
+      preview.textContent = "Pick something to test.";
+    }
+
+    const go = makeBtn("Start", "primary", () => {
+      if (!draft.factor) { toast("Pick something to test first"); return; }
+      experiment = {
+        factor: draft.factor, blockDays: draft.blockDays, blocks: draft.blocks,
+        start: sessionDate(), avoidFirst: true, log: {}, done: false,
+      };
+      save(KEY_EXPERIMENT, experiment);
+      buzz([0, 30, 50, 30]);
+      closeSheet();
+      toast(`Started — first stretch, avoid it for ${draft.blockDays} days`, 5000);
+    });
+    if (!draft.factor) go.disabled = true;
+    s.appendChild(go);
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  };
+  openSheet(build);
+}
+
 // ---- month & year in review ----
 // The same panel with a different window. A review is a look back, so every
 // line here is something that already happened — nothing predicts, and anything

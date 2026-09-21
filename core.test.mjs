@@ -1134,3 +1134,60 @@ test("halvesCompare refuses when either half is too thin", () => {
   const es = [dayAt(2026, 0, 1, 3), dayAt(2026, 0, 2, 3), dayAt(2026, 0, 9, 3), dayAt(2026, 0, 10, 3)];
   assert.equal(core.halvesCompare(es, new Date(2026, 0, 1).getTime(), new Date(2026, 0, 11).getTime(), 4), null);
 });
+
+// ---- self-experiment ----
+
+const expDay = (d, total) => ({ date: `2026-03-${String(d).padStart(2, "0")}`, endedAt: new Date(2026, 2, d, 22).toISOString(), total });
+
+test("experimentPhase alternates blocks from the start date", () => {
+  const ph = (day) => core.experimentPhase("2026-03-01", 3, 4, true, day);
+  assert.equal(ph("2026-03-01"), "avoid");
+  assert.equal(ph("2026-03-03"), "avoid");
+  assert.equal(ph("2026-03-04"), "allow");
+  assert.equal(ph("2026-03-07"), "avoid");
+  assert.equal(ph("2026-03-12"), "allow");
+  assert.equal(ph("2026-03-13"), "done");     // past 3 x 4 days
+  assert.equal(ph("2026-02-28"), null);       // before it started
+});
+
+test("experimentPhase honours starting on the other foot", () => {
+  assert.equal(core.experimentPhase("2026-03-01", 3, 2, false, "2026-03-01"), "allow");
+  assert.equal(core.experimentPhase("2026-03-01", 3, 2, false, "2026-03-04"), "avoid");
+});
+
+test("experimentVerdict says nothing until both sides have enough days", () => {
+  const log = {}, entries = [];
+  for (let d = 1; d <= 8; d++) { log[`2026-03-0${d}`] = d <= 4; entries.push(expDay(d, d <= 4 ? 6 : 2)); }
+  const thin = core.experimentVerdict(log, entries, { minSide: 5 });
+  assert.equal(thin.verdict, "thin");
+  assert.equal(thin.withN, 4);
+  assert.equal(thin.withoutN, 4);
+});
+
+test("experimentVerdict reports a real gap with its direction", () => {
+  const log = {}, entries = [];
+  for (let d = 1; d <= 12; d++) { log[`2026-03-${String(d).padStart(2, "0")}`] = d <= 6; entries.push(expDay(d, d <= 6 ? 6 : 2)); }
+  const r = core.experimentVerdict(log, entries, { minSide: 5 });
+  assert.equal(r.verdict, "higher");          // on days you did it, the count ran higher
+  assert.equal(r.withAvg, 6);
+  assert.equal(r.withoutAvg, 2);
+  assert.equal(r.delta, 4);
+  assert.equal(r.pct, 200);
+});
+
+test("experimentVerdict refuses to call a small gap", () => {
+  const log = {}, entries = [];
+  for (let d = 1; d <= 12; d++) { log[`2026-03-${String(d).padStart(2, "0")}`] = d <= 6; entries.push(expDay(d, d <= 6 ? 4.2 : 4)); }
+  const r = core.experimentVerdict(log, entries, { minSide: 5 });
+  assert.equal(r.verdict, "tooClose");        // 5% is inside the app's own ±20% bar
+});
+
+test("experimentVerdict counts a day only when it was also logged", () => {
+  const log = { "2026-03-01": true, "2026-03-02": true, "2026-03-03": false };
+  const r = core.experimentVerdict(log, [expDay(1, 3)], { minSide: 1 });
+  assert.equal(r.answered, 3);                // you answered three days
+  assert.equal(r.matched, 1);                 // only one of them has a total to compare
+  assert.equal(r.withN, 1);
+  assert.equal(r.withoutN, 0);
+  assert.equal(r.verdict, "thin");
+});

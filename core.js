@@ -745,6 +745,55 @@ function periodStats(entries, from, to, goal) {
   };
 }
 
+// ---- self-experiment ----
+// One factor, two kinds of day, your own numbers either side. The log records
+// what actually happened rather than whether you stuck to the plan, so a week
+// you drifted still produces an honest comparison — just an uneven one.
+//
+// This is arithmetic over your own history, not a trial: no randomisation, no
+// blinding, and everything else in your life moved too. So it reports both
+// sample sizes, and it would rather say nothing than dress up a coin flip.
+function experimentVerdict(log, entries, opts) {
+  const minSide = (opts && opts.minSide) || 5;
+  const pctFloor = (opts && opts.pctFloor) || 20;
+  const totals = {};
+  (entries || []).forEach((d) => {
+    if (d && typeof d.total === "number" && d.date) totals[d.date] = d.total;
+  });
+  const on = [], off = [];
+  Object.keys(log || {}).forEach((day) => {
+    if (!(day in totals)) return;                    // answered, but that day never got logged
+    (log[day] ? on : off).push(totals[day]);
+  });
+  const answered = Object.keys(log || {}).length;
+  const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
+  const res = {
+    answered, matched: on.length + off.length,
+    withN: on.length, withoutN: off.length,
+    withAvg: round2(mean(on)), withoutAvg: round2(mean(off)),
+    delta: 0, pct: null, verdict: "thin",
+  };
+  if (on.length < minSide || off.length < minSide) return res;
+  res.delta = round2(res.withAvg - res.withoutAvg);
+  res.pct = res.withoutAvg > 0 ? Math.round((res.delta / res.withoutAvg) * 100) : null;
+  // the same ±20% bar the rest of the app uses before it calls a pattern real
+  if (res.pct == null || Math.abs(res.pct) < pctFloor) res.verdict = "tooClose";
+  else res.verdict = res.delta < 0 ? "lower" : "higher";
+  return res;
+}
+
+// Which half of the experiment a given day falls in. Blocks alternate from the
+// start date, so the schedule is a pure function of the calendar.
+function experimentPhase(startDay, blockDays, blocks, avoidFirst, day) {
+  const i = Math.floor((Date.parse(day + "T12:00:00") - Date.parse(startDay + "T12:00:00")) / DAY);
+  if (!isFinite(i) || i < 0) return null;
+  const total = blockDays * blocks;
+  if (i >= total) return "done";
+  const block = Math.floor(i / blockDays);
+  const avoiding = block % 2 === 0 ? !!avoidFirst : !avoidFirst;
+  return avoiding ? "avoid" : "allow";
+}
+
 // ---- reviews ----
 // A stretch in the round: periodStats plus the things a look-back wants and a
 // trailing window doesn't — the quiet days, the extremes, how steady it was.
@@ -1056,6 +1105,7 @@ if (typeof module !== "undefined" && module.exports) {
     habitOutcomes, linFit, projectTrend, underRuns, streakWithGrace, median, DAYPARTS, weekHeat, strongestSignal,
     hourHistogram, dayProjection, paceCopy,
     reviewSummary, monthBuckets, halvesCompare,
+    experimentVerdict, experimentPhase,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,

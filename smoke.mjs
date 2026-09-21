@@ -524,6 +524,76 @@ check("number stays centred in the ring after End Day", centred);
   await ctx9.close();
 }
 
+// the self-experiment: set up, answer the daily question, read the verdict
+{
+  const ctx10 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p10 = await ctx10.newPage();
+  p10.on("pageerror", (e) => errors.push("experiment: " + String(e)));
+  await p10.addInitScript((dk) => {
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p10.goto(BASE);
+  await p10.waitForTimeout(700);
+
+  // setup refuses to start without a subject
+  await p10.evaluate(() => openExperimentSetup());
+  await p10.waitForTimeout(400);
+  check("the experiment setup opens", (await p10.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Run an experiment");
+  check("it won't start without something to test",
+    (await p10.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent.trim() === "Start")?.disabled)) === true);
+  await p10.evaluate(() => [...document.querySelectorAll("#sheet .chip")].find((c) => /Caffeine/.test(c.textContent))?.click());
+  await p10.waitForTimeout(400);
+  await p10.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent.trim() === "Start")?.click());
+  await p10.waitForTimeout(400);
+  const saved = await p10.evaluate(() => JSON.parse(localStorage.getItem("count.experiment") || "null"));
+  check("starting one stores the plan", !!saved && saved.factor === "caffeine" && saved.done === false);
+
+  // the daily question rides on the mood check-in, then both are recorded
+  await p10.reload();
+  await p10.waitForTimeout(1200);
+  check("the mood check-in comes first", (await p10.evaluate(() => document.getElementById("mgTitle").textContent)) === "How are you feeling?");
+  await p10.evaluate(() => document.querySelector("#mgFaces .mg-face")?.click());
+  await p10.waitForTimeout(1100);
+  check("the experiment asks straight after", /Did you have caffeine today/.test(await p10.evaluate(() => document.getElementById("mgTitle").textContent)));
+  await p10.evaluate(() => [...document.querySelectorAll("#mgFaces .mg-face")].find((e) => /Yes/.test(e.textContent))?.click());
+  await p10.waitForTimeout(1100);
+  const after = await p10.evaluate(() => ({
+    log: JSON.parse(localStorage.getItem("count.experiment")).log,
+    mood: JSON.parse(localStorage.getItem("count.moodDaily") || "{}"),
+    gate: document.getElementById("moodGate").classList.contains("show"),
+  }));
+  check("the day's answer is recorded", Object.values(after.log).length === 1 && Object.values(after.log)[0] === true);
+  check("the mood answer survived the chain", Object.keys(after.mood).length === 1);
+  check("the gate closes after both answers", !after.gate);
+
+  // it does not ask twice in one day
+  await p10.reload();
+  await p10.waitForTimeout(1200);
+  check("it asks once a day", !(await p10.evaluate(() => document.getElementById("moodGate").classList.contains("show"))));
+
+  // a verdict refuses to call a thin sample, and reports a real one with its basis
+  const verdicts = await p10.evaluate(() => {
+    const mk = (n, had, total) => { const l = {}, h = []; for (let i = 1; i <= n; i++) {
+      const ds = `2026-03-${String(i).padStart(2, "0")}`;
+      l[ds] = i <= n / 2 ? had : !had;
+      h.push({ date: ds, endedAt: new Date(2026, 2, i, 22).toISOString(), total: i <= n / 2 ? total : 2 });
+    } return { l, h }; };
+    const thin = mk(6, true, 6), fat = mk(20, true, 6);
+    return {
+      thin: experimentVerdict(thin.l, thin.h, { minSide: 5 }).verdict,
+      fat: experimentVerdict(fat.l, fat.h, { minSide: 5 }),
+    };
+  });
+  check("a thin experiment says so", verdicts.thin === "thin");
+  check("a real gap is reported with a direction", verdicts.fat.verdict === "higher" && verdicts.fat.withN >= 5 && verdicts.fat.withoutN >= 5);
+  await ctx10.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 
