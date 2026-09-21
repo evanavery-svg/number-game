@@ -1075,3 +1075,62 @@ test("paceCopy goes quiet once the goal is already gone", () => {
   assert.equal(core.paceCopy(p, 5, 5), null);
   assert.equal(core.paceCopy(null, 2, 5), null);
 });
+
+// ---- reviews ----
+
+const dayAt = (y, mo, d, total) => ({
+  date: `${y}-${String(mo + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+  endedAt: new Date(y, mo, d, 22).toISOString(),
+  total,
+});
+
+test("reviewSummary adds the edges periodStats leaves out", () => {
+  const es = [dayAt(2026, 0, 1, 0), dayAt(2026, 0, 2, 4), dayAt(2026, 0, 3, 2), dayAt(2026, 0, 4, 0)];
+  const s = core.reviewSummary(es, new Date(2026, 0, 1).getTime(), new Date(2026, 0, 5).getTime(), 3);
+  assert.equal(s.n, 4);
+  assert.equal(s.zeroDays, 2);
+  assert.equal(s.lowest, 0);
+  assert.equal(s.highest, 4);
+  assert.equal(s.median, 1);
+  assert.equal(s.under, 3);          // 0, 2, 0 are at or under the goal of 3
+  assert.ok(s.consistency != null);
+});
+
+test("reviewSummary on an empty window stays shaped like periodStats", () => {
+  const s = core.reviewSummary([], 0, 1000, 3);
+  assert.equal(s.n, 0);
+  assert.equal(s.avg, 0);
+  assert.equal(s.zeroDays, undefined);   // nothing to describe, so nothing claimed
+});
+
+test("monthBuckets returns twelve slots, empty months included", () => {
+  const es = [dayAt(2026, 0, 5, 2), dayAt(2026, 0, 6, 4), dayAt(2026, 5, 1, 1)];
+  const b = core.monthBuckets(es, 2026, 3);
+  assert.equal(b.length, 12);
+  assert.equal(b[0].n, 2);
+  assert.equal(b[0].avg, 3);
+  assert.equal(b[5].n, 1);
+  assert.equal(b[1].n, 0);               // February logged nothing, still present
+  assert.equal(b[1].avg, 0);
+});
+
+test("monthBuckets ignores days from other years", () => {
+  const es = [dayAt(2025, 0, 5, 9), dayAt(2026, 0, 5, 2)];
+  const b = core.monthBuckets(es, 2026, 3);
+  assert.equal(b[0].n, 1);
+  assert.equal(b[0].total, 2);
+});
+
+test("halvesCompare puts the two halves of a stretch side by side", () => {
+  const es = [];
+  for (let d = 1; d <= 10; d++) es.push(dayAt(2026, 0, d, d <= 5 ? 6 : 2));
+  const c = core.halvesCompare(es, new Date(2026, 0, 1).getTime(), new Date(2026, 0, 11).getTime(), 4);
+  assert.equal(c.first.avg, 6);
+  assert.equal(c.second.avg, 2);
+  assert.equal(c.deltaAvg, -4);          // negative means it came down
+});
+
+test("halvesCompare refuses when either half is too thin", () => {
+  const es = [dayAt(2026, 0, 1, 3), dayAt(2026, 0, 2, 3), dayAt(2026, 0, 9, 3), dayAt(2026, 0, 10, 3)];
+  assert.equal(core.halvesCompare(es, new Date(2026, 0, 1).getTime(), new Date(2026, 0, 11).getTime(), 4), null);
+});

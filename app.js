@@ -149,6 +149,10 @@ const el = {
   waterOverlay: document.getElementById("waterOverlay"),
   waterClose: document.getElementById("waterClose"),
   waterBody: document.getElementById("waterBody"),
+  reviewOverlay: document.getElementById("reviewOverlay"),
+  reviewClose: document.getElementById("reviewClose"),
+  reviewTitle: document.getElementById("reviewTitle"),
+  reviewBody: document.getElementById("reviewBody"),
   treeOverlay: document.getElementById("treeOverlay"),
   treeClose: document.getElementById("treeClose"),
   treeBody: document.getElementById("treeBody"),
@@ -4108,7 +4112,8 @@ function openSettings() {
     if (features.water) act("droplet", "Water", openWater);
     if (features.tree) act("tree", "Your Tree", openTree);
     if (timelineOn) act("chart", "Your week", openWeeklyRecap);
-    if (timelineOn) act("chart", "This month", openMonthlyReview);
+    act("chart", "This month", () => openReview("month"));
+    act("chart", "This year", () => openReview("year"));
     const sep = document.createElement("hr");
     sep.style.cssText = "border:none;border-top:1px solid var(--hair);margin:8px 0";
     s.appendChild(sep);
@@ -5506,8 +5511,8 @@ function maybeWeeklyRecap() {
   if (last == null) { save(KEY_RECAP_LAST, wk); return false; }   // first sight — arm, don't show
   if (last === wk) return false;
   save(KEY_RECAP_LAST, wk);
-  // don't interrupt — just mention it; the recap lives in the ⋯ menu
-  toast("📊 Your weekly recap is ready — it's in ⋯", 4200);
+  // don't interrupt — just mention it; the recap lives in Settings
+  toast("📊 Your weekly recap is ready — it's in Settings", 4200);
   markNotice();
   return true;
 }
@@ -5546,81 +5551,163 @@ function openWeeklyRecap() {
 }
 
 // A once-a-month look back — the calendar month so far, pulling together the
-// numbers, the taper, and (reusing the habit-impact analysis) what helped.
-function openMonthlyReview() {
+// ---- month & year in review ----
+// The same panel with a different window. A review is a look back, so every
+// line here is something that already happened — nothing predicts, and anything
+// resting on too few days says so instead of guessing.
+const REVIEW_MIN_DAYS = 3;
+const MONTH_SHORT = Array.from({ length: 12 }, (_, i) =>
+  new Date(2000, i, 1).toLocaleDateString(undefined, { month: "short" }));
+
+function reviewCard(parent, title) {
+  const c = document.createElement("div");
+  c.className = "chart-card";
+  if (title) addEl(c, "div", title, "section-title");
+  parent.appendChild(c);
+  return c;
+}
+
+// "3 fewer a day than last month" reads better than a percentage nobody can
+// picture, so lead with the count and keep the percentage as the aside.
+function reviewDelta(cur, prev) {
+  if (prev == null || prev.n < REVIEW_MIN_DAYS) return null;
+  const d = round2(cur.avg - prev.avg);
+  if (Math.abs(d) < 0.05) return { text: "about the same", cls: "flat" };
+  const pct = prev.avg > 0 ? Math.round(Math.abs((cur.avg - prev.avg) / prev.avg) * 100) : null;
+  return {
+    text: `${fmt(Math.abs(d))} ${d < 0 ? "fewer" : "more"} a day${pct == null ? "" : ` (${pct}%)`}`,
+    cls: d < 0 ? "down" : "up",
+  };
+}
+
+function openReview(scope) {
+  const isYear = scope === "year";
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
-  const monthOf = (d) => { const dt = new Date(d.endedAt || d.date); return dt.getFullYear() === y && dt.getMonth() === m; };
-  const mh = history.filter(monthOf);
+  const from = (isYear ? new Date(y, 0, 1) : new Date(y, m, 1)).getTime();
+  const to = now.getTime() + 1;
+  const prevFrom = (isYear ? new Date(y - 1, 0, 1) : new Date(y, m - 1, 1)).getTime();
   const monthName = now.toLocaleDateString(undefined, { month: "long" });
-  const avg = (arr) => arr.length ? arr.reduce((s, d) => s + d.total, 0) / arr.length : null;
+  const label = isYear ? String(y) : monthName;
+  const g = hasGoal() ? goal : 0;
 
-  const lm = new Date(y, m - 1, 1);
-  const lastHist = history.filter((d) => { const dt = new Date(d.endedAt || d.date); return dt.getFullYear() === lm.getFullYear() && dt.getMonth() === lm.getMonth(); });
-  const thisAvg = avg(mh), lastAvg = avg(lastHist);
+  el.reviewTitle.textContent = `${label} in review`;
+  const body = el.reviewBody;
+  body.textContent = "";
 
-  openSheet((s) => {
-    addEl(s, "h3", monthName + " review");
-    if (mh.length < 3) {
-      addEl(s, "p", `A few more logged days this month and ${monthName}'s review fills in here.`, "sub");
-      s.appendChild(makeBtn("OK", "primary", closeSheet));
-      return;
+  const sum = reviewSummary(history, from, to, g);
+  if (sum.n < REVIEW_MIN_DAYS) {
+    const c = reviewCard(body, null);
+    addEl(c, "div", `A few more logged days and ${isYear ? "this year" : monthName}'s review fills in here.`, "card-empty");
+    el.reviewOverlay.classList.add("show");
+    return;
+  }
+  const prev = reviewSummary(history, prevFrom, from, g);
+
+  // headline — the three numbers the whole stretch comes down to
+  const head = reviewCard(body, isYear ? "Your year so far" : "The month so far");
+  const grid = document.createElement("div"); grid.className = "insights-grid"; head.appendChild(grid);
+  const delta = reviewDelta(sum, prev);
+  grid.appendChild(statTile(String(sum.n), sum.n === 1 ? "day logged" : "days logged"));
+  grid.appendChild(statTile(fmt(sum.avg), "average a day", delta ? { delta } : {}));
+  grid.appendChild(statTile(fmt(sum.total), "logged in total"));
+  if (hasGoal()) grid.appendChild(statTile(`${sum.under}/${sum.n}`, "days under goal", { good: sum.under * 2 >= sum.n }));
+  if (delta) {
+    addEl(head, "div", "", "wk-callout").innerHTML =
+      `Against ${isYear ? "last year" : "last month"}: <b>${delta.text}</b>.`;
+  }
+
+  // did it move across itself — the question a look-back is actually asking
+  const halves = halvesCompare(history, from, to, g);
+  if (halves) {
+    const c = reviewCard(body, "How it moved");
+    const d = halves.deltaAvg;
+    const word = Math.abs(d) < 0.05 ? "held steady" : d < 0 ? "came down" : "drifted up";
+    const line = addEl(c, "div", "", "wk-callout");
+    line.innerHTML = `The ${isYear ? "year" : "month"} <b>${word}</b> — ${fmt(halves.first.avg)} a day in the first half, <b>${fmt(halves.second.avg)}</b> in the second.`;
+    addEl(c, "div", `${halves.first.n} and ${halves.second.n} logged days.`, "card-empty");
+  }
+
+  // month by month — a year's shape in one row
+  if (isYear) {
+    const buckets = monthBuckets(history, y, g);
+    const logged = buckets.filter((b) => b.n > 0);
+    if (logged.length >= 2) {
+      const c = reviewCard(body, "Month by month");
+      const max = Math.max.apply(null, logged.map((b) => b.avg));
+      const chart = document.createElement("div"); chart.className = "wk"; c.appendChild(chart);
+      const labels = document.createElement("div"); labels.className = "wk-labels"; c.appendChild(labels);
+      // a month you logged twice shouldn't be crowned over one you logged all of
+      const eligible = logged.filter((b) => b.n >= 5);
+      const best = eligible.length ? eligible.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
+      buckets.forEach((b) => {
+        const bar = document.createElement("div");
+        bar.className = "wk-bar" + (!b.n ? " none" : b === best ? " best" : "");
+        bar.style.height = b.n ? Math.max(3, (b.avg / (max || 1)) * 100) + "%" : "3px";
+        bar.title = b.n ? `${MONTH_SHORT[b.month]}: ${fmt(b.avg)} a day over ${b.n} day${b.n === 1 ? "" : "s"}` : `${MONTH_SHORT[b.month]}: nothing logged`;
+        chart.appendChild(bar);
+        addEl(labels, "span", MONTH_SHORT[b.month][0]);
+      });
+      if (best) {
+        addEl(c, "div", "", "wk-callout").innerHTML =
+          `Your quietest month was <b>${MONTH_SHORT[best.month]}</b>, averaging <b>${fmt(best.avg)}</b> a day over ${best.n} days.`;
+      }
     }
-    addEl(s, "p", "A look back at the month so far.", "sub");
-    const list = document.createElement("div"); list.className = "recap"; s.appendChild(list);
-    const row = (icon, label, value) => {
-      const r = document.createElement("div"); r.className = "recap-row";
-      addEl(r, "span", icon, "recap-ico");
-      const b = document.createElement("div"); b.className = "recap-body";
-      addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
-      r.appendChild(b); list.appendChild(r);
-    };
+  }
 
-    const total = mh.reduce((s2, d) => s2 + d.total, 0);
-    row("📊", mh.length + (mh.length === 1 ? " day logged" : " days logged"), fmt(round2(total)) + " tracked");
+  // the extremes and the shape of it
+  const shape = reviewCard(body, "The edges");
+  const sg = document.createElement("div"); sg.className = "insights-grid"; shape.appendChild(sg);
+  sg.appendChild(statTile(fmt(sum.lowest), "quietest day", { good: true }));
+  sg.appendChild(statTile(fmt(sum.highest), "busiest day"));
+  if (sum.zeroDays > 0) sg.appendChild(statTile(String(sum.zeroDays), sum.zeroDays === 1 ? "day at zero" : "days at zero", { good: true }));
+  if (hasGoal() && sum.bestStreak > 0) sg.appendChild(statTile(String(sum.bestStreak), "best run under goal", { good: true }));
+  if (sum.consistency != null) {
+    const steady = addEl(shape, "div", "", "wk-callout");
+    const word = sum.consistency >= 75 ? "very steady" : sum.consistency >= 45 ? "fairly steady" : "swingy";
+    steady.innerHTML = `Day to day you were <b>${word}</b> — ${sum.consistency}% consistent.`;
+  }
 
-    if (thisAvg != null && lastAvg != null) {
-      const pct = lastAvg > 0 ? Math.round(((thisAvg - lastAvg) / lastAvg) * 100) : 0;
-      const arrow = pct < 0 ? "📉" : pct > 0 ? "📈" : "▬";
-      row(arrow, `average / day (${pct < 0 ? "▼" : pct > 0 ? "▲" : ""}${Math.abs(pct)}% vs last month)`, fmt(round2(thisAvg)));
-    } else if (thisAvg != null) {
-      row("📊", "average / day", fmt(round2(thisAvg)));
+  // the goal itself moved, which is the thing a taper is for
+  if (hasGoal() && goalLog.length) {
+    let goalAtStart = null;
+    goalLog.forEach((gl) => { if (new Date(gl.at).getTime() <= from) goalAtStart = gl.goal; });
+    if (goalAtStart != null && goalAtStart !== goal) {
+      const c = reviewCard(body, "Your goal");
+      const line = addEl(c, "div", "", "wk-callout");
+      const dir = goal < goalAtStart ? "down" : "up";
+      line.innerHTML = `You moved it <b>${dir}</b>, ${fmt(goalAtStart)} → <b>${fmt(goal)}</b>, over the ${isYear ? "year" : "month"}.`;
     }
+  }
 
-    if (hasGoal()) {
-      const under = mh.filter((d) => d.total <= goal).length;
-      row("✅", "days under goal", `${under} of ${mh.length}`);
-      const best = underRuns(mh.map((d) => d.total), goal).best;
-      if (best > 0) row("🏆", "best streak under goal", best + (best === 1 ? " day" : " days"));
-      row("📉", "lowest day", fmt(Math.min(...mh.map((d) => d.total))));
-    } else {
-      row("📈", "highest day", fmt(Math.max(...mh.map((d) => d.total))));
-    }
-
-    // taper progress across the month (goal at the 1st vs now)
-    if (hasGoal() && goalLog.length) {
-      const monthStart = new Date(y, m, 1).getTime();
-      let goalStart = null;
-      goalLog.forEach((g) => { if (new Date(g.at).getTime() <= monthStart) goalStart = g.goal; });
-      if (goalStart != null && goalStart !== goal) row("🎯", "your goal this month", `${fmt(goalStart)} → ${fmt(goal)}`);
-    }
-
-    // what helped most — the strongest habit link within the month
-    if (vitaminsList.length) {
-      const ho = habitOutcomes(mh, vitaminsLog, vitaminsList).filter((r) => r.delta < -0.5)[0];
-      if (ho) row("🌱", `${ho.name} helped most`, `${fmt(ho.onAvg)} vs ${fmt(ho.offAvg)}`);
-    }
-
-    // mood
-    const monthStartMs = new Date(y, m, 1).getTime();
-    const moods = Object.keys(moodDaily).filter((k) => { const t = new Date(k).getTime(); return t >= monthStartMs; }).map((k) => moodDaily[k]);
-    if (moods.length) { const am = moods.reduce((a, b2) => a + b2, 0) / moods.length; row("🙂", "average mood", `${moodEmoji(am)} ${am.toFixed(1)}`); }
-
-    staggerIn(list, 40, 10);   // the recap rows cascade in
-    addEl(s, "p", "One month at a time. You're doing the work.", "sub");
-    s.appendChild(makeBtn("Nice", "primary", closeSheet));
+  // mood, and what the habit data says helped — both refuse to speak when thin
+  const inWindow = history.filter((d) => {
+    const t = new Date(d.endedAt || d.date).getTime();
+    return t >= from && t < to;
   });
+  const moods = Object.keys(moodDaily)
+    .filter((k) => { const t = new Date(k + "T12:00:00").getTime(); return t >= from && t < to; })
+    .map((k) => moodDaily[k]);
+  const ho = vitaminsList.length ? habitOutcomes(inWindow, vitaminsLog, vitaminsList).filter((r) => r.delta < -0.5)[0] : null;
+  if (moods.length >= REVIEW_MIN_DAYS || ho) {
+    const c = reviewCard(body, "Alongside it");
+    if (moods.length >= REVIEW_MIN_DAYS) {
+      const am = moods.reduce((a, b) => a + b, 0) / moods.length;
+      const line = addEl(c, "div", "", "wk-callout");
+      line.innerHTML = `Your mood averaged <b>${am.toFixed(1)}</b> ${moodEmoji(am)} across ${moods.length} check-in${moods.length === 1 ? "" : "s"}.`;
+    }
+    if (ho) {
+      const line = addEl(c, "div", "", "wk-callout");
+      line.innerHTML = `On days you did <b>${ho.name}</b> you logged <b>${fmt(ho.onAvg)}</b>, against ${fmt(ho.offAvg)} otherwise.`;
+      addEl(c, "div", `${ho.onN} days with, ${ho.offN} without — your own history, not a rule.`, "card-empty");
+    }
+  }
+
+  addEl(body, "p", isYear ? "A year of showing up. That's the whole thing." : "One month at a time. You're doing the work.", "sub");
+  staggerIn(body, 60, 8);
+  el.reviewOverlay.classList.add("show");
 }
+function closeReview() { el.reviewOverlay.classList.remove("show"); }
 
 // Per-second refresh of just the numbers that move. The panel used to be
 // rebuilt outright every second, which detached every button in it — a tap
@@ -6516,18 +6603,6 @@ function closeTree() { el.treeOverlay.classList.remove("show"); }
 
 // The three secondary tools live behind one "More" launcher to keep the
 // header (and the whole screen) uncluttered.
-function openMore() {
-  openSheet((s) => {
-    addEl(s, "h3", "More");
-    if (features.since) s.appendChild(makeIconBtn("clock", "Time Since", "", () => { closeSheet(); requestSince(); }));
-    if (features.water) s.appendChild(makeIconBtn("droplet", "Water", "", () => { closeSheet(); openWater(); }));
-    if (features.tree) s.appendChild(makeIconBtn("tree", "Your Tree", "", () => { closeSheet(); openTree(); }));
-    if (timelineOn) s.appendChild(makeIconBtn("chart", "Your week", "", () => { closeSheet(); openWeeklyRecap(); }));
-    if (timelineOn) s.appendChild(makeIconBtn("chart", "This month", "", () => { closeSheet(); openMonthlyReview(); }));
-    if (!features.since && !features.water && !features.tree && !timelineOn) addEl(s, "p", "All extras are off — turn them on in Settings → Features.", "sub");
-    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
-  });
-}
 
 // ---- wire up ----
 // Tap the + button to add a step; press and hold it to log a custom amount.
@@ -6624,6 +6699,8 @@ el.sinceOverlay.addEventListener("click", (e) => { if (e.target === el.sinceOver
 el.sinceAdd.addEventListener("click", () => openSinceForm(null));
 el.waterClose.addEventListener("click", closeWater);
 el.waterOverlay.addEventListener("click", (e) => { if (e.target === el.waterOverlay) closeWater(); });
+el.reviewClose.addEventListener("click", closeReview);
+el.reviewOverlay.addEventListener("click", (e) => { if (e.target === el.reviewOverlay) closeReview(); });
 el.treeClose.addEventListener("click", closeTree);
 el.treeOverlay.addEventListener("click", (e) => { if (e.target === el.treeOverlay) closeTree(); });
 

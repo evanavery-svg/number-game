@@ -468,6 +468,62 @@ check("number stays centred in the ring after End Day", centred);
   await ctx8.close();
 }
 
+// month and year reviews, reachable without the hidden flag
+{
+  const ctx9 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p9 = await ctx9.newPage();
+  p9.on("pageerror", (e) => errors.push("review: " + String(e)));
+  await p9.addInitScript((dk) => {
+    const hist = [], moods = {};
+    for (let i = 200; i >= 1; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      if (d.getFullYear() !== new Date().getFullYear()) continue;
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      hist.push({ date: iso, label: iso, total: i % 5, taps: i % 5,
+        endedAt: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 22).toISOString(), note: "", tapTimes: [] });
+      moods[iso] = 1 + (i % 5);
+    }
+    moods[dk] = 4;
+    localStorage.setItem("count.history", JSON.stringify(hist));
+    localStorage.setItem("count.moodDaily", JSON.stringify(moods));
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p9.goto(BASE);
+  await p9.waitForTimeout(700);
+
+  // reachable from Settings without the hidden timeline flag being on
+  check("the hidden flag is off", (await p9.evaluate(() => JSON.parse(localStorage.getItem("count.tl") || "false"))) === false);
+  await p9.evaluate(() => openSettings());
+  await p9.waitForTimeout(300);
+  const rows = await p9.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].map((b) => b.textContent));
+  check("Settings offers both reviews", rows.some((r) => /This month/.test(r)) && rows.some((r) => /This year/.test(r)));
+  await p9.evaluate(() => closeSheet());
+  await p9.waitForTimeout(300);
+
+  for (const [scope, want] of [["month", /in review$/], ["year", /^\d{4} in review$/]]) {
+    await p9.evaluate((s) => openReview(s), scope);
+    await p9.waitForTimeout(600);
+    const got = await p9.evaluate(() => ({
+      shown: document.getElementById("reviewOverlay").classList.contains("show"),
+      title: document.getElementById("reviewTitle").textContent,
+      sections: [...document.querySelectorAll("#reviewBody .section-title")].length,
+      body: document.getElementById("reviewBody").textContent,
+    }));
+    check(`the ${scope} review opens`, got.shown && want.test(got.title));
+    check(`the ${scope} review has content`, got.sections >= 3);
+    check(`the ${scope} review states its sample`, /logged day/.test(got.body));
+    await p9.evaluate(() => closeReview());
+    await p9.waitForTimeout(300);
+  }
+  check("the review closes", !(await p9.evaluate(() => document.getElementById("reviewOverlay").classList.contains("show"))));
+  await ctx9.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

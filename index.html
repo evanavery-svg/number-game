@@ -1526,6 +1526,9 @@
     .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; cursor: pointer; transition: height var(--dur-slow) var(--ease-out); }
     .wk-bar.peak { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
     .wk-bar.sel { outline: 2px solid var(--text); outline-offset: 1px; }
+    /* in a review, lower is the good end — mark the best month, not the worst */
+    .wk-bar.best { background: linear-gradient(180deg, var(--r-safe-1), var(--r-safe-2)); }
+    .wk-bar.none { background: var(--hair); }
     .wk-labels { display: flex; gap: 6px; margin-top: 7px; }
     .wk-labels span { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
     .wk-callout { font-size: 13px; color: var(--muted); margin-top: var(--sp-3); }
@@ -1899,7 +1902,7 @@
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.49</div>
+  <div class="version">v10.50</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -2053,6 +2056,17 @@
         <button class="panel-close" id="treeClose">Done</button>
       </div>
       <div class="panel-body" id="treeBody"></div>
+    </div>
+  </div>
+
+  <!-- Look back over a month or a year: the same panel, a different window -->
+  <div class="panel-overlay" id="reviewOverlay">
+    <div class="panel">
+      <div class="panel-head">
+        <h3 id="reviewTitle">Review</h3>
+        <button class="panel-close" id="reviewClose">Done</button>
+      </div>
+      <div class="panel-body" id="reviewBody"></div>
     </div>
   </div>
 

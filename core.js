@@ -745,6 +745,52 @@ function periodStats(entries, from, to, goal) {
   };
 }
 
+// ---- reviews ----
+// A stretch in the round: periodStats plus the things a look-back wants and a
+// trailing window doesn't — the quiet days, the extremes, how steady it was.
+function reviewSummary(entries, from, to, goal) {
+  const base = periodStats(entries, from, to, goal);
+  if (!base.n) return base;
+  const totals = (entries || [])
+    .filter((d) => {
+      if (!d || typeof d.total !== "number") return false;
+      const t = new Date(d.endedAt || d.date).getTime();
+      return t >= from && t < to;
+    })
+    .map((d) => d.total);
+  return Object.assign({}, base, {
+    zeroDays: totals.filter((x) => x === 0).length,
+    lowest: Math.min.apply(null, totals),
+    highest: Math.max.apply(null, totals),
+    median: median(totals),
+    consistency: consistency(totals),
+  });
+}
+
+// One bucket per calendar month of a year. Months you logged nothing in come
+// back with n = 0 rather than being dropped, so a year reads as twelve slots.
+function monthBuckets(entries, year, goal) {
+  const out = [];
+  for (let m = 0; m < 12; m++) {
+    const from = new Date(year, m, 1).getTime();
+    const to = new Date(year, m + 1, 1).getTime();
+    const s = periodStats(entries, from, to, goal);
+    out.push({ month: m, n: s.n, total: s.total, avg: s.avg, under: s.under });
+  }
+  return out;
+}
+
+// Did the stretch improve across itself? Splits the window down the middle and
+// puts the halves side by side. Null when either half is too thin to be honest,
+// on the same footing as comparePeriods.
+function halvesCompare(entries, from, to, goal) {
+  const mid = from + Math.floor((to - from) / 2);
+  const first = periodStats(entries, from, mid, goal);
+  const second = periodStats(entries, mid, to, goal);
+  if (first.n < 3 || second.n < 3) return null;
+  return { first, second, deltaAvg: round2(second.avg - first.avg) };
+}
+
 // This window against the one immediately before it. Returns null when there
 // isn't enough of a previous stretch to make an honest comparison.
 function comparePeriods(entries, days, goal, now) {
@@ -1009,6 +1055,7 @@ if (typeof module !== "undefined" && module.exports) {
     vitTakenOn, prevDayKey, habitDue, habitStreak, habitLastNDays, habitDayRate, habitStats,
     habitOutcomes, linFit, projectTrend, underRuns, streakWithGrace, median, DAYPARTS, weekHeat, strongestSignal,
     hourHistogram, dayProjection, paceCopy,
+    reviewSummary, monthBuckets, halvesCompare,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
     round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
