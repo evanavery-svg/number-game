@@ -775,9 +775,17 @@ function experimentVerdict(log, entries, opts) {
   };
   if (on.length < minSide || off.length < minSide) return res;
   res.delta = round2(res.withAvg - res.withoutAvg);
+  // "half as much again" is the number worth reading, so keep reporting the gap
+  // against the baseline — but only when there is a baseline to divide by.
   res.pct = res.withoutAvg > 0 ? Math.round((res.delta / res.withoutAvg) * 100) : null;
+  // The verdict itself is judged against the two sides combined, not against the
+  // baseline. Dividing by the baseline breaks exactly where the result matters
+  // most: log nothing on the days you avoided it and the baseline is zero, which
+  // made the largest possible effect come back as no effect at all.
+  const pooled = (res.withAvg * on.length + res.withoutAvg * off.length) / (on.length + off.length);
+  res.rel = pooled > 0 ? Math.round((Math.abs(res.delta) / pooled) * 100) : 0;
   // the same ±20% bar the rest of the app uses before it calls a pattern real
-  if (res.pct == null || Math.abs(res.pct) < pctFloor) res.verdict = "tooClose";
+  if (res.rel < pctFloor) res.verdict = "tooClose";
   else res.verdict = res.delta < 0 ? "lower" : "higher";
   return res;
 }

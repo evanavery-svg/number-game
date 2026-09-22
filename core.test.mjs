@@ -1191,3 +1191,40 @@ test("experimentVerdict counts a day only when it was also logged", () => {
   assert.equal(r.withoutN, 0);
   assert.equal(r.verdict, "thin");
 });
+
+// Regressions: the verdict used to divide by the baseline, so logging nothing
+// on the days you avoided it made the largest possible effect read as none.
+test("experimentVerdict still speaks when the baseline is zero", () => {
+  const log = {}, entries = [];
+  for (let d = 1; d <= 20; d++) {
+    const ds = `2026-03-${String(d).padStart(2, "0")}`;
+    const had = d <= 10;
+    log[ds] = had;
+    entries.push({ date: ds, endedAt: new Date(2026, 2, d, 22).toISOString(), total: had ? 3 : 0 });
+  }
+  const r = core.experimentVerdict(log, entries, { minSide: 5 });
+  assert.equal(r.verdict, "higher");
+  assert.equal(r.withoutAvg, 0);
+  assert.equal(r.pct, null, "no percentage to quote against a zero baseline");
+  assert.equal(r.rel, 200, "but the gap is still judged against the two sides combined");
+});
+
+test("experimentVerdict calls nothing on either side no difference", () => {
+  const log = {}, entries = [];
+  for (let d = 1; d <= 20; d++) {
+    const ds = `2026-03-${String(d).padStart(2, "0")}`;
+    log[ds] = d <= 10;
+    entries.push({ date: ds, endedAt: new Date(2026, 2, d, 22).toISOString(), total: 0 });
+  }
+  assert.equal(core.experimentVerdict(log, entries, { minSide: 5 }).verdict, "tooClose");
+});
+
+// Regression: "done" is not null, so the daily question used to stay due for
+// ever after the last scheduled day and log an extra day the plan never had.
+test("experimentPhase marks days past the end as done, not live", () => {
+  const ph = (d) => core.experimentPhase("2026-03-01", 3, 2, true, d);
+  assert.equal(ph("2026-03-06"), "allow", "last scheduled day still counts");
+  assert.equal(ph("2026-03-07"), "done");
+  assert.equal(ph("2026-03-28"), "done", "and stays done however late you come back");
+  assert.ok(!["avoid", "allow"].includes(ph("2026-03-07")), "nothing past the end is askable");
+});

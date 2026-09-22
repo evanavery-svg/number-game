@@ -448,13 +448,13 @@ check("number stays centred in the ring after End Day", centred);
       worries: [{ text: "deadline", control: "in", action: "email friday" }],
       tapTimes: [Date.parse("2026-01-02T21:05:00.000Z")],
     };
-    const head = ["date", "ended_at", "in_progress", "total", "taps", "mood", "mood_label",
-      ...FACTORS.map((f) => "factor_" + f.key), "win_1", "win_2", "win_3", "worries", "habits", "tap_times", "note"];
+    const head = csvHeader();
     const row = csvRowFor(day, false);
     const at = (name) => row[head.indexOf(name)];
     return { len: row.length === head.length, mood: at("mood_label"), sleep: at("factor_sleep"),
       exercise: at("factor_exercise"), win: at("win_1"), worries: at("worries"),
       habits: at("habits"), taps: at("tap_times"), note: at("note"),
+      expFactor: at("experiment_factor"), expDid: at("experiment_did"),
       quoted: csvField(at("note")) };
   });
   check("every exported day has a full row", out.len);
@@ -465,6 +465,7 @@ check("number stays centred in the ring after End Day", centred);
   check("the export carries habits", /Vitamin D/.test(out.habits));
   check("the export carries tap times", /2026-01-02T21:05/.test(out.taps));
   check("a note containing a comma is quoted", out.quoted.startsWith('"') && out.quoted.endsWith('"'));
+  check("days outside an experiment leave its columns empty", out.expFactor === "" && out.expDid === "");
   await ctx8.close();
 }
 
@@ -590,6 +591,23 @@ check("number stays centred in the ring after End Day", centred);
     };
   });
   check("a thin experiment says so", verdicts.thin === "thin");
+
+  // an elapsed experiment ends itself instead of asking one more time
+  await p10.evaluate(() => {
+    const start = new Date(); start.setDate(start.getDate() - 10);
+    const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    const log = {};
+    for (let i = 0; i < 6; i++) { const x = new Date(start); x.setDate(x.getDate() + i); log[iso(x)] = i < 3; }
+    localStorage.setItem("count.experiment", JSON.stringify({ factor: "caffeine", blockDays: 3, blocks: 2, start: iso(start), avoidFirst: true, log, done: false }));
+  });
+  await p10.reload();
+  await p10.waitForTimeout(1500);
+  const ended = await p10.evaluate(() => ({
+    gate: document.getElementById("moodGate").classList.contains("show"),
+    e: JSON.parse(localStorage.getItem("count.experiment")),
+  }));
+  check("an experiment past its last day stops asking", !ended.gate);
+  check("it finishes itself without a spurious answer", ended.e.done === true && Object.keys(ended.e.log).length === 6);
   check("a real gap is reported with a direction", verdicts.fat.verdict === "higher" && verdicts.fat.withN >= 5 && verdicts.fat.withoutN >= 5);
   await ctx10.close();
 }
