@@ -612,6 +612,69 @@ check("number stays centred in the ring after End Day", centred);
   await ctx10.close();
 }
 
+// polish regressions: sheets swap in place, and the trend line draws whole
+{
+  const ctx11 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p11 = await ctx11.newPage();
+  p11.on("pageerror", (e) => errors.push("polish: " + String(e)));
+  await p11.addInitScript((dk) => {
+    const hist = [];
+    for (let i = 60; i >= 1; i--) {
+      const x = new Date(); x.setDate(x.getDate() - i);
+      const iso = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      hist.push({ date: iso, label: iso, total: 2 + (i % 4), taps: 3, endedAt: new Date(x.getFullYear(), x.getMonth(), x.getDate(), 22).toISOString(), note: "", tapTimes: [] });
+    }
+    localStorage.setItem("count.history", JSON.stringify(hist));
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.backupAt", String(Date.now()));
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p11.goto(BASE);
+  await p11.waitForTimeout(800);
+
+  // moving from Settings into a sub-page must never drop the sheet out of view
+  await p11.evaluate(() => openSettings());
+  await p11.waitForTimeout(500);
+  const stayedUp = await p11.evaluate(async () => {
+    const ov = document.getElementById("overlay");
+    [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => /Appearance/.test(b.textContent)).click();
+    let up = true;
+    for (let i = 0; i < 15; i++) { if (!ov.classList.contains("show")) up = false; await new Promise((r) => setTimeout(r, 25)); }
+    return up;
+  });
+  check("opening a Settings page keeps the sheet up", stayedUp);
+  check("the sub-page arrived", (await p11.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Appearance");
+  const backUp = await p11.evaluate(async () => {
+    const ov = document.getElementById("overlay");
+    [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => b.textContent.trim() === "Back").click();
+    let up = true;
+    for (let i = 0; i < 15; i++) { if (!ov.classList.contains("show")) up = false; await new Promise((r) => setTimeout(r, 25)); }
+    return up && document.querySelector("#sheet h3")?.textContent === "Settings";
+  });
+  check("going Back keeps the sheet up too", backUp);
+  await p11.waitForTimeout(600);
+  check("the sheet settles with no leftover sizing", await p11.evaluate(() => {
+    const s = document.getElementById("sheet");
+    return s.style.height === "" && !s.classList.contains("morphing");
+  }));
+  await p11.evaluate(() => closeSheet());
+  await p11.waitForTimeout(400);
+
+  // the trend line ends solid: no dash left behind to leave a gap
+  await p11.evaluate(() => openInsights());
+  await p11.waitForTimeout(2200);
+  check("the trend line draws whole", await p11.evaluate(() => {
+    const l = document.querySelector("#trendCard .trend-poly");
+    return !!l && l.style.strokeDasharray === "";
+  }));
+  await ctx11.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

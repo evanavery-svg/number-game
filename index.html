@@ -694,6 +694,8 @@
       transition: transform var(--dur-panel) var(--ease-panel);
     }
     .overlay.show .sheet { transform: translateY(0); }
+    /* one sheet becoming another: the height eases rather than jumping */
+    .sheet.morphing { transition: transform var(--dur-panel) var(--ease-panel), height 0.34s var(--ease-panel); overflow-y: hidden; }
     .sheet::before { content: ""; display: block; width: 38px; height: 5px; border-radius: 999px; background: var(--surface-2); margin: 0 auto var(--sp-4); }
     .sheet h3 { margin: 0 0 6px; font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.3px; }
     .sheet p.sub { margin: 0 0 var(--sp-2); color: var(--muted); font-size: 14px; }
@@ -744,6 +746,11 @@
     .sheet-btn.with-ico .btn-label { flex: 1; }
     .sheet-btn.with-ico .btn-chev { color: var(--faint); font-size: 20px; line-height: 1; flex: none; }
     .sheet-btn.with-ico:active .btn-ico { color: var(--accent); }
+    .sheet-btn.with-ico .btn-detail { flex: none; font-size: 14px; font-weight: 600; color: var(--muted); }
+    .sheet-group { font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); margin: var(--sp-4) 4px var(--sp-2); }
+    /* a button that can't act yet should look like it */
+    .sheet-btn:disabled { opacity: 0.38; cursor: default; box-shadow: none; }
+    .sheet-btn:disabled.shine::after { display: none; }
     /* settings section header */
     /* visually hidden, still announced by screen readers */
     .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -1065,6 +1072,14 @@
     .urge-btn:active { transform: scale(0.96); }
     .craving-clock { font-size: var(--fs-display); font-weight: 300; letter-spacing: -2px; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); margin: var(--sp-2) 0 2px; }
     .craving-line { text-align: center; font-size: 14px; color: var(--muted); min-height: 20px; }
+    /* the experiment's plan, stretch by stretch, filled up to today */
+    .exp-track { display: flex; gap: 5px; margin: var(--sp-3) 0 var(--sp-1); }
+    .exp-seg { flex: 1; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .exp-seg i { display: block; height: 100%; width: 0; border-radius: inherit; transition: width 0.7s var(--ease-out); }
+    .exp-seg.avoid i { background: var(--accent); }
+    .exp-seg.allow i { background: var(--muted); }
+    .sheet p.exp-preview { margin-top: var(--sp-4); }
+    .exp-cap { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--faint); margin-bottom: var(--sp-3); }
     .craving-plan { text-align: center; font-size: 13px; font-weight: 600; color: var(--accent); margin-top: var(--sp-2); }
     /* weekly recap */
     .recap { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 var(--sp-1); }
@@ -1526,6 +1541,10 @@
     .wk-bar { flex: 1; background: var(--surface-2); border-radius: 4px 4px 2px 2px; min-height: 3px; cursor: pointer; transition: height var(--dur-slow) var(--ease-out); }
     .wk-bar.peak { background: linear-gradient(180deg, #ff6b5e, var(--over)); }
     .wk-bar.sel { outline: 2px solid var(--text); outline-offset: 1px; }
+    /* a review's closing line, quiet and centred rather than bare body text */
+    .rv-foot { text-align: center; font-size: 14px; color: var(--muted); margin: var(--sp-5) var(--sp-4) var(--sp-3); }
+    /* an odd tile out spans the row instead of leaving a hole beside it */
+    #reviewBody .insights-grid > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
     /* in a review, lower is the good end — mark the best month, not the worst */
     .wk-bar.best { background: linear-gradient(180deg, var(--r-safe-1), var(--r-safe-2)); }
     .wk-bar.none { background: var(--hair); }
@@ -1811,7 +1830,7 @@
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap, .ring-wrap.charging, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap, .ring-wrap.charging, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb, .sheet.morphing, .exp-seg i { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -1902,7 +1921,7 @@
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.52</div>
+  <div class="version">v10.53</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

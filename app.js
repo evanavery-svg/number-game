@@ -1105,17 +1105,49 @@ function staggerIn(container, step, cap) {
 // the element's existing CSS transition animates it back to size.
 // The bars grow in; the trend line used to simply appear. Sweep it on with a
 // dash offset so the shape reads as a progression rather than a picture.
+// The line uses non-scaling-stroke, which makes the browser measure dashes in
+// screen pixels. getTotalLength() answers in the stretched viewBox's units, so
+// using it directly gave a dash shorter than the line and left a gap in the
+// middle that never closed. Measure the drawn length on screen instead, and
+// drop the dash once the sweep is done so the line is solid whatever happens.
+function screenLength(el) {
+  const m = el && el.getScreenCTM && el.getScreenCTM();
+  if (!m || !el.getTotalLength) return 0;
+  const total = el.getTotalLength();
+  if (!total) return 0;
+  // walk the shape and measure each step after the stretch is applied
+  const N = 200;
+  let len = 0, prev = el.getPointAtLength(0);
+  for (let i = 1; i <= N; i++) {
+    const p = el.getPointAtLength((total * i) / N);
+    const dx = p.x - prev.x, dy = p.y - prev.y;
+    len += Math.hypot(m.a * dx + m.c * dy, m.b * dx + m.d * dy);
+    prev = p;
+  }
+  return Math.ceil(len * 1.01) + 2;   // a hair over, so the sweep can never leave a gap
+}
+// Dashes are only measured on screen when the stroke refuses to scale; any
+// other shape keeps measuring in its own units.
+function dashLength(el) {
+  if (!el || !el.getTotalLength) return 0;
+  return getComputedStyle(el).vectorEffect === "non-scaling-stroke"
+    ? screenLength(el) : Math.ceil(el.getTotalLength());
+}
 function drawLine(container) {
   if (reduceMotion() || !container) return;
   const line = container.querySelector(".trend-poly");
-  if (!line || !line.getTotalLength) return;
-  const len = Math.ceil(line.getTotalLength());
+  if (!line) return;
+  const len = dashLength(line);
   if (!len) return;
   line.style.strokeDasharray = len;
   line.style.setProperty("--dash", len);
   line.classList.remove("draw");
   void line.getBoundingClientRect();
   line.classList.add("draw");
+  line.addEventListener("animationend", () => {
+    line.style.strokeDasharray = "";
+    line.classList.remove("draw");
+  }, { once: true });
 }
 
 // Draw an arbitrary SVG path on by sweeping its stroke — used for the taper
@@ -1123,7 +1155,7 @@ function drawLine(container) {
 // static picture. Web Animations so it works on any path without a keyframe.
 function drawPath(pathEl, dur, delay) {
   if (reduceMotion() || !pathEl || !pathEl.getTotalLength || !pathEl.animate) return;
-  const len = pathEl.getTotalLength();
+  const len = dashLength(pathEl);
   if (!len) return;
   pathEl.style.strokeDasharray = len;
   const a = pathEl.animate(
@@ -1662,7 +1694,7 @@ function renderPace() {
     b.className = cls;
     line.appendChild(document.createTextNode("Averaging "));
     line.appendChild(b);
-    line.appendChild(document.createTextNode(avgPerDay <= goal ? ` this month — under your ${fmt(goal)} goal ✓` : ` this month — over your ${fmt(goal)} goal`));
+    line.appendChild(document.createTextNode(avgPerDay <= goal ? ` this month — under your ${fmt(goal)} goal\u00a0✓` : ` this month — over your ${fmt(goal)} goal`));
   } else {
     const projected = round2(avgPerDay * dim);
     b.textContent = "~" + fmt(projected);
@@ -2590,7 +2622,7 @@ function selectCalDay(ds, cell, detail, todayStr) {
   if (h) {
     const bits = [fmt(h.total)];
     if (h.taps) bits.push(`${h.taps} tap${h.taps === 1 ? "" : "s"}`);
-    if (hasGoal()) { const dg = goalForDay(ds); bits.push(h.total <= dg ? "under goal ✓" : `${fmt(round2(h.total - dg))} over`); }
+    if (hasGoal()) { const dg = goalForDay(ds); bits.push(h.total <= dg ? "under goal\u00a0✓" : `${fmt(round2(h.total - dg))} over`); }
     b.textContent = nice; main = " — " + bits.join(" · ");
     if ((h.note || "").trim()) note = h.note;
   } else if (ds === todayStr && today > 0) {
@@ -3498,9 +3530,9 @@ function openRenameVitamin(oldName, onDone) {
         else { toast(vitaminsList.includes(nn) ? "Already on your list" : "Enter a name"); return; }
       } else if (!nn) { toast("Enter a name"); return; }
       setVitaminSched(target, [...sel]);
-      closeSheet(); setTimeout(() => { openVitamins(); }, 300);
+      openVitamins();
     }));
-    s.appendChild(makeBtn("Cancel", "ghost", () => { closeSheet(); setTimeout(() => { openVitamins(); }, 300); }));
+    s.appendChild(makeBtn("Cancel", "ghost", () => { openVitamins(); }));
     setTimeout(() => { inp.focus(); inp.select(); }, 50);
   });
 }
@@ -3584,7 +3616,7 @@ function openEndDay(resume) {
       if (hasGoal()) {
         sub = p > goal
           ? `Log ${fmt(p)} — ${fmt(round2(p - goal))} over your ${fmt(goal)} goal.`
-          : `Log ${fmt(p)} — under your ${fmt(goal)} goal ✓`;
+          : `Log ${fmt(p)} — under your ${fmt(goal)} goal\u00a0✓`;
       }
       subEl.textContent = sub;
     };
@@ -4007,7 +4039,7 @@ function commitDay(note, dateStr, extras, opts) {
   const overBy = hasGoal() && total > goal ? ` · ${fmt(round2(total - goal))} over goal` : "";
   toast(prestiged
     ? `🌳 Tree fully grown — Prestige ${tree.level}!`
-    : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal ✓" : overBy}`);
+    : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal\u00a0✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
   // a second, separate pop-up for a tree milestone reached along the way —
   // prestige (100%) already got its own toast above, this covers 25/50/75%
@@ -4075,11 +4107,43 @@ function undoEndDay() {
 }
 
 // ---- bottom sheet plumbing ----
+// Moving between sheets used to close one and open the next 300ms later, so the
+// sheet dropped out of view and rose back for every sub-page. When a sheet is
+// already up, the content swaps in place and the sheet eases to its new height.
+let sheetMorph = 0;
 function openSheet(builder) {
-  el.sheet.textContent = "";
-  builder(el.sheet);
+  const sheet = el.sheet;
+  const morph = el.overlay.classList.contains("show") && !reduceMotion();
+  const from = morph ? sheet.getBoundingClientRect().height : 0;
+  sheet.textContent = "";
+  builder(sheet);
   el.overlay.classList.add("show");
-  staggerIn(el.sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
+  // whatever an earlier swap left mid-flight, start this one from rest
+  const token = ++sheetMorph;
+  sheet.style.height = "";
+  sheet.classList.remove("morphing");
+  if (morph) {
+    sheet.scrollTop = 0;
+    const to = sheet.getBoundingClientRect().height;
+    if (Math.abs(to - from) > 1) {
+      sheet.style.height = from + "px";
+      sheet.classList.add("morphing");
+      void sheet.offsetHeight;
+      sheet.style.height = to + "px";
+      const settle = () => {
+        if (token !== sheetMorph) return;   // a newer swap owns the sheet now
+        sheet.style.height = "";
+        sheet.classList.remove("morphing");
+      };
+      sheet.addEventListener("transitionend", function end(e) {
+        if (e.propertyName !== "height") return;
+        sheet.removeEventListener("transitionend", end);
+        settle();
+      });
+      setTimeout(settle, 500);             // in case transitionend never arrives
+    }
+  }
+  staggerIn(sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
   // the primary action catches a single light sweep once the sheet has settled
   if (!reduceMotion()) el.sheet.querySelectorAll(".sheet-btn.primary").forEach((b) => { b.style.setProperty("--sh", 380); b.classList.add("shine"); });
 }
@@ -4120,6 +4184,10 @@ function ico(paths, w) {
   return `<svg viewBox="0 0 24 24" width="${w || 20}" height="${w || 20}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 const ICONS = {
+  calendar: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  star: '<path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
+  flask: '<path d="M9.5 3h5M10 3v6L4.8 18a2 2 0 0 0 1.7 3h11a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7.5 15h9"/>',
+  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
   droplet: '<path d="M12 3s6 6.2 6 10a6 6 0 0 1-12 0c0-3.8 6-10 6-10z"/>',
   tree: '<path d="M12 22v-5"/><path d="M12 17 7 12h3L6.5 7.5h3L12 3l2.5 4.5h3L14 12h3z"/>',
@@ -4145,6 +4213,8 @@ function makeIconBtn(iconKey, label, cls, onClick, opts) {
   t.className = "btn-label";
   t.textContent = label;
   b.append(i, t);
+  // a quiet status on the right, the way a settings row says "On" or "Day 3"
+  if (opts && opts.detail) addEl(b, "span", opts.detail, "btn-detail");
   if (opts && opts.chevron) addEl(b, "span", "›", "btn-chev");
   b.addEventListener("click", onClick);
   return b;
@@ -4181,39 +4251,44 @@ function confirmSheet(title, sub, confirmLabel, onYes, danger) {
 function openSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Settings");
-    const row = (icon, label, fn) => s.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); setTimeout(fn, 300); }, { chevron: true }));
+    const row = (icon, label, fn, detail) => s.appendChild(makeIconBtn(icon, label, "", () => { fn(); }, { chevron: true, detail }));
     const act = (icon, label, fn) => s.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); fn(); }));
+    const group = (label) => addEl(s, "div", label, "sheet-group");
     act("chart", "Insights", openInsights);
     if (features.since) act("clock", "Time Since", requestSince);
     if (features.water) act("droplet", "Water", openWater);
     if (features.tree) act("tree", "Your Tree", openTree);
-    if (timelineOn) act("chart", "Your week", openWeeklyRecap);
-    act("chart", "This month", () => openReview("month"));
-    act("chart", "This year", () => openReview("year"));
-    const sep = document.createElement("hr");
-    sep.style.cssText = "border:none;border-top:1px solid var(--hair);margin:8px 0";
-    s.appendChild(sep);
+
+    group("Look back");
+    if (timelineOn) act("clock", "Your week", openWeeklyRecap);
+    act("calendar", "This month", () => openReview("month"));
+    act("star", "This year", () => openReview("year"));
+
+    group("Your setup");
     row("target", "Tracking", openTrackingSettings);
     row("sliders", "Taper to zero", openTaperSettings);
-    row("target", experiment && !experiment.done ? "Experiment (running)" : "Run an experiment", openExperiment);
-    row("chart", "Features", openFeatureSettings);
+    const expDetail = !experiment ? null
+      : experiment.done ? "Result ready"
+      : `Day ${Math.min(experimentDayNo(experiment), experimentTotalDays(experiment))} of ${experimentTotalDays(experiment)}`;
+    row("flask", experiment ? "Experiment" : "Run an experiment", openExperiment, expDetail);
+    row("grid", "Features", openFeatureSettings);
     row("palette", "Appearance", openAppearanceSettings);
     row("bell", "Reminders", openReminderSettings);
     row("lock", "Privacy", openPrivacySettings);
     const bkAt = load(KEY_BACKUP_AT, 0) || 0;
     const bkDays = bkAt ? Math.floor((Date.now() - bkAt) / 864e5) : null;
-    const bkLabel = bkDays === null ? "Data & backup · never backed up"
-      : bkDays <= 0 ? "Data & backup · backed up today"
-      : `Data & backup · ${bkDays}d since backup`;
-    row("database", bkLabel, openDataSettings);
+    const bkDetail = bkDays === null ? "Never backed up"
+      : bkDays <= 0 ? "Backed up today"
+      : bkDays === 1 ? "1 day ago" : `${bkDays} days ago`;
+    row("database", "Data & backup", openDataSettings, bkDetail);
     if (lastEnded) {
-      s.appendChild(makeIconBtn("undo", `Undo last End Day (${fmt(lastEnded.total)})`, "", () => { closeSheet(); undoEndDay(); }));
+      s.appendChild(makeIconBtn("undo", "Undo last End Day", "", () => { closeSheet(); undoEndDay(); }, { detail: fmt(lastEnded.total) }));
     }
     s.appendChild(makeBtn("Done", "ghost", closeSheet));
   });
 }
 // Every sub-sheet offers its way back, so the menu is never a dead end.
-function backToSettings() { closeSheet(); setTimeout(openSettings, 300); }
+function backToSettings() { openSettings(); }
 
 function openTrackingSettings() {
   openSheet((s) => {
@@ -4322,10 +4397,10 @@ function openTaperSettings() {
 function openFeatureSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Features");
-    addEl(s, "p", "Switch off anything you don't use — it disappears from the ⋯ menu and daily flow.", "sub");
+    addEl(s, "p", "Switch off anything you don't use — it disappears from Settings and the daily flow.", "sub");
     const greetFeat = makeToggle(s, "Morning greeting", greetOn);
     greetFeat.addEventListener("change", () => { greetOn = greetFeat.checked; save(KEY_GREET_ON, greetOn); buzz(8); });
-    s.appendChild(makeIconBtn("pencil", "Your affirmations", "link", () => { closeSheet(); setTimeout(openAffirmations, 300); }));
+    s.appendChild(makeIconBtn("pencil", "Your affirmations", "link", () => { openAffirmations(); }));
     const moodFeat = makeToggle(s, "Daily mood check-in", features.mood);
     moodFeat.addEventListener("change", () => { features.mood = moodFeat.checked; save(KEY_FEATURES, features); buzz(8); });
     const gameToggle = makeToggle(s, "Daily focus game (10s)", gameOn);
@@ -4443,7 +4518,7 @@ function openReminderSettings() {
       }
       closeSheet(); checkReminder();
     }));
-    s.appendChild(makeBtn("Reminders when the app is closed", "", () => { closeSheet(); setTimeout(openClosedAppGuide, 300); }));
+    s.appendChild(makeBtn("Reminders when the app is closed", "", () => { openClosedAppGuide(); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -4486,7 +4561,7 @@ function openClosedAppGuide() {
     s.appendChild(makeBtn("Copy quick-add link", "", () => copyText(base + "?add=" + fmt(step), "Quick-add link copied")));
 
     addEl(s, "p", "On Android the same thing works with any automation app that can open a URL at a set time.", "sub");
-    s.appendChild(makeBtn("Back", "ghost", () => { closeSheet(); setTimeout(openReminderSettings, 300); }));
+    s.appendChild(makeBtn("Back", "ghost", () => { openReminderSettings(); }));
   });
 }
 
@@ -4507,8 +4582,8 @@ function openPrivacySettings() {
   openSheet((s) => {
     addEl(s, "h3", "Privacy");
     addEl(s, "p", "Everything lives on this device only — no accounts, no servers.", "sub");
-    s.appendChild(makeIconBtn("lock", lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { closeSheet(); setTimeout(openLockSettings, 300); }, { chevron: true }));
-    s.appendChild(makeIconBtn("shield", journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { closeSheet(); setTimeout(openJournalPinSettings, 300); }, { chevron: true }));
+    s.appendChild(makeIconBtn("lock", lockSet() ? "App Lock — On" : "App Lock — Off", "", () => { openLockSettings(); }, { chevron: true }));
+    s.appendChild(makeIconBtn("shield", journalPinSet() ? "Journal passcode — On" : "Journal passcode — Off", "", () => { openJournalPinSettings(); }, { chevron: true }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -4598,7 +4673,7 @@ function openDataSettings() {
     s.appendChild(makeBtn("Restore from backup", "", () => { closeSheet(); startRestore(); }));
     s.appendChild(makeBtn("Export spreadsheet (CSV)", "link", exportCsv));
     addEl(s, "p", "Every day with its mood, factors, wins, worries, habits and tap times — one row each, for a spreadsheet. Unlike a full backup this file isn't encrypted, so it reads as plain text wherever it lands.", "sub");
-    s.appendChild(makeBtn("Check my data", "", () => { closeSheet(); setTimeout(openHealthCheck, 300); }));
+    s.appendChild(makeBtn("Check my data", "", () => { openHealthCheck(); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -5668,27 +5743,45 @@ function openExperiment() {
     const dayNo = Math.min(experimentDayNo(experiment), experimentTotalDays(experiment));
     if (!experiment.done) {
       const phase = experimentPhase(experiment.start, experiment.blockDays, experiment.blocks, experiment.avoidFirst, sessionDate());
-      addEl(s, "p", "", "sub").innerHTML =
-        `Testing <b>${f.label.toLowerCase()}</b> — day ${dayNo} of ${experimentTotalDays(experiment)}.`;
-      if (phase === "avoid" || phase === "allow") {
-        addEl(s, "p", phase === "avoid"
-          ? `This stretch, the aim is to avoid it.`
-          : `This stretch, carry on as normal.`, "sub");
-      }
+      addEl(s, "p", "", "sub").innerHTML = `Testing <b>${f.label.toLowerCase()}</b> — ${phase === "avoid"
+        ? "this stretch, the aim is to avoid it" : "this stretch, carry on as normal"}.`;
+      experimentTrackInto(s, dayNo);
     }
     experimentResultInto(s, res, f);
     if (!experiment.done) {
       s.appendChild(makeBtn("Finish it now", "", () => {
-        experiment.done = true; save(KEY_EXPERIMENT, experiment); closeSheet(); setTimeout(openExperiment, 300);
+        experiment.done = true; save(KEY_EXPERIMENT, experiment); openExperiment();
       }));
     } else {
-      s.appendChild(makeBtn("Start another", "primary", () => { closeSheet(); setTimeout(openExperimentSetup, 300); }));
+      s.appendChild(makeBtn("Start another", "primary", () => { openExperimentSetup(); }));
     }
     s.appendChild(makeBtn("Delete this experiment", "danger", () => {
       experiment = null; forget(KEY_EXPERIMENT); closeSheet(); toast("Experiment deleted");
     }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
+}
+
+// Where you are in the plan: one segment per stretch, filled up to today, with
+// the avoid stretches in the accent and the as-normal ones muted.
+function experimentTrackInto(s, dayNo) {
+  const wrap = document.createElement("div"); wrap.className = "exp-track";
+  for (let i = 0; i < experiment.blocks; i++) {
+    const avoiding = i % 2 === 0 ? !!experiment.avoidFirst : !experiment.avoidFirst;
+    const seg = document.createElement("div");
+    seg.className = "exp-seg " + (avoiding ? "avoid" : "allow");
+    const done = Math.max(0, Math.min(experiment.blockDays, dayNo - i * experiment.blockDays));
+    const fill = document.createElement("i");
+    seg.appendChild(fill);
+    wrap.appendChild(seg);
+    // set after insertion so the width animates in rather than appearing
+    requestAnimationFrame(() => { fill.style.width = (done / experiment.blockDays) * 100 + "%"; });
+  }
+  s.appendChild(wrap);
+  const cap = document.createElement("div"); cap.className = "exp-cap";
+  addEl(cap, "span", `Day ${dayNo} of ${experimentTotalDays(experiment)}`);
+  addEl(cap, "span", `${experiment.blockDays}-day stretches`);
+  s.appendChild(cap);
 }
 
 // The verdict, and what it rests on. Never a claim the numbers don't carry.
@@ -5701,24 +5794,25 @@ function experimentResultInto(s, res, f) {
     addEl(b, "div", value, "recap-val"); addEl(b, "div", label, "recap-lbl");
     r.appendChild(b); list.appendChild(r);
   };
-  row(f.emoji, `days you did (${res.withN})`, res.withN ? fmt(res.withAvg) : "—");
-  row("🚫", `days you didn't (${res.withoutN})`, res.withoutN ? fmt(res.withoutAvg) : "—");
+  const days = (n) => `${n} day${n === 1 ? "" : "s"}`;
+  row(f.emoji, `on days you did · ${days(res.withN)}`, res.withN ? `${fmtAvg(res.withAvg)} a day` : "—");
+  row("🚫", `on days you didn't · ${days(res.withoutN)}`, res.withoutN ? `${fmtAvg(res.withoutAvg)} a day` : "—");
 
   const line = addEl(s, "p", "", "sub");
   if (res.verdict === "thin") {
     line.innerHTML = `Not enough either side to say anything yet — it takes <b>${EXP_MIN_SIDE}</b> logged days of each.`;
   } else if (res.verdict === "tooClose") {
-    line.innerHTML = `Too close to call. The gap is <b>${fmt(Math.abs(res.delta))}</b> a day, which is inside the noise of your own week.`;
+    line.innerHTML = `Too close to call. The gap is <b>${fmtAvg(Math.abs(res.delta))}</b> a day, which is inside the noise of your own week.`;
   } else {
     const dir = res.verdict === "lower" ? "lower" : "higher";
     // with nothing logged on the other side there's no percentage to quote, so
     // say what actually happened instead of dividing by zero
     const scale = res.pct == null
-      ? `${fmt(Math.abs(res.delta))} a day, against none at all on the days you didn't`
-      : `${fmt(Math.abs(res.delta))} a day, about ${Math.abs(res.pct)}%`;
+      ? `${fmtAvg(Math.abs(res.delta))} a day, against none at all on the days you didn't`
+      : `${fmtAvg(Math.abs(res.delta))} a day, about ${Math.abs(res.pct)}%`;
     line.innerHTML = `On days you ${f.phrase}, your count ran <b>${dir}</b> — ${scale}.`;
   }
-  addEl(s, "p", `Based on ${res.matched} answered days that were also logged. This is arithmetic over your own history, not a trial — everything else in your life moved too.`, "card-empty");
+  addEl(s, "p", `Based on ${res.matched} answered day${res.matched === 1 ? "" : "s"} that ${res.matched === 1 ? "was" : "were"} also logged. This is arithmetic over your own history, not a trial — everything else in your life moved too.`, "card-empty");
 }
 
 function openExperimentSetup() {
@@ -5747,7 +5841,7 @@ function openExperimentSetup() {
     const lenChips = pick("How long is each stretch?", [{ value: 3, text: "3 days" }, { value: 7, text: "a week" }, { value: 14, text: "2 weeks" }], "blockDays");
     const blockChips = pick("How many stretches?", [2, 4].map((n) => ({ value: n, text: () => `${n} (${n * draft.blockDays} days)` })), "blocks");
 
-    const preview = addEl(s, "p", "", "sub");
+    const preview = addEl(s, "p", "", "sub exp-preview");
     const warn = addEl(s, "p", "", "card-empty");
     const go = makeBtn("Start", "primary", () => {
       if (!draft.factor) { toast("Pick something to test first"); return; }
@@ -5805,15 +5899,11 @@ function reviewCard(parent, title) {
 
 // "3 fewer a day than last month" reads better than a percentage nobody can
 // picture, so lead with the count and keep the percentage as the aside.
-function reviewDelta(cur, prev) {
+function reviewDelta(cur, prev, prevLabel) {
   if (prev == null || prev.n < REVIEW_MIN_DAYS) return null;
   const d = round2(cur.avg - prev.avg);
-  if (Math.abs(d) < 0.05) return { text: "about the same", cls: "flat" };
-  const pct = prev.avg > 0 ? Math.round(Math.abs((cur.avg - prev.avg) / prev.avg) * 100) : null;
-  return {
-    text: `${fmt(Math.abs(d))} ${d < 0 ? "fewer" : "more"} a day${pct == null ? "" : ` (${pct}%)`}`,
-    cls: d < 0 ? "down" : "up",
-  };
+  if (Math.abs(d) < 0.05) return { text: `same as ${prevLabel}`, cls: "flat" };
+  return { text: `${d < 0 ? "▼" : "▲"} ${fmtAvg(Math.abs(d))} vs ${prevLabel}`, cls: d < 0 ? "down" : "up" };
 }
 
 function openReview(scope) {
@@ -5843,15 +5933,12 @@ function openReview(scope) {
   // headline — the three numbers the whole stretch comes down to
   const head = reviewCard(body, isYear ? "Your year so far" : "The month so far");
   const grid = document.createElement("div"); grid.className = "insights-grid"; head.appendChild(grid);
-  const delta = reviewDelta(sum, prev);
+  const prevLabel = isYear ? String(y - 1) : MONTH_SHORT[(m + 11) % 12];
+  const delta = reviewDelta(sum, prev, prevLabel);
   grid.appendChild(statTile(String(sum.n), sum.n === 1 ? "day logged" : "days logged"));
-  grid.appendChild(statTile(fmt(sum.avg), "average a day", delta ? { delta } : {}));
+  grid.appendChild(statTile(fmtAvg(sum.avg), "average a day", delta ? { delta } : {}));
   grid.appendChild(statTile(fmt(sum.total), "logged in total"));
   if (hasGoal()) grid.appendChild(statTile(`${sum.under}/${sum.n}`, "days under goal", { good: sum.under * 2 >= sum.n }));
-  if (delta) {
-    addEl(head, "div", "", "wk-callout").innerHTML =
-      `Against ${isYear ? "last year" : "last month"}: <b>${delta.text}</b>.`;
-  }
 
   // did it move across itself — the question a look-back is actually asking
   const halves = halvesCompare(history, from, to, g);
@@ -5860,8 +5947,9 @@ function openReview(scope) {
     const d = halves.deltaAvg;
     const word = Math.abs(d) < 0.05 ? "held steady" : d < 0 ? "came down" : "drifted up";
     const line = addEl(c, "div", "", "wk-callout");
-    line.innerHTML = `The ${isYear ? "year" : "month"} <b>${word}</b> — ${fmt(halves.first.avg)} a day in the first half, <b>${fmt(halves.second.avg)}</b> in the second.`;
-    addEl(c, "div", `${halves.first.n} and ${halves.second.n} logged days.`, "card-empty");
+    line.innerHTML = `The ${isYear ? "year" : "month"} <b>${word}</b> — ${fmtAvg(halves.first.avg)} a day in the first half, <b>${fmtAvg(halves.second.avg)}</b> in the second.`;
+    const a = halves.first.n, b2 = halves.second.n;
+    addEl(c, "div", a === b2 ? `${a} logged days in each half.` : `${a} logged days, then ${b2}.`, "card-empty");
   }
 
   // month by month — a year's shape in one row
@@ -5889,7 +5977,7 @@ function openReview(scope) {
       });
       if (best) {
         addEl(c, "div", "", "wk-callout").innerHTML =
-          `Your quietest month was <b>${MONTH_SHORT[best.month]}</b>, averaging <b>${fmt(best.avg)}</b> a day over ${best.n} days.`;
+          `Your quietest month was <b>${MONTH_SHORT[best.month]}</b>, averaging <b>${fmtAvg(best.avg)}</b> a day over ${best.n} days.`;
       }
     }
   }
@@ -5937,12 +6025,12 @@ function openReview(scope) {
     }
     if (ho) {
       const line = addEl(c, "div", "", "wk-callout");
-      line.innerHTML = `On days you did <b>${ho.name}</b> you logged <b>${fmt(ho.onAvg)}</b>, against ${fmt(ho.offAvg)} otherwise.`;
+      line.innerHTML = `On days you did <b>${ho.name}</b> you logged <b>${fmtAvg(ho.onAvg)}</b> a day, against ${fmtAvg(ho.offAvg)} otherwise.`;
       addEl(c, "div", `${ho.onN} days with, ${ho.offN} without — your own history, not a rule.`, "card-empty");
     }
   }
 
-  addEl(body, "p", isYear ? "A year of showing up. That's the whole thing." : "One month at a time. You're doing the work.", "sub");
+  addEl(body, "p", isYear ? "A year of showing up. That's the whole thing." : "One month at a time. You're doing the work.", "rv-foot");
   staggerIn(body, 60, 8);
   el.reviewOverlay.classList.add("show");
 }

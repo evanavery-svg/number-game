@@ -5,6 +5,8 @@
 
 function round2(n) { return Math.round(n * 100) / 100; }
 function fmt(n) { return String(round2(Number(n))); }   // trims trailing zeros: 12.5, 13, 0.25
+// An average earns one decimal, not two: "3.9 a day" reads, "3.86 a day" is noise.
+function fmtAvg(n) { return String(Math.round(Number(n) * 10) / 10); }
 function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
 
 function hourLabel(h) {
@@ -1115,7 +1117,7 @@ if (typeof module !== "undefined" && module.exports) {
     reviewSummary, monthBuckets, halvesCompare,
     experimentVerdict, experimentPhase,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
-    round2, fmt, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
+    round2, fmt, fmtAvg, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
     goalPerformance, taperReady, projectZero, zeroStreak,

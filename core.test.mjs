@@ -1228,3 +1228,10 @@ test("experimentPhase marks days past the end as done, not live", () => {
   assert.equal(ph("2026-03-28"), "done", "and stays done however late you come back");
   assert.ok(!["avoid", "allow"].includes(ph("2026-03-07")), "nothing past the end is askable");
 });
+
+test("fmtAvg gives an average one decimal, trimmed", () => {
+  assert.equal(core.fmtAvg(3.86), "3.9");
+  assert.equal(core.fmtAvg(4), "4");
+  assert.equal(core.fmtAvg(0.04), "0");
+  assert.equal(core.fmtAvg(2.25), "2.3");
+});
