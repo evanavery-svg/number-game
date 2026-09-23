@@ -675,6 +675,89 @@ check("number stays centred in the ring after End Day", centred);
   await ctx11.close();
 }
 
+// motion regressions: what moves, moves through real states
+{
+  const ctx12 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p12 = await ctx12.newPage();
+  p12.on("pageerror", (e) => errors.push("motion: " + String(e)));
+  await p12.addInitScript((dk) => {
+    const hist = [];
+    for (let i = 60; i >= 1; i--) {
+      const x = new Date(); x.setDate(x.getDate() - i);
+      const iso = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      hist.push({ date: iso, label: iso, total: 2 + (i % 4), taps: 3, endedAt: new Date(x.getFullYear(), x.getMonth(), x.getDate(), 22).toISOString(), note: "", tapTimes: [] });
+    }
+    localStorage.setItem("count.history", JSON.stringify(hist));
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "8");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.today", "2");
+    localStorage.setItem("count.taps", "4");
+    localStorage.setItem("count.qaHintSeen", "true");
+    localStorage.setItem("count.backupAt", String(Date.now()));
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p12.goto(BASE);
+  await p12.waitForTimeout(900);
+
+  // one tap only ever shows the old figure or the new one — never 2.23
+  const seen = await p12.evaluate(async () => {
+    const out = new Set();
+    document.getElementById("addBtn").click();
+    for (let i = 0; i < 30; i++) { out.add(document.getElementById("total").textContent); await new Promise((r) => requestAnimationFrame(r)); }
+    return [...out];
+  });
+  check("a single tap shows no in-between figures", seen.every((v) => v === "2" || v === "2.5"));
+  await p12.waitForTimeout(400);
+  check("the roll leaves nothing behind", (await p12.evaluate(() => document.querySelectorAll(".value-ghost").length)) === 0);
+
+  // a bigger jump counts, but only through values the count could hold
+  const counted = await p12.evaluate(async () => {
+    const out = new Set();
+    today = 7; save(KEY_TODAY, 7); renderTop(true);
+    for (let i = 0; i < 60; i++) { out.add(document.getElementById("total").textContent); await new Promise((r) => requestAnimationFrame(r)); }
+    return [...out];
+  });
+  check("a big jump counts through real steps only", counted.every((v) => Number.isInteger(parseFloat(v) * 2)));
+
+  // Insights: tabs don't resize the panel, and a range flip doesn't rebuild it from black
+  await p12.evaluate(() => openInsights());
+  await p12.waitForTimeout(1500);
+  const panelH = () => p12.evaluate(() => Math.round(document.querySelector("#insightsOverlay .panel").getBoundingClientRect().height));
+  const h1 = await panelH();
+  await p12.evaluate(() => [...document.querySelectorAll("#segRow .seg-btn")].find((x) => x.textContent === "Habits").click());
+  await p12.waitForTimeout(400);
+  check("switching tabs keeps the panel's height", Math.abs((await panelH()) - h1) <= 1);
+  await p12.evaluate(() => [...document.querySelectorAll("#segRow .seg-btn")].find((x) => x.textContent === "Overview").click());
+  await p12.waitForTimeout(500);
+  const flip = await p12.evaluate(async () => {
+    const staggered = () => document.querySelectorAll("#segOverview .stg-in, #insightsGrid .stg-in").length;
+    const before = staggered();
+    [...document.querySelectorAll("#rangeRow .range-chip")].find((x) => x.textContent === "7d").click();
+    await new Promise((r) => setTimeout(r, 30));
+    return { before, after: staggered(), tiles: document.querySelectorAll("#insightsGrid .tile").length };
+  });
+  check("a range flip updates in place", flip.after <= flip.before && flip.tiles > 0);
+  check("hidden cards don't carry a stale entrance", flip.before === 0);
+  await p12.waitForTimeout(700);
+  check("the rolled tiles land on the new values", await p12.evaluate(() =>
+    [...document.querySelectorAll("#insightsGrid .tile-lbl")].some((l) => /Last 7 days/.test(l.textContent))));
+  await p12.evaluate(() => closeInsights());
+  await p12.waitForTimeout(400);
+
+  // sheets push without leaving the outgoing page behind
+  await p12.evaluate(() => openSettings());
+  await p12.waitForTimeout(500);
+  await p12.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => /Features/.test(b.textContent)).click());
+  await p12.waitForTimeout(600);
+  check("a sheet push cleans up after itself", await p12.evaluate(() =>
+    document.querySelectorAll(".sheet-ghost").length === 0 && document.querySelector("#sheet h3").textContent === "Features"));
+  await ctx12.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

@@ -391,7 +391,10 @@
       font-variant-numeric: tabular-nums;
       transition: color var(--dur-slow) ease;
     }
-    .total .value.bump { animation: bump .18s ease; }
+    .ring-center { position: relative; }
+    .ring-center.bump { animation: bump .18s ease; }
+    /* the outgoing figure in a roll; abspos in a flex box sits centred on its own */
+    .value-ghost { position: absolute; pointer-events: none; }
     @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 100% { transform: scale(1); } }
 
     /* Goal is a ceiling: ring, halo + number shift colour as you near and pass it. */
@@ -607,6 +610,13 @@
     .seg-row { display: flex; gap: var(--sp-1); padding: var(--sp-1); margin: 0 var(--sp-4) 10px; background: var(--surface); border-radius: 12px; }
     .seg-btn { flex: 1; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: var(--fs-small); font-weight: 700; border-radius: 9px; padding: 9px 0; transition: background var(--dur-base) ease, color var(--dur-base) ease; }
     .seg-btn.on { background: var(--surface-2); color: var(--text); }
+    /* Insights' tabs share one pill that slides to whichever is active */
+    #segRow { position: relative; }
+    #segRow .seg-btn { position: relative; z-index: 1; }
+    #segRow .seg-btn.on { background: transparent; animation: none; }
+    .seg-ind { position: absolute; top: var(--sp-1); bottom: var(--sp-1); left: 0; width: 0; z-index: 0;
+      background: var(--surface-2); border-radius: 9px; pointer-events: none;
+      transition: transform 0.34s var(--ease-panel), width 0.34s var(--ease-panel); }
     /* the same control inside a sheet: no panel side-margins, and inverted
        fills so the selected segment still reads against the sheet surface */
     #sheet .seg-row { margin: var(--sp-2) 0 var(--sp-3); background: var(--surface-2); }
@@ -620,7 +630,7 @@
     }
     .ladder-sug b { color: var(--accent); }
     .ladder-sug-sub { display: block; margin-top: 3px; font-size: var(--fs-micro); color: var(--muted); }
-    .seg-page { animation: itemIn 0.32s var(--ease-out); }
+    /* tabs move with a directional slide in showSegment, not a fade of their own */
     /* "more stats" reveal keeps the headline grid scannable */
     .more-stats { display: block; width: 100%; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: var(--fs-small); font-weight: 700; padding: 2px 0 var(--sp-3); }
     .more-stats:active { color: var(--text); }
@@ -694,6 +704,9 @@
       transition: transform var(--dur-panel) var(--ease-panel);
     }
     .overlay.show .sheet { transform: translateY(0); }
+    .sheet { position: relative; }
+    /* the page being left, held over the new one for the length of its exit */
+    .sheet-ghost { position: absolute; left: 0; right: 0; pointer-events: none; }
     /* one sheet becoming another: the height eases rather than jumping */
     .sheet.morphing { transition: transform var(--dur-panel) var(--ease-panel), height 0.34s var(--ease-panel); overflow-y: hidden; }
     .sheet::before { content: ""; display: block; width: 38px; height: 5px; border-radius: 999px; background: var(--surface-2); margin: 0 auto var(--sp-4); }
@@ -791,6 +804,9 @@
       transition: transform var(--dur-panel) var(--ease-panel);
     }
     .panel-overlay.show .panel { transform: translateY(0); }
+    /* tabs change what's inside, not the panel — so it holds its height instead
+       of jumping hundreds of pixels when a short tab follows a tall one */
+    #insightsOverlay .panel { height: 92vh; height: 92dvh; }
     .panel::before { content: ""; display: block; width: 38px; height: 5px; border-radius: 999px; background: var(--surface-2); margin: 10px auto 0; }
     .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px var(--sp-2); }
     .panel-head h3 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.4px; }
@@ -1787,7 +1803,7 @@
       100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
     }
     /* undo: the number dips back down — the reverse of the tap bump */
-    .total .value.unbump { animation: unbump .38s var(--ease-out); }
+    .ring-center.unbump { animation: unbump .38s var(--ease-out); }
     @keyframes unbump { 0% { transform: scale(1); } 40% { transform: scale(0.92) translateY(3px); opacity: 0.55; } 100% { transform: scale(1); opacity: 1; } }
     /* crossing into a new colour zone gets a beat so the change registers */
     .ring-wrap.flash .ring { animation: ringFlash .7s ease-out; }
@@ -1821,16 +1837,16 @@
 
     /* Respect the OS "Reduce Motion" setting */
     @media (prefers-reduced-motion: reduce) {
-      .toast.show, .total .value.unbump, .ring-wrap.flash .ring, .total .meta.pop, .cal-day.wave, .year-cell.wave,
+      .toast.show, .ring-center.unbump, .ring-wrap.flash .ring, .total .meta.pop, .cal-day.wave, .year-cell.wave,
       .cal.from-left, .cal.from-right, .seg-btn.on, .tile.shine::after, .sheet-btn.primary.shine::after, .theme-swatch.on .theme-dot,
-      .total .value.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
+      .ring-center.bump, .ring-wrap.nudge, .ring-wrap.pulse, .hist-row.enter, .ripple, .lock.shake .lock-dots,
       .tree-top, .tree-svg, .tree-scene.grew .canopy, .tree-scene.prestige .tree-svg, .tree-scene.prestige::before, .tree-sparkles span,
       .stg-in, .confetti-bit, header, .since-strip, .total, .add-btn, .row, .version, .swipe-hint .arrow,
       .total[class*="spin-"] .ring-wrap::after, .pulse-strip, .trend-poly.draw,
       .mood-gate.show .mg-face, .mood-gate.show .mg-face .mg-emoji, .mg-face.chosen .mg-emoji, .mg-timer.tick, .mg-faces.nudge,
       .dg-emoji, .dg-text, .dg-hint,
       .gg-face, .gg-face.go, .gg-face.bad, .gg-face.fade, .gg-end, .gg-end-emoji, .gg-score.bump b { animation: none; }
-      .ring-prog, .sheet, .overlay, .ring-wrap, .ring-wrap.charging, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb, .sheet.morphing, .exp-seg i { transition: none; }
+      .ring-prog, .sheet, .overlay, .ring-wrap, .ring-wrap.charging, .ring-wrap::before, .bar, .water-bar i, .since-bar i, .lock, .tree-bar i, .wk-bar, .tod-bar, .mood-spark .ms-bar, .mood-gate, .day-gate, .mg-bar i.run, .game-gate, .breath-orb, .sheet.morphing, .exp-seg i, .seg-ind { transition: none; }
       .theme-fade, .theme-fade * { transition: none !important; }
     }
   </style>
@@ -1921,7 +1937,7 @@
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.53</div>
+  <div class="version">v10.54</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

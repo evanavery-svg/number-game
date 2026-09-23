@@ -850,7 +850,7 @@ function recordDailyMood(v, faceEl) {
   el.mgTimer.style.opacity = "0";
   // an experiment rides along on this screen rather than asking for one of its
   // own — the day's interruption is already spent here
-  setTimeout(() => { if (experimentDue()) showExperimentStep(); else hideMoodGate(); }, reduceMotion() ? 0 : 640);
+  setTimeout(() => { if (experimentDue()) showExperimentStep(true); else hideMoodGate(); }, reduceMotion() ? 0 : 640);
 }
 
 // ---- the experiment's daily question ----
@@ -888,7 +888,7 @@ function showExperimentGate() {
   requestAnimationFrame(() => el.moodGate.classList.add("show"));
   showExperimentStep();
 }
-function showExperimentStep() {
+function showExperimentStep(fromMood) {
   const f = experimentFactor();
   if (!f) { hideMoodGate(); return; }
   const askedFor = moodGateKey();
@@ -897,9 +897,13 @@ function showExperimentStep() {
   // no countdown on this question, so neither half of it should be sitting there
   el.mgTimer.style.opacity = "0";
   if (el.mgBar.parentElement) el.mgBar.parentElement.style.display = "none";
-  el.mgTitle.textContent = `Did you ${f.phrase} today?`;
   const sub = document.querySelector(".mg-sub");
-  if (sub) sub.textContent = phase === "avoid" ? "You're on an avoid stretch — answer honestly either way" : "Answer honestly — either way is useful";
+  const title = `Did you ${f.phrase} today?`;
+  const subText = phase === "avoid" ? "You're on an avoid stretch — answer honestly either way" : "Answer honestly — either way is useful";
+  // handed over from the mood question, the heading changes words in view;
+  // opened straight onto this question, there's nothing to change from
+  if (fromMood) { swapText(el.mgTitle, title); if (sub) swapText(sub, subText); }
+  else { el.mgTitle.textContent = title; if (sub) sub.textContent = subText; }
   const faces = el.mgFaces;
   faces.textContent = "";
   faces.classList.remove("nudge");
@@ -1095,8 +1099,12 @@ function reduceMotion() { return window.matchMedia("(prefers-reduced-motion: red
 function staggerIn(container, step, cap) {
   if (reduceMotion() || !container) return;
   step = step || 35; cap = cap == null ? 14 : cap;
-  [...container.children].forEach((c, i) => {
-    c.style.setProperty("--stg", Math.min(i, cap) * step);
+  let i = 0;
+  [...container.children].forEach((c) => {
+    // Something hidden can't animate, so it never fired animationend and kept
+    // the class — then replayed a stale, delayed entrance whenever it appeared.
+    if (!c.getClientRects().length) return;
+    c.style.setProperty("--stg", Math.min(i++, cap) * step);
     c.classList.add("stg-in");
     c.addEventListener("animationend", () => c.classList.remove("stg-in"), { once: true });
   });
@@ -1248,27 +1256,102 @@ function numberColor() {
   return "";
 }
 
-// Feature 4: roll the big number up/down to its new value instead of snapping.
+// The big number, moving to its new value. A single tap rolls it like an
+// odometer — the old figure slides out as the new one slides in. A bigger jump
+// (a quick-add, the count-down after ending a day) counts, but only through
+// values the count could actually hold. It used to tween through every
+// two-decimal stop, so one half-step tap flickered 2 → 2.23 → 2.49 → 2.5 and the
+// number changed width on every frame.
 let countRAF = null;
 function setValue(target, animate) {
   if (countRAF) { cancelAnimationFrame(countRAF); countRAF = null; }
-  const start = parseFloat(el.total.textContent);
+  const node = el.total;
+  const shown = node.textContent;
+  const start = parseFloat(shown);
   if (!animate || reduceMotion() || !isFinite(start) || start === target) {
-    el.total.textContent = fmt(target); return;
+    node.textContent = fmt(target); return;
   }
-  const t0 = performance.now(), dur = 280;
+  const delta = target - start;
+  const unit = Math.max(Number(step) || 1, 0.25);
+  if (Math.abs(delta) <= unit + 1e-9) { rollNumber(node, shown, fmt(target), delta > 0 ? 1 : -1); return; }
+  const t0 = performance.now();
+  const dur = Math.min(720, 240 + (Math.abs(delta) / unit) * 35);
   const tick = (now) => {
     const p = Math.min(1, (now - t0) / dur);
-    const v = start + (target - start) * (1 - Math.pow(1 - p, 3));   // ease-out cubic
-    el.total.textContent = fmt(v);
+    const v = start + delta * (1 - Math.pow(1 - p, 3));   // ease-out cubic
+    node.textContent = p < 1 ? fmt(Math.round(v / unit) * unit) : fmt(target);
     if (p < 1) { countRAF = requestAnimationFrame(tick); }
-    else { el.total.textContent = fmt(target); countRAF = null; }
+    else countRAF = null;
   };
   countRAF = requestAnimationFrame(tick);
+}
+function rollNumber(node, fromText, toText, dir) {
+  const host = node.parentElement;
+  if (!host || !node.animate) { node.textContent = toText; return; }
+  host.querySelectorAll(".value-ghost").forEach((g) => g.remove());
+  const ghost = node.cloneNode(false);
+  ghost.removeAttribute("id");
+  ghost.classList.add("value-ghost");
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.textContent = fromText;
+  host.appendChild(ghost);
+  node.textContent = toText;
+  ghost.animate(
+    [{ transform: "none", opacity: 1 }, { transform: `translateY(${-dir * 60}%) scale(0.94)`, opacity: 0 }],
+    { duration: 200, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" }
+  ).onfinish = () => ghost.remove();
+  node.animate(
+    [{ transform: `translateY(${dir * 60}%) scale(0.94)`, opacity: 0 }, { transform: "none", opacity: 1 }],
+    { duration: 360, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+  );
 }
 
 // Count a stat-tile value up from zero on reveal. Keeps any suffix (%, ×) and
 // the target's decimal places; a non-numeric value (—) is set as-is.
+// Change a line of text by letting the old words leave before the new ones
+// arrive, rather than swapping them in the same frame.
+function swapText(node, text) {
+  if (!node || node.textContent === text) return;
+  if (reduceMotion() || !node.animate) { node.textContent = text; return; }
+  const out = node.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-6px)" }],
+    { duration: 140, easing: "ease-in", fill: "forwards" });
+  out.onfinish = () => {
+    node.textContent = text;
+    node.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+      { duration: 280, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+    out.cancel();   // the held fade-out would otherwise re-hide it once the fade-in ends
+  };
+}
+// Show something that was hidden by letting it rise in, instead of popping into
+// place and shoving everything under it down in one frame.
+function reveal(node, display) {
+  if (!node) return;
+  const hidden = node.style.display === "none";
+  node.style.display = display;
+  if (hidden && !reduceMotion() && node.animate) {
+    node.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+      { duration: 320, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+  }
+}
+
+// Roll a displayed number from what it said to what it now says, keeping any
+// suffix. Used where a value changes in place — flipping the Insights range —
+// so the figure visibly moves rather than blinking to the new one.
+function rollText(node, fromText, toText, dur) {
+  const re = /^(-?\d+(?:\.\d+)?)(.*)$/;
+  const a = re.exec(fromText || ""), b = re.exec(toText || "");
+  if (!a || !b || a[2] !== b[2] || reduceMotion() || a[1] === b[1]) { node.textContent = toText; return; }
+  const from = parseFloat(a[1]), to = parseFloat(b[1]), suffix = b[2];
+  const decimals = Math.max((a[1].split(".")[1] || "").length, (b[1].split(".")[1] || "").length);
+  const t0 = performance.now(); dur = dur || 420;
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const v = from + (to - from) * (1 - Math.pow(1 - p, 3));
+    node.textContent = (decimals ? v.toFixed(decimals) : String(Math.round(v))) + suffix;
+    if (p < 1) requestAnimationFrame(tick); else node.textContent = toText;
+  };
+  requestAnimationFrame(tick);
+}
 function countUpText(node, value, dur) {
   const m = /^(-?\d+(?:\.\d+)?)(.*)$/.exec(value);
   if (!m || reduceMotion()) { node.textContent = value; return; }
@@ -1426,11 +1509,33 @@ function renderSegRow() {
     b.type = "button";
     b.className = "seg-btn" + (insightSeg === sg.key ? " on" : "");
     b.textContent = sg.label;
-    b.addEventListener("click", () => { insightSeg = sg.key; showSegment(); buzz(6); });
+    b.addEventListener("click", () => {
+      if (insightSeg === sg.key) return;
+      const keys = segList().map((x) => x.key);
+      const dir = keys.indexOf(sg.key) > keys.indexOf(insightSeg) ? 1 : -1;
+      insightSeg = sg.key; showSegment({ dir }); buzz(6);
+    });
     row.appendChild(b);
   });
+  // one pill that slides between tabs, rather than each tab lighting up on its own
+  const ind = document.createElement("span");
+  ind.className = "seg-ind";
+  row.prepend(ind);
+  requestAnimationFrame(() => placeSegInd(false));
 }
-function showSegment() {
+function placeSegInd(animate) {
+  const row = el.segRow, ind = row.querySelector(".seg-ind"), on = row.querySelector(".seg-btn.on");
+  if (!ind || !on) return;
+  if (!animate || reduceMotion()) { ind.style.transition = "none"; }
+  ind.style.width = on.offsetWidth + "px";
+  ind.style.transform = `translateX(${on.offsetLeft}px)`;
+  if (!animate || reduceMotion()) { void ind.offsetWidth; ind.style.transition = ""; }
+}
+// A tab slides in from the side it sits on. The page used to fade in while each
+// card inside it faded in too; two fades multiplied left the panel black for
+// the first ~100ms. Now there's one motion, and only when a tab actually changes.
+function showSegment(opts) {
+  opts = opts || {};
   if (!segList().some((s) => s.key === insightSeg)) insightSeg = "overview";
   SEGMENTS.forEach((sg) => {
     const page = document.getElementById(sg.page);
@@ -1442,9 +1547,33 @@ function showSegment() {
   const body = el.insightsOverlay.querySelector(".panel-body");
   if (body) body.scrollTop = 0;
   renderSegment();   // build only the tab now on screen
-  // the tab's cards cascade in behind the page fade
   const activePage = document.getElementById((segList().find((s) => s.key === insightSeg) || SEGMENTS[0]).page);
-  if (activePage) staggerIn(activePage, 45, 10);
+  placeSegInd(!!opts.dir);
+  if (activePage && opts.dir && !reduceMotion() && activePage.animate) {
+    // starts partly visible: from zero, the first painted frame was a black panel
+    activePage.animate(
+      [{ opacity: 0.35, transform: `translateX(${opts.dir * 28}px)` }, { opacity: 1, transform: "none" }],
+      { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+    );
+    drawLine(activePage);
+    activePage.querySelectorAll(".chart-card").forEach((c) => { growBars(c, ".wk-bar"); growBars(c, ".tod-bar"); growBars(c, ".ms-bar"); });
+  }
+}
+// Flipping 7d / 30d / 90d changes numbers, not screens. It used to rebuild the
+// panel and replay every entrance from black; now the tiles roll from their old
+// values to their new ones and the trend line redraws, and nothing else moves.
+function changeRange() {
+  const grids = [el.insightsGrid, el.insightsGrid2];
+  const before = grids.map((g) => [...g.querySelectorAll(".tile-val")].map((v) => v.textContent));
+  renderRangeRow();
+  renderSegment();
+  grids.forEach((g, gi) => {
+    [...g.querySelectorAll(".tile-val")].forEach((v, i) => {
+      const was = before[gi][i];
+      if (was != null) { const now = v.textContent; v.textContent = was; rollText(v, was, now); }
+    });
+  });
+  drawLine(el.trendCard);
 }
 function renderRangeRow() {
   const row = el.rangeRow;
@@ -1454,7 +1583,11 @@ function renderRangeRow() {
     b.type = "button";
     b.className = "range-chip" + (insightRange === r.n ? " on" : "");
     b.textContent = r.t;
-    b.addEventListener("click", () => { insightRange = r.n; renderInsights(); });
+    b.addEventListener("click", () => {
+      if (insightRange === r.n) return;
+      insightRange = r.n; buzz(6);
+      changeRange();
+    });
     row.appendChild(b);
   });
 }
@@ -3047,7 +3180,7 @@ function renderPaceToday() {
   const { hours } = hourHistogram(allTapTimes());
   const copy = paceCopy(dayProjection(hours, new Date().getHours(), today, goal, avgDaily), today, goal);
   if (!copy) { line.style.display = "none"; return; }
-  line.style.display = "block";
+  reveal(line, "block");
   line.className = "pace-today " + copy.cls;
   line.innerHTML = copy.text.replace(/(\d[\d.,]*)/g, "<b>$1</b>");
   line.setAttribute("aria-label", copy.text);
@@ -3129,7 +3262,7 @@ function applyDelta(amt, confirmed) {
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
   save(KEY_ACT_DATE, sessionDate());   // remember which day this activity belongs to (past-midnight taps still count as the day before)
   buzz(amt > 0 ? 15 : 10); click();
-  el.total.classList.remove("bump"); void el.total.offsetWidth; el.total.classList.add("bump");
+  { const rc = el.total.parentElement; rc.classList.remove("bump"); void rc.offsetWidth; rc.classList.add("bump"); }
   if (hasGoal() && amt > 0) {
     if (prev < goal && today === goal) atGoalHeadsUp();        // landed exactly on the limit
     else if (prev <= goal && today > goal) warnOver();          // crossed over it
@@ -3530,9 +3663,9 @@ function openRenameVitamin(oldName, onDone) {
         else { toast(vitaminsList.includes(nn) ? "Already on your list" : "Enter a name"); return; }
       } else if (!nn) { toast("Enter a name"); return; }
       setVitaminSched(target, [...sel]);
-      openVitamins();
+      sheetNavDir = -1; openVitamins();
     }));
-    s.appendChild(makeBtn("Cancel", "ghost", () => { openVitamins(); }));
+    s.appendChild(makeBtn("Cancel", "ghost", sheetBack(openVitamins)));
     setTimeout(() => { inp.focus(); inp.select(); }, 50);
   });
 }
@@ -3545,7 +3678,7 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
-  if (!reduceMotion()) { el.total.classList.remove("unbump"); void el.total.offsetWidth; el.total.classList.add("unbump"); }
+  if (!reduceMotion()) { const rc = el.total.parentElement; rc.classList.remove("unbump"); void rc.offsetWidth; rc.classList.add("unbump"); }
   renderTop(true);
   toast("Undone");
 }
@@ -4111,13 +4244,29 @@ function undoEndDay() {
 // sheet dropped out of view and rose back for every sub-page. When a sheet is
 // already up, the content swaps in place and the sheet eases to its new height.
 let sheetMorph = 0;
+// Which way the next sheet swap travels: forward pushes in from the right, a
+// Back pops in from the left. Reset after every swap so forward is the default.
+let sheetNavDir = 1;
+function sheetBack(fn) { return () => { sheetNavDir = -1; fn(); }; }
 function openSheet(builder) {
   const sheet = el.sheet;
   const morph = el.overlay.classList.contains("show") && !reduceMotion();
+  const dir = sheetNavDir; sheetNavDir = 1;
   const from = morph ? sheet.getBoundingClientRect().height : 0;
+  const titleOf = () => { const h = sheet.querySelector(":scope > h3"); return h ? h.textContent : ""; };
+  const oldTitle = titleOf();
+  const oldScroll = sheet.scrollTop;
+  sheet.querySelectorAll(":scope > .sheet-ghost").forEach((g) => g.remove());
+  // Keep the outgoing page alive for a moment so it can leave rather than blink
+  // out. Clearing it first left a blank sheet while the new one faded in.
+  const ghost = morph ? document.createElement("div") : null;
+  if (ghost) { while (sheet.firstChild) ghost.appendChild(sheet.firstChild); }
   sheet.textContent = "";
   builder(sheet);
   el.overlay.classList.add("show");
+  // the same heading means the page redrew itself (a list item added, say),
+  // which shouldn't look like going anywhere
+  const navigating = morph && titleOf() !== oldTitle;
   // whatever an earlier swap left mid-flight, start this one from rest
   const token = ++sheetMorph;
   sheet.style.height = "";
@@ -4143,7 +4292,28 @@ function openSheet(builder) {
       setTimeout(settle, 500);             // in case transitionend never arrives
     }
   }
-  staggerIn(sheet, 22, 10);   // fast content rise so forms feel snappy, not slow
+  if (navigating && ghost && ghost.animate) {
+    const cs = getComputedStyle(sheet);
+    ghost.className = "sheet-ghost";
+    ghost.style.cssText = `top:${-oldScroll}px;padding:${cs.paddingTop} ${cs.paddingRight} 0 ${cs.paddingLeft}`;
+    sheet.appendChild(ghost);
+    // The two pages barely overlap: the old one is gone from view by ~110ms,
+    // the new one starts at 80ms. Crossing any longer read as two pages of text
+    // printed over each other.
+    ghost.animate(
+      [{ opacity: 1, transform: "none" }, { opacity: 0, offset: 0.6 }, { opacity: 0, transform: `translateX(${-dir * 40}px)` }],
+      { duration: 180, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" }
+    ).onfinish = () => ghost.remove();
+    [...sheet.children].forEach((c) => {
+      if (c === ghost) return;
+      c.animate(
+        [{ opacity: 0, transform: `translateX(${dir * 40}px)` }, { opacity: 1, transform: "none" }],
+        { duration: 300, delay: 80, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "backwards" }
+      );
+    });
+  } else if (!morph) {
+    staggerIn(sheet, 22, 10);   // a sheet arriving from nothing rises in
+  }
   // the primary action catches a single light sweep once the sheet has settled
   if (!reduceMotion()) el.sheet.querySelectorAll(".sheet-btn.primary").forEach((b) => { b.style.setProperty("--sh", 380); b.classList.add("shine"); });
 }
@@ -4288,7 +4458,7 @@ function openSettings() {
   });
 }
 // Every sub-sheet offers its way back, so the menu is never a dead end.
-function backToSettings() { openSettings(); }
+function backToSettings() { sheetNavDir = -1; openSettings(); }
 
 function openTrackingSettings() {
   openSheet((s) => {
@@ -4561,7 +4731,7 @@ function openClosedAppGuide() {
     s.appendChild(makeBtn("Copy quick-add link", "", () => copyText(base + "?add=" + fmt(step), "Quick-add link copied")));
 
     addEl(s, "p", "On Android the same thing works with any automation app that can open a URL at a set time.", "sub");
-    s.appendChild(makeBtn("Back", "ghost", () => { openReminderSettings(); }));
+    s.appendChild(makeBtn("Back", "ghost", sheetBack(openReminderSettings)));
   });
 }
 
@@ -5286,7 +5456,7 @@ function renderPendingCard() {
   if (!el.pendingCard) return;
   if (!pending) { el.pendingCard.style.display = "none"; return; }
   el.pendingText.textContent = `Finish ${pendingWord()} · ${fmt(pending.total)} so far`;
-  el.pendingCard.style.display = "flex";
+  reveal(el.pendingCard, "flex");
 }
 
 function hasActivityToday() {
