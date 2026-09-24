@@ -432,10 +432,34 @@ function projectTrend(points, target) {
 
 // Completed runs of consecutive at-or-under-goal days, the in-progress one, and
 // the best ever — the raw material for "where your streaks usually break".
+// A goal can be one number for every day, a list holding one per entry, or a
+// function of the day's date. The last two let a weekly budget give each day its
+// own allowance, while a daily goal keeps passing a plain number exactly as before.
+function goalAt(goal, i, date) {
+  if (typeof goal === "function") return goal(date);
+  if (Array.isArray(goal)) return goal[i];
+  return goal;
+}
+
+// A weekly budget, day by day. A day may use whatever the week still has once
+// the days before it in the same Sunday–Saturday week are counted — so a big day
+// with budget to spare is fine, and only the day that pushes the week past its
+// budget counts as over. Looks back at most six days, so it's cheap enough to ask
+// for every cell of a year grid.
+function weekAllowance(budget, totals, ds) {
+  const d = new Date(ds + "T12:00:00");
+  let before = 0;
+  for (let k = d.getDay(); k > 0; k--) {
+    const p = new Date(d); p.setDate(d.getDate() - k);
+    before += (totals && totals[isoLocal(p)]) || 0;
+  }
+  return round2(budget - before);
+}
+
 function underRuns(totals, goal) {
   const runs = []; let cur = 0;
-  (totals || []).forEach((t) => {
-    if (t <= goal) cur++;
+  (totals || []).forEach((t, i) => {
+    if (t <= goalAt(goal, i)) cur++;
     else { if (cur > 0) runs.push(cur); cur = 0; }
   });
   const best = Math.max(cur, runs.length ? Math.max.apply(null, runs) : 0);
@@ -452,7 +476,7 @@ function streakWithGrace(totals, goal, graceMax) {
   const cap = Math.max(0, graceMax | 0);
   let streak = 0, graced = 0;
   for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i] <= goal) streak++;
+    if (arr[i] <= goalAt(goal, i)) streak++;
     else if (graced < cap) graced++;   // bridge one slip; don't count it, don't reset
     else break;
   }
@@ -610,8 +634,9 @@ function lifetime(entries) {
 function nextTarget(totals, goal, seenWins) {
   const xs = totals || [];
   const streak = zeroStreak(xs);
+  const now = Array.isArray(goal) ? goal[goal.length - 1] : goal;   // today's limit
   // the next zero-day milestone, if zero is the target
-  if (goal === 0 || streak > 0) {
+  if (now === 0 || streak > 0) {
     const seen = seenWins || [];
     for (const w of ZERO_WINS) {
       if (streak < w && seen.indexOf(w) === -1) {
@@ -620,10 +645,10 @@ function nextTarget(totals, goal, seenWins) {
     }
   }
   // otherwise: beating the longest run of days at or under the goal
-  if (!(goal >= 0)) return null;
+  if (!(now >= 0)) return null;
   let best = 0, run = 0, cur = 0;
-  xs.forEach((x) => { if (x <= goal) { run++; if (run > best) best = run; } else run = 0; });
-  for (let i = xs.length - 1; i >= 0 && xs[i] <= goal; i--) cur++;
+  xs.forEach((x, i) => { if (x <= goalAt(goal, i)) { run++; if (run > best) best = run; } else run = 0; });
+  for (let i = xs.length - 1; i >= 0 && xs[i] <= goalAt(goal, i); i--) cur++;
   if (best > 0 && cur < best) return { kind: "bestStreak", need: best - cur + 1, at: best };
   return null;
 }
@@ -713,10 +738,11 @@ function dayRisk(entries, moods, goal, now) {
   }
 
   // 4. yesterday went over
-  if (goal > 0) {
-    const yday = sessionDate(new Date(t - DAY));
+  const yday = sessionDate(new Date(t - DAY));
+  const yGoal = goalAt(goal, 0, yday);
+  if (yGoal > 0) {
     const y = days.find((d) => d.date === yday);
-    if (y && y.total > goal) reasons.push({ key: "yesterday", total: round2(y.total) });
+    if (y && y.total > yGoal) reasons.push({ key: "yesterday", total: round2(y.total) });
   }
 
   if (reasons.length < 2) return null;               // one signal is noise — say nothing
@@ -735,9 +761,11 @@ function periodStats(entries, from, to, goal) {
   const n = inRange.length;
   if (!n) return { n: 0, avg: 0, under: 0, underPct: 0, total: 0, bestStreak: 0 };
   const totals = inRange.map((d) => d.total);
-  const under = goal > 0 || goal === 0 ? totals.filter((x) => x <= goal).length : 0;
+  const has = typeof goal === "function" || goal > 0 || goal === 0;
+  const ok = (d) => d.total <= goalAt(goal, 0, d.date);
+  const under = has ? inRange.filter(ok).length : 0;
   let best = 0, run = 0;
-  totals.forEach((x) => { if (x <= goal) { run++; if (run > best) best = run; } else run = 0; });
+  inRange.forEach((d) => { if (has && ok(d)) { run++; if (run > best) best = run; } else run = 0; });
   return {
     n,
     avg: round2(totals.reduce((s, x) => s + x, 0) / n),
@@ -1117,7 +1145,7 @@ if (typeof module !== "undefined" && module.exports) {
     reviewSummary, monthBuckets, halvesCompare,
     experimentVerdict, experimentPhase,
     TREE_MILESTONE_PCTS, treeMilestoneHit,
-    round2, fmt, fmtAvg, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
+    round2, fmt, fmtAvg, goalAt, weekAllowance, dayLabel, hourLabel, isoLocal, DAY_CUTOFF_HOUR, sessionDate, weekKey,
     partsMs, bigSince, durLabel, HR, DAY, YR, MILES, nextMile, prevMileMs, mileList,
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
     goalPerformance, taperReady, projectZero, zeroStreak,

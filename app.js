@@ -274,6 +274,11 @@ let plans = load(KEY_PLANS, []);            // if-then plans
 let urgeWins = load(KEY_URGE_WINS, []);     // urges ridden out from the counter
 let paceOn = load(KEY_PACE_ON, true);       // a way out for anyone it lands badly for
 let experiment = load(KEY_EXPERIMENT, null);   // the factor currently under test
+// Notes written on a good day for a harder one. Shown when the day's risk
+// nudge fires, and on the over-goal sheet — the moments they were written for.
+const KEY_HARD_NOTES = "count.hardNotes";       // [{ id, text, at }]
+const KEY_HARD_NOTE_ASK = "count.hardNoteAsk";  // ISO of the last time a note was offered
+let hardNotes = load(KEY_HARD_NOTES, []);
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
 // One per day, picked by date like the theme rotation — holds still while
@@ -290,13 +295,13 @@ let pulseIdx = null;
 // on that, or renderTop pays for a year of history on every press.
 let pulseCache = { key: null, ctx: null };
 function pulseContext() {
-  const key = history.length + ":" + goal + ":" + goalOn;
+  const key = history.length + ":" + goal + ":" + goalOn + ":" + goalMode;
   if (pulseCache.key !== key) {
     const totals = history.map((d) => d.total);
     pulseCache = { key, ctx: {
-      compare: hasGoal() ? comparePeriods(history, 30, goal) : comparePeriods(history, 30, Infinity),
+      compare: hasGoal() ? comparePeriods(history, 30, goalResolver()) : comparePeriods(history, 30, Infinity),
       consistency: consistency(totals.slice(-30)),
-      next: hasGoal() ? nextTarget(totals, goal, load(KEY_ZERO_WINS, [])) : null,
+      next: hasGoal() ? nextTarget(totals, (() => { const g = goalResolver(); return history.map((d) => g(d.date)); })(), load(KEY_ZERO_WINS, [])) : null,
       life: lifetime(history),
     } };
   }
@@ -346,6 +351,10 @@ let countLabel = load(KEY_LABEL, "");       // what you're counting (shows in th
 // from its value. Older installs stored 0 to mean "none": migrate on first run.
 let goalOn = load(KEY_GOAL_ON, null);
 if (goalOn === null) { goalOn = goal > 0; save(KEY_GOAL_ON, goalOn); }
+// "day" (a goal for each day) or "week" (a budget for each Sunday–Saturday week,
+// held in `goal`). In week mode a day may use whatever the week still has.
+const KEY_GOAL_MODE = "count.goalMode";
+let goalMode = load(KEY_GOAL_MODE, "day");
 let goalLog = load(KEY_GOAL_LOG, []);       // the taper ladder: every goal change
 if (!goalLog.length && goalOn) { goalLog = [{ at: new Date().toISOString(), goal: goal }]; save(KEY_GOAL_LOG, goalLog); }
 // Smart mode sizes each drop from levels you already reach and paces it by how
@@ -365,7 +374,7 @@ function taperPace() { return TAPER_PACES.find((p) => p.key === taper.pace) || T
 // The live recommendation, or null. Shared by the offer and the Journey tab so
 // both say the same thing.
 function currentSuggestion() {
-  if (!taper.smart || !hasGoal() || goal <= 0) return null;
+  if (!taper.smart || !hasGoal() || goal <= 0 || weekMode()) return null;
   return suggestTaper(history, goal, { pct: taperPace().pct, roundTo: step, goalLog: goalLog });
 }
 // Is a daily goal active? (0 counts — it's the finish line.)
@@ -374,21 +383,55 @@ function hasGoal() { return !!goalOn; }
 // green stays green after you lower your taper, judged against the goal at the
 // time rather than today's. Uses the goal ladder (goalLog); falls back to the
 // current goal when there's no history to go on.
-function goalForDay(dayStr) {
-  if (!goalLog || !goalLog.length) return goal;
+// A ladder rung carries its mode (older rungs predate modes and were daily), so
+// days logged under a daily goal keep being judged as days after a switch.
+function goalEntryFor(dayStr) {
+  if (!goalLog || !goalLog.length) return { goal, mode: goalMode };
   const t = new Date(dayStr + "T23:59:59").getTime();   // end of that day
-  let best = -Infinity, g = null;
+  let best = -Infinity, e0 = null;
   for (const e of goalLog) {
     const at = new Date(e.at).getTime();
-    if (!isNaN(at) && at <= t && at >= best) { best = at; g = e.goal; }
+    if (!isNaN(at) && at <= t && at >= best) { best = at; e0 = e; }
   }
-  return g == null ? goalLog[0].goal : g;   // day predates the ladder → its first rung
+  const e = e0 || goalLog[0];                             // day predates the ladder → its first rung
+  return { goal: e.goal, mode: e.mode || "day" };
 }
+// Every day's total, logged or not yet: history, the parked day, and today.
+function dayTotalsMap() {
+  const m = {};
+  history.forEach((d) => { if (d && d.date && typeof d.total === "number") m[d.date] = (m[d.date] || 0) + d.total; });
+  if (pending && pending.date) m[pending.date] = (m[pending.date] || 0) + (pending.total || 0);
+  m[sessionDate()] = (m[sessionDate()] || 0) + today;
+  return m;
+}
+// One snapshot of the totals, then a cheap lookup per day — use this when
+// judging many days at once (a calendar, a year, a streak).
+function goalResolver() {
+  const totals = dayTotalsMap();
+  return (ds) => {
+    const e = goalEntryFor(ds);
+    return e.mode === "week" ? weekAllowance(e.goal, totals, ds) : e.goal;
+  };
+}
+function goalForDay(dayStr) { return goalResolver()(dayStr); }
+// How much today may still hold: the goal, or in week mode what the week has left.
+function todayGoal() {
+  if (goalMode !== "week") return goal;
+  return weekAllowance(goal, dayTotalsMap(), sessionDate());
+}
+function weekMode() { return hasGoal() && goalMode === "week"; }
+// How full the limit is: today against the goal, or the week against its budget.
+function goalFrac() {
+  const used = weekMode() ? weekUsed() : today;
+  return goal > 0 ? used / goal : (used > 0 ? 1 : 0);
+}
+// This week so far, today included — what the ring shows in week mode.
+function weekUsed() { return round2(goal - todayGoal() + today); }
 // Record a goal change so the ladder and the zero projection can see it.
 function noteGoalChange(v) {
   const last = goalLog.length ? goalLog[goalLog.length - 1] : null;
-  if (last && last.goal === v) return;
-  goalLog.push({ at: new Date().toISOString(), goal: v });
+  if (last && last.goal === v && (last.mode || "day") === goalMode) return;
+  goalLog.push({ at: new Date().toISOString(), goal: v, mode: goalMode });
   save(KEY_GOAL_LOG, goalLog);
 }
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
@@ -547,12 +590,13 @@ function runTaperPrompts() {
   if (maybeZeroWin()) return true;
   if (maybeZeroHandoff()) return true;
   if (maybeRaiseOffer()) return true;
-  return !!maybeTaperOffer();
+  if (maybeTaperOffer()) return true;
+  return maybeHardNoteOffer();
 }
 
 // ---- taper: offer the next rung down once it's been earned ----
 function maybeTaperOffer() {
-  if (!taper.on || !hasGoal() || goal <= 0) return false;
+  if (!taper.on || !hasGoal() || goal <= 0 || weekMode()) return false;
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const sug = currentSuggestion();
   // smart mode paces by how long your own rungs have held; manual by the
@@ -603,7 +647,7 @@ function openTaperOffer(sug, perf) {
 // alternative is stacking red days until you give up on the whole thing.
 const RAISE_GAP_MS = 14 * 864e5;
 function maybeRaiseOffer() {
-  if (!taper.on || !hasGoal()) return false;
+  if (!taper.on || !hasGoal() || weekMode()) return false;   // the taper works in days; it waits out a weekly budget
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const last = load(KEY_RAISE_ASK, null);
   if (last && Date.now() - new Date(last).getTime() < RAISE_GAP_MS) return false;
@@ -756,7 +800,7 @@ function openingSequence() {
 // back next time rather than being lost.
 function runPassiveNotice() {
   if (gatesUp() || el.overlay.classList.contains("show")) return;
-  [announceRestore, checkMilestones, checkRiskyTimes, checkDayRisk, maybeWeeklyRecap, maybeBackupNudge]
+  [announceRestore, maybeRingTapTip, maybeRingHoldTip, checkMilestones, checkRiskyTimes, checkDayRisk, maybeWeeklyRecap, maybeBackupNudge]
     .some((fn) => fn() === true);
 }
 
@@ -1242,7 +1286,7 @@ function numberColor() {
   if (!hasGoal()) return "";               // no goal → default text colour
   if (!COLOR_STOPS) refreshColorStops();
   // at a goal of 0 (the finish line) anything above 0 is already over
-  const f = goal > 0 ? today / goal : (today > 0 ? 1 : 0);
+  const f = goalFrac();
   if (f <= 0) return "";                   // at the start → default (white)
   const s = COLOR_STOPS;
   if (f >= 1) return `rgb(${s[3].c.join(",")})`;   // at or over goal → red
@@ -1374,17 +1418,20 @@ function countUpText(node, value, dur) {
 // bridge is currently in effect.
 function underStreakInfo() {
   if (!hasGoal()) return { streak: 0, graced: 0 };
+  const g = goalResolver();
   const totals = history.map((d) => d.total);
-  if (taps > 0 && today <= goal) totals.push(today);   // today counts once started and still under
-  return streakWithGrace(totals, goal, streakGrace ? 1 : 0);
+  const limits = history.map((d) => g(d.date));
+  if (taps > 0 && today <= todayGoal()) { totals.push(today); limits.push(todayGoal()); }   // today counts once started and still under
+  return streakWithGrace(totals, limits, streakGrace ? 1 : 0);
 }
 function underStreak() { return underStreakInfo().streak; }
 
 // Which colour zone today sits in relative to the goal.
 function zoneOf() {
   if (!hasGoal()) return "none";
-  if (today > goal) return "over";
-  if (goal > 0 && today / goal >= 0.8) return "warn";
+  const f = goalFrac();
+  if (f > 1 || (goal === 0 && f > 0)) return "over";
+  if (goal > 0 && f >= 0.8) return "warn";
   return "safe";
 }
 
@@ -1403,8 +1450,9 @@ function weekTotal() {
 // Longest run of consecutive logged days that stayed at or under the goal.
 function bestStreak() {
   if (!hasGoal()) return 0;
+  const g = goalResolver();
   let best = 0, run = 0;
-  history.forEach((d) => { if (d.total <= goal) { run++; if (run > best) best = run; } else run = 0; });
+  history.forEach((d) => { if (d.total <= g(d.date)) { run++; if (run > best) best = run; } else run = 0; });
   return Math.max(best, underStreak());   // current in-progress run can be the best
 }
 // Sum logged in a given calendar month. offset 0 = this month, 1 = last month.
@@ -1623,7 +1671,8 @@ function renderStatTiles() {
   if (hasGoal()) {
     // four that matter most, always visible
     const cur = underStreak();
-    const under = inRange.filter((d) => d.total <= goal).length;
+    const gOf = goalResolver();
+    const under = inRange.filter((d) => d.total <= gOf(d.date)).length;
     g.appendChild(statTile(String(cur), "Current streak", { good: cur > 0 }));
     g.appendChild(statTile(n ? Math.round((under / n) * 100) + "%" : "—", "Under goal", { good: n > 0 }));
     g.appendChild(statTile(n ? fmt(round2(rangeAvg)) : "—", "Avg / day"));
@@ -1666,10 +1715,14 @@ function riskPhrases(risk) {
 // Today's reading, or null. Built only from the counter, the daily mood
 // check-in and the goal — never from the private journal.
 function todayRisk() {
-  return dayRisk(history, moodDaily, hasGoal() ? goal : 0);
+  return dayRisk(history, moodDaily, hasGoal() ? goalResolver() : 0);
 }
 
 // A heads-up at most once a day, sitting inside the one-notice-per-open budget.
+function hardNoteForToday() {
+  return variantForDay(dayIndex(), hardNotes);
+}
+
 function checkDayRisk() {
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const key = sessionDate();
@@ -1678,6 +1731,9 @@ function checkDayRisk() {
   if (!risk) return false;
   save(KEY_RISK_LAST, key);
   const bits = riskPhrases(risk).slice(0, 2);
+  // your own words, written on a better day, say more than a plan can
+  const note = hardNoteForToday();
+  if (note) { toast(`🫧 ${bits.join(", and ")}. A note from you: “${note.text}”`, 8000); return true; }
   const plan = planFor(plans, null, new Date().getHours());
   const tail = plan ? ` Your plan: ${plan.action}` : " Worth having a plan.";
   toast(`🫧 ${bits.join(", and ")}.${tail}`, 6000);
@@ -1737,6 +1793,8 @@ function renderRisk() {
   line.style.display = "block";
   line.innerHTML = `<b>Today looks like a day to watch.</b> ${bits.join(", and ")}.` +
     `<span class="risk-sub">Based on your last ${risk.basis.days} logged days — it's a nudge, not a prediction.</span>`;
+  const note = hardNoteForToday();
+  if (note) addEl(line, "span", `“${note.text}” — you, on a better day`, "risk-note");
 }
 
 // This window against the one immediately before it, so the numbers above
@@ -1744,7 +1802,7 @@ function renderRisk() {
 function renderCompare() {
   const line = el.compareLine;
   if (!line) return;
-  const c = hasGoal() ? comparePeriods(history, insightRange, goal) : comparePeriods(history, insightRange, Infinity);
+  const c = hasGoal() ? comparePeriods(history, insightRange, goalResolver()) : comparePeriods(history, insightRange, Infinity);
   if (!c) { line.style.display = "none"; return; }
   const span = insightRange === 7 ? "week" : insightRange === 30 ? "30 days" : `${insightRange} days`;
   const dAvg = c.delta.avg;
@@ -1821,7 +1879,14 @@ function renderPace() {
   line.style.display = "block";
   line.textContent = "";
   const b = document.createElement("b");
-  if (hasGoal()) {
+  if (weekMode()) {
+    const perWeek = avgPerDay * 7;
+    b.textContent = "~" + fmtAvg(perWeek) + " a week";
+    b.className = perWeek <= goal ? "good" : "bad";
+    line.appendChild(document.createTextNode("Averaging "));
+    line.appendChild(b);
+    line.appendChild(document.createTextNode(perWeek <= goal ? ` this month — within your ${fmt(goal)} budget\u00a0✓` : ` this month — over your ${fmt(goal)} budget`));
+  } else if (hasGoal()) {
     const cls = avgPerDay <= goal ? "good" : "bad";
     b.textContent = fmt(round2(avgPerDay)) + "/day";
     b.className = cls;
@@ -1841,6 +1906,14 @@ function renderPace() {
 // it's heading. This is the story of the whole journey in one card.
 function renderLadder() {
   const card = el.ladderCard;
+  // the ladder charts a daily goal stepping down; a weekly budget is a different
+  // unit, so rather than plot 28 beside 4, it says what it's waiting for
+  if (weekMode()) {
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", "Taper ladder", "section-title");
+    addEl(card, "div", "The ladder follows a daily goal. It picks up again if you switch back from a weekly budget.", "card-empty");
+    return;
+  }
   if (goalLog.length < 2) {
     card.style.display = "block"; card.textContent = "";
     addEl(card, "div", 'Taper ladder', "section-title");
@@ -1930,10 +2003,12 @@ function renderProgress() {
   const sorted = history.map((d) => d.date).sort();
   const firstDay = new Date(sorted[0] + "T00:00:00");
 
-  const pts = goalLog.map((g) => ({ at: new Date(g.at).getTime(), goal: g.goal }))
+  // the chart is in days, so a weekly budget is drawn as its even daily share
+  const dailyLog = goalLog.map((g) => (g.mode === "week" ? Object.assign({}, g, { goal: round2(g.goal / 7) }) : g));
+  const pts = dailyLog.map((g) => ({ at: new Date(g.at).getTime(), goal: g.goal }))
     .filter((g) => !isNaN(g.at)).sort((a, b) => a.at - b.at);
 
-  const zp = projectZero(goalLog);
+  const zp = projectZero(dailyLog);
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
   let endDay;
   if (zp && !zp.done) {
@@ -2258,7 +2333,8 @@ function renderRecords() {
 
   // Where your streaks tend to break — the median completed under-goal run + 1.
   if (hasGoal()) {
-    const { runs } = underRuns(totals, goal);
+    const gOf = goalResolver();
+    const { runs } = underRuns(totals, history.map((d) => gOf(d.date)));
     if (runs.length >= 3) {
       const wall = Math.round(median(runs)) + 1;
       const line = document.createElement("div"); line.className = "wk-callout";
@@ -2296,12 +2372,14 @@ function renderTrend() {
   card.textContent = "";
   addEl(card, "div", "Trend · 7-day average", "section-title");
 
-  const maxY = (Math.max(goal || 0, ...pts.map((p) => p[1])) * 1.12) || 1;
+  // a daily chart needs a daily line: in week mode, the budget's even share
+  const lineGoal = weekMode() ? round2(goal / 7) : goal;
+  const maxY = (Math.max(lineGoal || 0, ...pts.map((p) => p[1])) * 1.12) || 1;
   const W = 100, H = 46;
   const X = (i) => (i / (TREND_DAYS - 1)) * W;
   const Y = (v) => H - (v / maxY) * H;
   const poly = pts.map((p) => `${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`).join(" ");
-  const gLine = hasGoal() ? `<line x1="0" y1="${Y(goal).toFixed(2)}" x2="${W}" y2="${Y(goal).toFixed(2)}" class="trend-goal"/>` : "";
+  const gLine = hasGoal() ? `<line x1="0" y1="${Y(lineGoal).toFixed(2)}" x2="${W}" y2="${Y(lineGoal).toFixed(2)}" class="trend-goal"/>` : "";
   card.insertAdjacentHTML("beforeend",
     `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${gLine}<polyline points="${poly}" class="trend-poly"/></svg>`);
 
@@ -2326,8 +2404,8 @@ function renderTrend() {
     values.forEach((v, i) => { if (v != null) rawPts.push([i, v]); });
     if (rawPts.length >= 8) {
       // aim for the goal if still above it, otherwise for zero (the finish line)
-      let pr = goal > 0 ? projectTrend(rawPts, goal) : null;
-      let label = goal === 0 ? "zero" : fmt(goal);
+      let pr = lineGoal > 0 ? projectTrend(rawPts, lineGoal) : null;
+      let label = lineGoal === 0 ? "zero" : fmt(lineGoal);
       if (!pr || pr.days == null) { pr = projectTrend(rawPts, 0); label = "zero"; }
       if (pr && pr.days != null && pr.days >= 2 && pr.days <= 400) {
         const when = new Date(today0.getTime() + pr.days * 864e5);
@@ -2361,13 +2439,14 @@ function renderYear() {
   const today0 = new Date(todayStr + "T12:00:00"); today0.setHours(0, 0, 0, 0);
   const start = new Date(today0); start.setDate(today0.getDate() - today0.getDay() - 52 * 7);
   const grid = document.createElement("div"); grid.className = "year-grid";
+  const yearGoal = goalResolver();   // one snapshot for all 371 cells
   for (let i = 0; i < 53 * 7; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const cell = document.createElement("span"); cell.className = "year-cell";
     const ds = isoLocal(d), tt = d.getTime();
     if (tt > today0.getTime()) cell.classList.add("future");
     else if (ds in totals) {
-      if (hasGoal()) cell.classList.add(totals[ds] <= goalForDay(ds) ? "under" : "over");
+      if (hasGoal()) cell.classList.add(totals[ds] <= yearGoal(ds) ? "under" : "over");
       else cell.classList.add("logged");
       cell.title = `${ds}: ${fmt(totals[ds])}`;
     } else cell.classList.add("empty");
@@ -2714,7 +2793,7 @@ function renderCalendar() {
   detail.textContent = "Tap a day to see that day's total.";
 
   // the month's shape comes from core.js so it can be tested without a DOM
-  calendarCells(y, m, totals, todayStr, goalForDay, hasGoal()).forEach((c) => {
+  calendarCells(y, m, totals, todayStr, goalResolver(), hasGoal()).forEach((c) => {
     const cell = document.createElement("div");
     if (c.blank) { cell.className = "cal-day blank"; grid.appendChild(cell); return; }
     cell.className = "cal-day " + c.state;
@@ -3055,13 +3134,24 @@ function closeInsights() { el.insightsOverlay.classList.remove("show"); }
 // Speak the running total for screen readers. Debounced so the count-up
 // animation and rapid tapping don't produce a stream of interruptions.
 let srTimer = null;
+// Say something to a screen reader without it showing on screen.
+function srSay(msg) {
+  if (!el.srLive) return;
+  clearTimeout(srTimer);
+  el.srLive.textContent = "";
+  srTimer = setTimeout(() => { el.srLive.textContent = msg; }, 60);
+}
 function announceTotal() {
   if (!el.srLive) return;
   clearTimeout(srTimer);
   srTimer = setTimeout(() => {
     const unit = countLabel ? ` ${countLabel}` : "";
     let msg = `${fmt(today)}${unit} today`;
-    if (hasGoal()) {
+    if (weekMode()) {
+      const used = weekUsed();
+      msg += used > goal ? `, ${fmt(round2(used - goal))} over this week's budget of ${fmt(goal)}`
+        : `, ${fmt(round2(goal - used))} left of this week's ${fmt(goal)}`;
+    } else if (hasGoal()) {
       if (today > goal) msg += `, ${fmt(round2(today - goal))} over your goal of ${fmt(goal)}`;
       else if (goal === 0) msg += `, goal is zero`;
       else msg += `, ${fmt(round2(goal - today))} left of ${fmt(goal)}`;
@@ -3134,7 +3224,8 @@ function renderTop(animate) {
   if (hasGoal()) {
     el.totalWrap.classList.add("has-goal");
     // a goal of 0 has no "progress" — the ring is full the moment you go over
-    const frac = goal > 0 ? Math.min(1, today / goal) : (today > 0 ? 1 : 0);
+    // in week mode the ring is the week: how much of its budget is gone
+    const frac = Math.min(1, goalFrac());
     el.ringProg.style.strokeDashoffset = RING_C * (1 - frac);
     updateRingCap(frac);
     if (el.barFill) el.barFill.style.width = (frac * 100) + "%";
@@ -3148,13 +3239,19 @@ function renderTop(animate) {
     if (el.barFill) el.barFill.style.width = "0%";
     el.goalText.style.display = "";
     el.goalText.classList.add("hint");
-    el.goalText.textContent = "Tap to set a daily goal →";
+    el.goalText.textContent = "Tap to set a goal →";
   }
 
   // button label + live headroom under it (Feature 3)
   el.addLabel.textContent = `+ ${fmt(step)}`;
   if (hasGoal()) {
-    if (today > goal) el.addSub.textContent = `${fmt(today - goal)} over`;
+    if (weekMode()) {
+      const left = round2(goal - weekUsed());
+      if (left < 0) el.addSub.textContent = `${fmt(-left)} over this week`;
+      else if (left === 0) el.addSub.textContent = "week's budget used";
+      else el.addSub.textContent = `${fmt(left)} left this week`;
+    }
+    else if (today > goal) el.addSub.textContent = `${fmt(today - goal)} over`;
     else if (goal === 0) el.addSub.textContent = "goal: none today";
     else if (today === goal) el.addSub.textContent = "at your goal";
     else el.addSub.textContent = `${fmt(goal - today)} left today`;
@@ -3178,7 +3275,10 @@ function renderPaceToday() {
   if (!recent.length) { line.style.display = "none"; return; }
   const avgDaily = recent.reduce((s, d) => s + d.total, 0) / recent.length;
   const { hours } = hourHistogram(allTapTimes());
-  const copy = paceCopy(dayProjection(hours, new Date().getHours(), today, goal, avgDaily), today, goal);
+  const lim = todayGoal();
+  const proj = dayProjection(hours, new Date().getHours(), today, lim, avgDaily);
+  const copy = paceCopy(proj, today, lim);
+  if (copy && weekMode() && copy.cls === "ok") copy.text = `Today's pace lands around ${fmt(proj.projected)} — within the ${fmt(lim)} this week has left`;
   if (!copy) { line.style.display = "none"; return; }
   reveal(line, "block");
   line.className = "pace-today " + copy.cls;
@@ -3248,9 +3348,11 @@ function renderHistory() {
 // accurate for whichever button was actually used), and re-renders.
 function applyDelta(amt, confirmed) {
   if (amt < 0 && today <= 0) return;   // nothing to subtract
+  // today's limit — in week mode, whatever the week still has
+  const lim = todayGoal();
   // Accountability: the tap that would cross the goal has to be a conscious
   // choice — pause and confirm instead of sliding over on autopilot.
-  if (!confirmed && hasGoal() && amt > 0 && today <= goal && round2(today + amt) > goal) {
+  if (!confirmed && hasGoal() && amt > 0 && today <= lim && round2(today + amt) > lim) {
     confirmOver(amt);
     return;
   }
@@ -3264,8 +3366,8 @@ function applyDelta(amt, confirmed) {
   buzz(amt > 0 ? 15 : 10); click();
   { const rc = el.total.parentElement; rc.classList.remove("bump"); void rc.offsetWidth; rc.classList.add("bump"); }
   if (hasGoal() && amt > 0) {
-    if (prev < goal && today === goal) atGoalHeadsUp();        // landed exactly on the limit
-    else if (prev <= goal && today > goal) warnOver();          // crossed over it
+    if (prev < lim && today === lim) atGoalHeadsUp();          // landed exactly on the limit
+    else if (prev <= lim && today > lim) warnOver();            // crossed over it
   }
   renderTop(true);   // history list doesn't change on a tap
 }
@@ -3273,8 +3375,16 @@ function applyDelta(amt, confirmed) {
 function confirmOver(amt) {
   buzz([0, 20, 40, 20]);
   openSheet((s) => {
-    addEl(s, "h3", "Go over your goal?");
-    addEl(s, "p", `You're at ${fmt(today)} of ${fmt(goal)}. Adding ${fmt(amt)} puts you ${fmt(round2(today + amt - goal))} over.`, "sub");
+    if (weekMode()) {
+      const used = weekUsed();
+      addEl(s, "h3", "Go over this week's budget?");
+      addEl(s, "p", `You've used ${fmt(used)} of this week's ${fmt(goal)}. Adding ${fmt(amt)} puts the week ${fmt(round2(used + amt - goal))} over.`, "sub");
+    } else {
+      addEl(s, "h3", "Go over your goal?");
+      addEl(s, "p", `You're at ${fmt(today)} of ${fmt(goal)}. Adding ${fmt(amt)} puts you ${fmt(round2(today + amt - goal))} over.`, "sub");
+    }
+    const note = hardNoteForToday();
+    if (note) addEl(s, "p", `“${note.text}” — you, on a better day`, "hard-note");
     s.appendChild(makeBtn(`Add ${fmt(amt)} anyway`, "danger", () => { closeSheet(); applyDelta(amt, true); }));
     s.appendChild(makeBtn(`Stay at ${fmt(today)}`, "primary", closeSheet));
     // An offer, not a gate: third, low-emphasis, and it drops the pending amount
@@ -3296,6 +3406,26 @@ function maybeQuickAddHint() {
   if (qaHintSeen || taps < 3) return;
   qaHintSeen = true; save(KEY_QA_HINT, true);
   toast("Tip: press and hold ＋ to log several at once", 4200);
+}
+
+// With the gear icon and the End Day button gone, Settings and ending the day
+// live on the ring, and nothing on screen said so. One tip each, once, in the
+// same voice as the other tips — and only when nothing else is speaking.
+const KEY_RING_TAP_TIP = "count.ringTapTip";
+const KEY_RING_HOLD_TIP = "count.ringHoldTip";
+function maybeRingTapTip() {
+  if (load(KEY_RING_TAP_TIP, false)) return false;
+  save(KEY_RING_TAP_TIP, true);
+  toast("Tip: tap the ring for Settings", 4200);
+  return true;
+}
+// Ending the day is an evening thing, so that's when it gets mentioned.
+function maybeRingHoldTip() {
+  if (load(KEY_RING_HOLD_TIP, false)) return false;
+  if (new Date().getHours() < 18 || (taps === 0 && today === 0)) return false;
+  save(KEY_RING_HOLD_TIP, true);
+  toast("Tip: press and hold the ring to end the day", 4600);
+  return true;
 }
 
 // Log more than one step without tapping over and over: a few quick amounts
@@ -3381,14 +3511,14 @@ function spawnRipple(e) {
 function atGoalHeadsUp() {
   buzz([0, 25, 45, 25]);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
-  toast("That's your goal — next tap goes over");
+  toast(weekMode() ? "That's this week's budget — next tap goes over" : "That's your goal — next tap goes over");
 }
 
 // A quiet nudge the moment you cross the goal — no celebration, just awareness.
 function warnOver() {
   buzz(45);
   el.ringWrap.classList.remove("nudge"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("nudge");
-  toast("Over your goal for today");
+  toast(weekMode() ? "Over this week's budget" : "Over your goal for today");
 }
 // ---- vitamins ----
 // A permanent list of names, added once and kept — no dose, no timestamps.
@@ -3746,10 +3876,16 @@ function openEndDay(resume) {
     const refreshSub = () => {
       const p = projected();
       let sub = fromPending ? `Log ${fmt(p)} for ${dayWord}.` : `Log ${fmt(p)} and start a fresh day.`;
-      if (hasGoal()) {
-        sub = p > goal
-          ? `Log ${fmt(p)} — ${fmt(round2(p - goal))} over your ${fmt(goal)} goal.`
-          : `Log ${fmt(p)} — under your ${fmt(goal)} goal\u00a0✓`;
+      if (weekMode()) {
+        const lim = goalForDay(base.date);
+        sub = p > lim
+          ? `Log ${fmt(p)} — takes the week ${fmt(round2(p - lim))} over its ${fmt(goal)} budget.`
+          : `Log ${fmt(p)} — the week stays within its ${fmt(goal)}\u00a0✓`;
+      } else if (hasGoal()) {
+        const lim = goalForDay(base.date);
+        sub = p > lim
+          ? `Log ${fmt(p)} — ${fmt(round2(p - lim))} over your ${fmt(lim)} goal.`
+          : `Log ${fmt(p)} — under your ${fmt(lim)} goal\u00a0✓`;
       }
       subEl.textContent = sub;
     };
@@ -4108,7 +4244,10 @@ function commitDay(note, dateStr, extras, opts) {
   // which day this belongs to, and its label — a future date is refused there
   const stamp = dayStamp(dateStr, now);
   const total = src.total;
-  const underGoal = hasGoal() && total <= goal;
+  // that day's own limit, taken before the day joins history so it isn't counted
+  // against itself — in week mode, whatever its week still had
+  const dayLimit = hasGoal() ? goalForDay(stamp.date) : 0;
+  const underGoal = hasGoal() && total <= dayLimit;
   const entry = {
     date: stamp.date,
     label: stamp.label,
@@ -4169,7 +4308,9 @@ function commitDay(note, dateStr, extras, opts) {
 
   // a fuller "day complete" moment
   buzz(prestiged ? [0, 40, 60, 40, 60, 90] : [0, 35, 40, 35, 40, 70]);
-  const overBy = hasGoal() && total > goal ? ` · ${fmt(round2(total - goal))} over goal` : "";
+  const overBy = hasGoal() && total > dayLimit
+    ? (weekMode() ? ` · the week is ${fmt(round2(total - dayLimit))} over budget` : ` · ${fmt(round2(total - dayLimit))} over goal`)
+    : "";
   toast(prestiged
     ? `🌳 Tree fully grown — Prestige ${tree.level}!`
     : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal\u00a0✓" : overBy}`);
@@ -4357,6 +4498,7 @@ const ICONS = {
   calendar: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   star: '<path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
   flask: '<path d="M9.5 3h5M10 3v6L4.8 18a2 2 0 0 0 1.7 3h11a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7.5 15h9"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
   droplet: '<path d="M12 3s6 6.2 6 10a6 6 0 0 1-12 0c0-3.8 6-10 6-10z"/>',
@@ -4441,6 +4583,7 @@ function openSettings() {
       : experiment.done ? "Result ready"
       : `Day ${Math.min(experimentDayNo(experiment), experimentTotalDays(experiment))} of ${experimentTotalDays(experiment)}`;
     row("flask", experiment ? "Experiment" : "Run an experiment", openExperiment, expDetail);
+    row("heart", "Notes for hard days", openHardNotes, hardNotes.length ? String(hardNotes.length) : null);
     row("grid", "Features", openFeatureSettings);
     row("palette", "Appearance", openAppearanceSettings);
     row("bell", "Reminders", openReminderSettings);
@@ -4470,9 +4613,40 @@ function openTrackingSettings() {
     addEl(s, "label", "Amount added per tap");
     const stepInput = numInput(fmt(step), "0.01");
     s.appendChild(stepInput);
-    addEl(s, "label", "Daily goal — leave blank for none, 0 is the finish line");
+    // per day, or a budget for the whole week that a big day can borrow from
+    let mode = goalMode;
+    const modeRow = document.createElement("div"); modeRow.className = "seg-row";
+    s.appendChild(modeRow);
+    const goalLabel = addEl(s, "label", "");
     const goalInput = numInput(hasGoal() ? fmt(goal) : "", "0");
     s.appendChild(goalInput);
+    const modeNote = addEl(s, "p", "", "sub");
+    const paintMode = () => {
+      modeRow.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+      goalLabel.textContent = mode === "week"
+        ? "Weekly budget, Sunday to Saturday — leave blank for none"
+        : "Daily goal — leave blank for none, 0 is the finish line";
+      modeNote.textContent = mode === "week"
+        ? "A big day is fine while the week has room. A day only counts against your streak once it takes the week over budget. Taper suggestions pause while you use a weekly budget."
+        : "";
+      modeNote.style.display = mode === "week" ? "" : "none";
+    };
+    [["day", "Per day"], ["week", "Per week"]].forEach(([k, t]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "seg-btn"; b.textContent = t; b.dataset.mode = k;
+      b.addEventListener("click", () => {
+        if (mode === k) return;
+        // carry the number across so switching doesn't quietly change how strict it is
+        const v = parseFloat(goalInput.value);
+        if (!isNaN(v)) {
+          const unit = Math.max(Number(step) || 1, 0.25);
+          goalInput.value = fmt(k === "week" ? round2(v * 7) : round2(Math.round(v / 7 / unit) * unit));
+        }
+        mode = k; paintMode(); buzz(6);
+      });
+      modeRow.appendChild(b);
+    });
+    paintMode();
     // one slip won't reset your streak — the day is bridged and marked with a shield
     const graceToggle = makeToggle(s, "Streak grace — one slip won't reset it", streakGrace);
     graceToggle.addEventListener("change", () => { streakGrace = graceToggle.checked; save(KEY_STREAK_GRACE, streakGrace); buzz(8); render(); });
@@ -4485,6 +4659,7 @@ function openTrackingSettings() {
       if (goalInput.value.trim() === "" || isNaN(ng) || ng < 0) { goalOn = false; goal = 0; }
       else { goalOn = true; goal = round2(ng); }
       save(KEY_GOAL_ON, goalOn);
+      goalMode = mode; save(KEY_GOAL_MODE, goalMode);
       if (goalOn) noteGoalChange(goal);
       countLabel = labelInput.value.trim();
       save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
@@ -4497,6 +4672,7 @@ function openTrackingSettings() {
 function openTaperSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Taper to zero");
+    if (weekMode()) addEl(s, "p", "Paused while you use a weekly budget — the taper steps a daily goal down. Your settings here are kept for when you switch back.", "sub");
     const taperToggle = makeToggle(s, "Suggest step-downs", taper.on);
     taperToggle.addEventListener("change", () => { taper.on = taperToggle.checked; save(KEY_TAPER, taper); buzz(8); });
 
@@ -5476,7 +5652,9 @@ function checkReminder() {
     // stronger nudge than a generic reminder. Only past ~3 days is it worth it.
     const s = underStreak();
     const body = s >= 3
-      ? `${s}-day streak under goal — end today under ${fmt(goal)} to keep it.`
+      ? (weekMode()
+        ? `${s}-day streak under goal — stay within the ${fmt(Math.max(0, todayGoal()))} left this week to keep it.`
+        : `${s}-day streak under goal — end today under ${fmt(goal)} to keep it.`)
       : "Don't forget to track today.";
     el.reminderText.textContent = body;
     el.reminder.style.display = "flex";
@@ -5880,6 +6058,73 @@ function openWeeklyRecap() {
 }
 
 // A once-a-month look back — the calendar month so far, pulling together the
+// ---- notes for hard days ----
+function noteField(s) {
+  const ta = document.createElement("textarea");
+  ta.rows = 3; ta.maxLength = 280;
+  ta.placeholder = "e.g. You've had harder days than this and got through every one.";
+  s.appendChild(ta);
+  return ta;
+}
+function addHardNote(text) {
+  hardNotes.push({ id: Date.now(), text, at: new Date().toISOString() });
+  if (hardNotes.length > 10) hardNotes = hardNotes.slice(-10);
+  save(KEY_HARD_NOTES, hardNotes);
+}
+function openHardNotes() {
+  openSheet((s) => {
+    addEl(s, "h3", "Notes for hard days");
+    addEl(s, "p", "Write these while things are going well. On a day that looks harder than most, and when a tap would take you over your goal, you'll see one of them.", "sub");
+    const list = document.createElement("div"); list.className = "note-list"; s.appendChild(list);
+    if (!hardNotes.length) addEl(list, "div", "None yet.", "card-empty");
+    hardNotes.forEach((n) => {
+      const row = document.createElement("div"); row.className = "note-row";
+      addEl(row, "div", `“${n.text}”`, "note-text");
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "plan-del"; del.textContent = "×";
+      del.setAttribute("aria-label", "Remove this note");
+      del.addEventListener("click", () => {
+        hardNotes = hardNotes.filter((x) => x.id !== n.id);
+        save(KEY_HARD_NOTES, hardNotes); buzz(10); openHardNotes();
+      });
+      row.appendChild(del); list.appendChild(row);
+    });
+    addEl(s, "label", hardNotes.length ? "Another note" : "Your first note");
+    const ta = noteField(s);
+    s.appendChild(makeBtn("Save note", "primary", () => {
+      const t = ta.value.trim();
+      if (!t) { toast("Write something first"); return; }
+      addHardNote(t); buzz(12); openHardNotes();
+      toast("Saved — it'll be there when you need it");
+    }));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
+// A good run is the right moment to write one, so offer once, then leave it
+// for three weeks. It waits its turn behind the taper prompts.
+function maybeHardNoteOffer() {
+  if (hardNotes.length || !hasGoal()) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const run = underStreakInfo().streak;
+  if (run < 3) return false;
+  const last = load(KEY_HARD_NOTE_ASK, null);
+  if (last && Date.now() - new Date(last).getTime() < 21 * 864e5) return false;
+  save(KEY_HARD_NOTE_ASK, new Date().toISOString());
+  openSheet((s) => {
+    addEl(s, "h3", "You're on a good run");
+    addEl(s, "p", `${run} days under your goal. Write a line for a harder day, and the app will show it to you when one looks likely.`, "sub");
+    const ta = noteField(s);
+    s.appendChild(makeBtn("Save it", "primary", () => {
+      const t = ta.value.trim();
+      if (!t) { toast("Write something first"); return; }
+      addHardNote(t); buzz(12); closeSheet();
+      toast("Saved — it'll be there when you need it");
+    }));
+    s.appendChild(makeBtn("Not now", "ghost", closeSheet));
+  });
+  return true;
+}
+
 // ---- self-experiment ----
 // Pick one factor, aim to alternate blocks of avoiding it and not, answer one
 // question a day, and see what your own numbers say at the end.
@@ -6085,7 +6330,7 @@ function openReview(scope) {
   const prevFrom = (isYear ? new Date(y - 1, 0, 1) : new Date(y, m - 1, 1)).getTime();
   const monthName = now.toLocaleDateString(undefined, { month: "long" });
   const label = isYear ? String(y) : monthName;
-  const g = hasGoal() ? goal : 0;
+  const g = hasGoal() ? goalResolver() : 0;
 
   el.reviewTitle.textContent = `${label} in review`;
   const body = el.reviewBody;
@@ -6167,9 +6412,10 @@ function openReview(scope) {
 
   // the goal itself moved, which is the thing a taper is for
   if (hasGoal() && goalLog.length) {
-    let goalAtStart = null;
-    goalLog.forEach((gl) => { if (new Date(gl.at).getTime() <= from) goalAtStart = gl.goal; });
-    if (goalAtStart != null && goalAtStart !== goal) {
+    let goalAtStart = null, modeAtStart = null;
+    goalLog.forEach((gl) => { if (new Date(gl.at).getTime() <= from) { goalAtStart = gl.goal; modeAtStart = gl.mode || "day"; } });
+    // "8 → 28" would be a daily goal beside a weekly budget, not a change
+    if (goalAtStart != null && goalAtStart !== goal && modeAtStart === goalMode) {
       const c = reviewCard(body, "Your goal");
       const line = addEl(c, "div", "", "wk-callout");
       const dir = goal < goalAtStart ? "down" : "up";
@@ -7134,6 +7380,11 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
   });
 })();
 el.insightsBtn.addEventListener("click", openInsights);
+document.getElementById("srUndo")?.addEventListener("click", () => {
+  if (taps === 0) { srSay("Nothing to undo"); return; }
+  undo();
+});
+document.getElementById("srEndDay")?.addEventListener("click", () => openEndDay());
 el.vitaminsBtn.addEventListener("click", openVitamins);
 el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
@@ -7237,8 +7488,11 @@ window.addEventListener("storage", (e) => {
   // back stale from the other, taking the answers with them
   experiment = load(KEY_EXPERIMENT, null);
   moodDaily = load(KEY_MOOD_DAILY, {});
+  hardNotes = load(KEY_HARD_NOTES, []);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
+  goalMode = load(KEY_GOAL_MODE, "day");
+  goalLog = load(KEY_GOAL_LOG, []);
   goalOn = load(KEY_GOAL_ON, goalOn);   // already migrated by now; keep what we have otherwise
   render();
 });

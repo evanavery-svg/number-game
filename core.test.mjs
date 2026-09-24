@@ -1235,3 +1235,40 @@ test("fmtAvg gives an average one decimal, trimmed", () => {
   assert.equal(core.fmtAvg(0.04), "0");
   assert.equal(core.fmtAvg(2.25), "2.3");
 });
+
+// ---- weekly budget ----
+
+test("goalAt reads a number, a per-entry list, or a function of the date", () => {
+  assert.equal(core.goalAt(4, 3, "2026-09-01"), 4);
+  assert.equal(core.goalAt([1, 2, 3], 1), 2);
+  assert.equal(core.goalAt((ds) => (ds === "2026-09-01" ? 9 : 0), 0, "2026-09-01"), 9);
+});
+
+// 2026-09-20 is a Sunday; the week runs Sun 20 – Sat 26
+test("weekAllowance gives Sunday the whole budget", () => {
+  assert.equal(core.weekAllowance(28, { "2026-09-19": 50 }, "2026-09-20"), 28, "Saturday belongs to last week");
+});
+
+test("weekAllowance subtracts only earlier days of the same week", () => {
+  const totals = { "2026-09-20": 3, "2026-09-21": 10, "2026-09-22": 4, "2026-09-24": 99 };
+  assert.equal(core.weekAllowance(28, totals, "2026-09-23"), 11, "28 − (3 + 10 + 4); Thursday isn't before Wednesday");
+});
+
+test("a big day with budget to spare is not over, the day that blows the week is", () => {
+  const totals = { "2026-09-20": 2, "2026-09-21": 12, "2026-09-22": 16 };
+  const under = (ds) => totals[ds] <= core.weekAllowance(28, totals, ds);
+  assert.equal(under("2026-09-21"), true, "12 after 2 leaves the week at 14 of 28");
+  assert.equal(under("2026-09-22"), false, "16 more takes the week to 30");
+});
+
+test("the streak helpers follow per-day allowances", () => {
+  assert.deepEqual(core.underRuns([5, 9, 1], [6, 6, 6]), core.underRuns([5, 9, 1], 6), "a flat list matches a number");
+  assert.equal(core.streakWithGrace([12, 3], [28, 16], 0).streak, 2, "12 of 28, then 3 of the 16 left");
+  const days = [
+    { date: "2026-09-20", endedAt: new Date(2026, 8, 20, 22).toISOString(), total: 20 },
+    { date: "2026-09-21", endedAt: new Date(2026, 8, 21, 22).toISOString(), total: 10 },
+  ];
+  const t = { "2026-09-20": 20, "2026-09-21": 10 };
+  const s = core.periodStats(days, 0, Date.now() + 1e12, (ds) => core.weekAllowance(28, t, ds));
+  assert.equal(s.under, 1, "the Sunday fits, the Monday blows the week");
+});

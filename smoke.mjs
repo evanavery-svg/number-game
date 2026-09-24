@@ -307,6 +307,7 @@ check("number stays centred in the ring after End Day", centred);
     localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
     localStorage.setItem("count.gameOn", "false");
     localStorage.setItem("count.greetShown", JSON.stringify(dk));
+    localStorage.setItem("count.ringTapTip", "true");   // its save would push the mirror's debounce past the wait
   }, dk);
   await p4.goto(BASE);
   await p4.waitForTimeout(400);
@@ -756,6 +757,138 @@ check("number stays centred in the ring after End Day", centred);
   check("a sheet push cleans up after itself", await p12.evaluate(() =>
     document.querySelectorAll(".sheet-ghost").length === 0 && document.querySelector("#sheet h3").textContent === "Features"));
   await ctx12.close();
+}
+
+// the ring's gestures are taught once, and screen readers get their own buttons
+{
+  const ctx13 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p13 = await ctx13.newPage();
+  p13.on("pageerror", (e) => errors.push("ring tips: " + String(e)));
+  await p13.addInitScript((dk) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+  }, dk);
+  await p13.goto(BASE);
+  await p13.waitForTimeout(2800);
+  check("the ring's tap is taught on first open", /tap the ring for Settings/.test(await p13.evaluate(() => document.getElementById("toast").textContent)));
+  check("and only once", (await p13.evaluate(() => localStorage.getItem("count.ringTapTip"))) === "true");
+  await p13.reload();
+  await p13.waitForTimeout(2800);
+  check("it doesn't come back", !/tap the ring/.test(await p13.evaluate(() => document.getElementById("toast").textContent + toastQ.map((t) => t.msg || t[0] || t).join(" "))));
+
+  await p13.evaluate(() => document.getElementById("srUndo").click());
+  await p13.waitForTimeout(200);
+  check("undo with nothing to undo says so", /Nothing to undo/.test(await p13.evaluate(() => document.getElementById("srLive").textContent)));
+  await p13.click("#addBtn");
+  await p13.waitForTimeout(200);
+  await p13.evaluate(() => document.getElementById("srUndo").click());
+  await p13.waitForTimeout(300);
+  check("the screen-reader undo takes the tap back", (await p13.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 0);
+  await p13.evaluate(() => document.getElementById("srEndDay").click());
+  await p13.waitForTimeout(500);
+  check("the screen-reader End Day opens it", await p13.evaluate(() => document.getElementById("overlay").classList.contains("show")));
+  await ctx13.close();
+}
+
+// a note written on a good run, shown back on a hard day — as text, not markup
+{
+  const ctx14 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p14 = await ctx14.newPage();
+  p14.on("pageerror", (e) => errors.push("hard notes: " + String(e)));
+  const past = [1, 2, 3, 4].map((n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return { date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`, total: 2, endedAt: d.toISOString() }; });
+  await p14.addInitScript(({ dk, past }) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "4");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.history", JSON.stringify(past));
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+    localStorage.setItem("count.ringTapTip", "true");
+  }, { dk, past });
+  await p14.goto(BASE);
+  await p14.waitForTimeout(2000);
+  check("a good run offers to write a note", (await p14.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "You're on a good run");
+  await p14.fill("#sheet textarea", "<b>You got through worse</b>");
+  await p14.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Save it").click());
+  await p14.waitForTimeout(500);
+  check("the note is kept", /got through worse/.test(await p14.evaluate(() => localStorage.getItem("count.hardNotes") || "")));
+  await p14.evaluate(() => { today = 4; save("count.today", 4); render(); });
+  await p14.click("#addBtn");
+  await p14.waitForTimeout(500);
+  const shown = await p14.evaluate(() => { const n = document.querySelector("#sheet .hard-note"); return n ? { text: n.textContent, tags: n.querySelectorAll("b").length } : null; });
+  check("it's on the over-goal sheet, as plain text", !!shown && shown.text.includes("<b>You got through worse</b>") && shown.tags === 0);
+  await p14.evaluate(() => closeSheet());
+  await p14.waitForTimeout(400);
+  await p14.evaluate(() => { localStorage.removeItem("count.riskLast"); todayRisk = () => ({ reasons: [{ key: "mood" }] }); checkDayRisk(); });
+  await p14.waitForTimeout(300);
+  check("the risk nudge carries it", await p14.evaluate(() =>
+    [document.getElementById("toast").textContent, ...toastQ.map((t) => JSON.stringify(t))].some((x) => /A note from you/.test(x) && /got through worse/.test(x))));
+  await ctx14.close();
+}
+
+// a weekly budget: a big day is fine while the week has room
+{
+  const ctx15 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p15 = await ctx15.newPage();
+  p15.on("pageerror", (e) => errors.push("weekly budget: " + String(e)));
+  // a settled past week, Sun 13 – Sat 19 Sept 2026: a heavy Tuesday with room, then a Friday that blows it
+  const wk = [["2026-09-13", 2], ["2026-09-14", 2], ["2026-09-15", 12], ["2026-09-16", 2], ["2026-09-17", 2], ["2026-09-18", 10], ["2026-09-19", 0]]
+    .map(([date, total]) => ({ date, total, endedAt: date + "T21:00:00" }));
+  // and this week so far: 3 on each earlier day
+  const sun = new Date(dk + "T12:00:00"); sun.setDate(sun.getDate() - sun.getDay());
+  const thisWk = [];
+  for (const d = new Date(sun); isoOf(d) < dk; d.setDate(d.getDate() + 1)) thisWk.push({ date: isoOf(d), total: 3, endedAt: isoOf(d) + "T21:00:00" });
+  function isoOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+  const hist = [...wk.filter((d) => d.date < isoOf(sun)), ...thisWk];
+  await p15.addInitScript(({ dk, hist }) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("count.onboarded", "true");
+    localStorage.setItem("count.goal", "28");
+    localStorage.setItem("count.goalOn", "true");
+    localStorage.setItem("count.goalMode", JSON.stringify("week"));
+    localStorage.setItem("count.goalLog", JSON.stringify([{ at: "2026-01-01T00:00:00", goal: 28, mode: "week" }]));
+    localStorage.setItem("count.history", JSON.stringify(hist));
+    localStorage.setItem("count.moodDaily", JSON.stringify({ [dk]: 4 }));
+    localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
+    localStorage.setItem("count.gameOn", "false");
+    localStorage.setItem("count.greetShown", JSON.stringify(dk));
+    localStorage.setItem("count.ringTapTip", "true");
+    localStorage.setItem("count.hardNoteAsk", JSON.stringify(new Date().toISOString()));
+  }, { dk, hist });
+  await p15.goto(BASE);
+  await p15.waitForTimeout(1500);
+  const allow = 28 - 3 * thisWk.length;
+  check("today's room is what the week has left", (await p15.evaluate(() => todayGoal())) === allow);
+  check("the button counts down the week", (await p15.evaluate(() => document.querySelector("#addBtn small").textContent)) === `${allow} left this week`);
+  if (hist.some((d) => d.date === "2026-09-15")) {
+    check("a big day with room in the week is under", await p15.evaluate(() => goalForDay("2026-09-15") >= 12));
+    check("the day that takes the week over is over", await p15.evaluate(() => goalForDay("2026-09-18") < 10));
+  }
+  check("taper suggestions pause", (await p15.evaluate(() => currentSuggestion())) === null);
+  await p15.evaluate((a) => { today = a; save("count.today", a); render(); }, allow);
+  await p15.click("#addBtn");
+  await p15.waitForTimeout(500);
+  check("crossing the week's budget asks first", (await p15.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Go over this week's budget?");
+  await p15.evaluate(() => closeSheet());
+  await p15.waitForTimeout(400);
+  await p15.evaluate(() => openTrackingSettings());
+  await p15.waitForTimeout(400);
+  const goalVal = () => p15.evaluate(() => [...document.querySelectorAll("#sheet input")].find((i) => i.previousElementSibling?.textContent.startsWith("Weekly budget") || i.previousElementSibling?.textContent.startsWith("Daily goal")).value);
+  await p15.evaluate(() => document.querySelector('#sheet .seg-btn[data-mode="day"]').click());
+  const asDay = await goalVal();
+  await p15.evaluate(() => document.querySelector('#sheet .seg-btn[data-mode="week"]').click());
+  check("switching to per day carries the number across", asDay === "4" && (await goalVal()) === "28");
+  await ctx15.close();
 }
 
 check("no JS errors during smoke", errors.length === 0);
