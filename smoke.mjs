@@ -891,6 +891,110 @@ check("number stays centred in the ring after End Day", centred);
   await ctx15.close();
 }
 
+// tapering, the rest of the way: spacing, the last stretch, where to cut, how far you've come
+{
+  const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ago = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return d; };
+  const open16 = async (seed, label) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => errors.push(label + ": " + String(e)));
+    await pg.addInitScript(({ dk, seed }) => {
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      const base = { "count.onboarded": true, "count.moodDaily": { [dk]: 4 }, "count.gamePlayed": dk, "count.gameOn": false,
+        "count.greetShown": dk, "count.ringTapTip": true, "count.hardNoteAsk": new Date().toISOString(), "count.backupNudge": dk };
+      Object.entries(Object.assign(base, seed)).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v)));
+    }, { dk, seed });
+    await pg.goto(BASE);
+    await pg.waitForTimeout(2000);
+    return { ctx, pg };
+  };
+  const heading = (pg) => pg.evaluate(() => document.querySelector("#sheet h3")?.textContent || "");
+  const press = (pg, src) => pg.evaluate((src) => [...document.querySelectorAll("#sheet button")].find((b) => new RegExp(src).test(b.textContent))?.click(), src);
+
+  // spacing: offered from your usual gap, shown on home, early taps noted not blocked
+  {
+    const hist = [];
+    for (let n = 14; n >= 1; n--) {
+      const t0 = ago(n); t0.setHours(9, 0, 0, 0);
+      const tapTimes = [0, 1, 2, 3, 4].map((i) => ({ t: t0.getTime() + i * 92 * 60000, amt: 1, total: i + 1 }));
+      hist.push({ date: isoOf(t0), total: 5, taps: 5, endedAt: new Date(t0.getTime() + 12 * 3600e3).toISOString(), tapTimes });
+    }
+    const { ctx, pg } = await open16({ "count.goal": 8, "count.goalOn": true, "count.step": 1, "count.history": hist, "count.taper": { on: false } }, "spacing");
+    check("a usual gap is offered as a target", (await heading(pg)) === "Space them out?" &&
+      /about 1h 30m/.test(await pg.evaluate(() => document.querySelector("#sheet .sub").textContent)));
+    await press(pg, "^Try 1h 30m");
+    await pg.waitForTimeout(400);
+    check("accepting it stores the gap", (await pg.evaluate(() => JSON.parse(localStorage.getItem("count.gap")).target)) === 90 * 60000);
+    await pg.click("#addBtn");
+    await pg.waitForTimeout(300);
+    check("home says when the next one's due", /^Next one after .* · 1h 30m gap$/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
+    await pg.evaluate(() => { tapLog[tapLog.length - 1].t = Date.now() - 30 * 60000; save("count.tapLog", tapLog); });
+    await pg.click("#addBtn");
+    await pg.waitForTimeout(300);
+    check("an early tap is logged, with a note", (await pg.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 2 &&
+      (await pg.evaluate(() => [document.getElementById("toast").textContent, ...toastQ.map((t) => t.msg)].some((m) => /1h before your 1h 30m gap/.test(m)))));
+    await pg.evaluate(() => { tapLog[tapLog.length - 1].t = Date.now() - 100 * 60000; renderGapLine(); });
+    check("past the gap it counts up instead", /^1h 40m since the last one$/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
+    await ctx.close();
+  }
+
+  // the last stretch: at one a day, weeks instead of a cliff
+  {
+    const hist = [];
+    for (let n = 16; n >= 1; n--) { const d = ago(n); hist.push({ date: isoOf(d), total: n % 3 === 0 || n % 2 ? 1 : 0, taps: 1, endedAt: d.toISOString(), tapTimes: [] }); }
+    const { ctx, pg } = await open16({ "count.goal": 1, "count.goalOn": true, "count.step": 1, "count.history": hist,
+      "count.taper": { on: true, smart: true, pace: "balanced", step: 1, everyDays: 30 },
+      "count.goalLog": [{ at: ago(60).toISOString(), goal: 3 }, { at: ago(30).toISOString(), goal: 1 }] }, "last stretch");
+    check("one a day offers a weekly rung before zero", (await heading(pg)) === "The last stretch");
+    await press(pg, "^Try 5 a week");
+    await pg.waitForTimeout(500);
+    check("taking it switches to 5 a week, on the ladder as a weekly rung", await pg.evaluate(() =>
+      goal === 5 && goalMode === "week" && goalLog[goalLog.length - 1].mode === "week"));
+    await ctx.close();
+  }
+  {
+    const hist = [];
+    for (let n = 40; n >= 1; n--) { const d = ago(n); hist.push({ date: isoOf(d), total: n > 26 ? 4 : (d.getDay() === 2 || d.getDay() === 5 ? 1 : 0), taps: 1, endedAt: d.toISOString(), tapTimes: [] }); }
+    const { ctx, pg } = await open16({ "count.goal": 5, "count.goalOn": true, "count.goalMode": "week", "count.step": 1, "count.history": hist,
+      "count.unitCost": 0.75, "count.label": "coffees",
+      "count.taper": { on: true, smart: true, pace: "balanced", step: 1, everyDays: 30 },
+      "count.goalLog": [{ at: ago(80).toISOString(), goal: 4 }, { at: ago(40).toISOString(), goal: 1 }, { at: ago(20).toISOString(), goal: 5, mode: "week" }] }, "weekly rungs");
+    check("two good weeks offer the next weekly rung", (await heading(pg)) === "Next rung down?");
+    await press(pg, "^Make it 3 a week");
+    await pg.waitForTimeout(500);
+    check("and it steps to 3 a week", await pg.evaluate(() => goal === 3 && goalMode === "week"));
+    check("the rung after 1 a week is zero, back on a daily goal", await pg.evaluate(() => endgameNext(1) === 0));
+    await pg.evaluate(() => openInsights());
+    await pg.waitForTimeout(500);
+    await pg.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Journey").click());
+    await pg.waitForTimeout(900);
+    check("the ladder keeps weekly rungs on the same staircase", /4 → 3\/wk · 3 steps down/.test(await pg.evaluate(() => document.getElementById("ladderCard").textContent)));
+    const start = await pg.evaluate(() => document.getElementById("startCard").textContent);
+    check("how far you've come is shown", /Since you started/.test(start) && /\d+% down/.test(start) && /fewer coffees/.test(start));
+    check("with money when there's a cost", /\$[\d.]+ not spent/.test(start));
+    await ctx.close();
+  }
+
+  // where to cut first: the least fixed part of the day is named
+  {
+    const hist = [];
+    for (let n = 20; n >= 1; n--) {
+      const d = ago(n); const t = (h) => { const x = new Date(d); x.setHours(h, 0, 0, 0); return { t: x.getTime(), amt: 1 }; };
+      const tapTimes = [t(8), t(20)];
+      if (n <= 8) tapTimes.push(t(15));
+      hist.push({ date: isoOf(d), total: tapTimes.length, taps: tapTimes.length, endedAt: d.toISOString(), tapTimes });
+    }
+    const { ctx, pg } = await open16({ "count.goal": 4, "count.goalOn": true, "count.step": 1, "count.history": hist, "count.taper": { on: false }, "count.gap": { on: false, askAt: new Date().toISOString() } }, "easiest slot");
+    check("the easiest one to drop is named", /your 2–4 pm one turns up on only 8 of your last 20 days/.test(await pg.evaluate(() => slotHint())));
+    await pg.evaluate(() => openTaperOffer(null, goalPerformance(history, goal, 30)));
+    await pg.waitForTimeout(400);
+    check("and it's on the step-down offer", /2–4 pm/.test(await pg.evaluate(() => document.querySelector("#sheet .slot-hint")?.textContent || "")));
+    await ctx.close();
+  }
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

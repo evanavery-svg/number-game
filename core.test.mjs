@@ -1272,3 +1272,89 @@ test("the streak helpers follow per-day allowances", () => {
   const s = core.periodStats(days, 0, Date.now() + 1e12, (ds) => core.weekAllowance(28, t, ds));
   assert.equal(s.under, 1, "the Sunday fits, the Monday blows the week");
 });
+
+// ---- spacing ----
+const at = (h, m = 0, day = 1) => new Date(2026, 8, day, h, m).getTime();
+test("dayGaps skips the overnight gap and merges a double tap", () => {
+  const days = [[at(9), at(9, 2), at(11), at(14)], [at(10, 0, 2), at(12, 0, 2)]];
+  assert.deepEqual(core.dayGaps(days).map((g) => g / 60000), [118, 180, 120]);
+});
+test("gapTarget starts from the usual gap, rounded down to five minutes", () => {
+  const day = (d) => [at(8, 0, d), at(9, 32, d), at(11, 4, d), at(12, 36, d), at(14, 8, d)];   // 92m apart
+  assert.equal(core.gapTarget([day(1), day(2)]), null);                                           // 8 gaps: too few
+  assert.equal(core.gapTarget([day(1), day(2), day(3), day(4)]) / 60000, 90);
+});
+test("gapHeld wants three in four gaps at the target, over at least ten", () => {
+  const day = (d, gapM) => [0, 1, 2, 3].map((i) => at(8, 0, d) + i * gapM * 60000);
+  const good = [day(1, 95), day(2, 95), day(3, 95), day(4, 60)];   // 9 of 12 at 90+
+  assert.deepEqual(core.gapHeld(good, 90 * 60000), { n: 12, held: 9, ready: true });
+  assert.equal(core.gapHeld([day(1, 95), day(2, 95)], 90 * 60000).ready, false);
+});
+test("nextGap stretches by a quarter hour, or a tenth once that's bigger", () => {
+  assert.equal(core.nextGap(60 * 60000) / 60000, 75);
+  assert.equal(core.nextGap(240 * 60000) / 60000, 265);
+});
+test("gapLabel reads in hours and minutes", () => {
+  assert.equal(core.gapLabel(45 * 60000), "45m");
+  assert.equal(core.gapLabel(90 * 60000), "1h 30m");
+  assert.equal(core.gapLabel(120 * 60000), "2h");
+});
+
+// ---- the easiest one to drop ----
+test("easiestSlot finds the least fixed part of the routine", () => {
+  const days = [];
+  for (let d = 1; d <= 20; d++) {
+    const ts = [at(8, 0, d), at(20, 0, d)];                 // every day: fixtures
+    if (d <= 8) ts.push(at(15, 0, d));                       // 2–4pm on 8 of 20
+    if (d <= 12) ts.push(at(11, 0, d));                      // 10–noon on 12 of 20
+    if (d === 1) ts.push(at(2, 0, d));                       // a one-off: not a pattern
+    days.push(ts);
+  }
+  assert.deepEqual(core.easiestSlot(days), { start: 14, end: 16, days: 8, n: 20 });
+  assert.equal(core.easiestSlot(days.slice(0, 10)), null);   // too few days
+});
+test("slotLabel names the block", () => {
+  assert.equal(core.slotLabel(14), "2–4 pm");
+  assert.equal(core.slotLabel(10), "10 am–noon");
+  assert.equal(core.slotLabel(22), "10 pm–midnight");
+  assert.equal(core.slotLabel(0), "midnight–2 am");
+  assert.equal(core.slotLabel(8), "8–10 am");
+});
+
+// ---- the last stretch ----
+test("endgameNext walks 5, 3, 1, then zero", () => {
+  assert.equal(core.endgameNext(7), 5);
+  assert.equal(core.endgameNext(5), 3);
+  assert.equal(core.endgameNext(3.5), 3);
+  assert.equal(core.endgameNext(3), 1);
+  assert.equal(core.endgameNext(1), 0);
+});
+test("lastWeeks sums whole Sunday–Saturday weeks before this one", () => {
+  const totals = { "2026-09-13": 1, "2026-09-15": 2, "2026-09-19": 1, "2026-09-20": 1, "2026-09-26": 1, "2026-09-27": 9 };
+  assert.deepEqual(core.lastWeeks(totals, "2026-09-30", 2), [4, 2]);   // weeks of 13th and 20th; the 27th is this week
+});
+test("endgameReady wants every week under and the average halfway down", () => {
+  assert.equal(core.endgameReady([4, 4], 5, 3), true);
+  assert.equal(core.endgameReady([6, 2], 5, 3), false);    // one week over
+  assert.equal(core.endgameReady([5, 5], 5, 3), false);    // held, but not living below
+  assert.equal(core.endgameReady([4], 5, 3), false);
+  assert.equal(core.endgameSlipping([6, 7], 5), true);
+  assert.equal(core.endgameSlipping([6, 4], 5), false);
+});
+
+// ---- how far you've come ----
+test("sinceStart compares the first fortnight with the last", () => {
+  const days = [];
+  for (let i = 0; i < 28; i++) {
+    const d = new Date(2026, 7, 1 + i);
+    days.push({ date: core.isoLocal(d), total: i < 14 ? 6 : 3 });
+  }
+  const r = core.sinceStart(days.slice().reverse());   // order doesn't matter
+  assert.equal(r.baseline, 6);
+  assert.equal(r.recent, 3);
+  assert.equal(r.pct, 0.5);
+  assert.equal(r.fewer, 42);   // 14 days, 3 fewer each
+  assert.equal(r.days, 14);
+  assert.equal(core.sinceStart(days.slice(0, 27)), null);
+  assert.equal(core.sinceStart(days.map((d) => ({ ...d, total: 0 }))), null);
+});

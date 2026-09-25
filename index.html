@@ -1577,6 +1577,14 @@
     .wk-labels { display: flex; gap: 6px; margin-top: 7px; }
     .wk-labels span { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
     .wk-callout { font-size: 13px; color: var(--muted); margin-top: var(--sp-3); }
+    .start-big { margin-top: var(--sp-2); line-height: 1; }
+    .start-pct { font-size: 40px; font-weight: 800; color: var(--safe); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    .start-word { font-size: 17px; font-weight: 700; color: var(--text); }
+    .start-line { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+    .start-money { color: var(--text); font-weight: 600; }
+    .slot-hint { font-size: 13px; line-height: 1.45; color: var(--text); border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; }
+    .sheet p.slot-hint { margin: var(--sp-2) 0 var(--sp-3); }
+    .ladder-sug .slot-hint, .ladder-sug-sub + .ladder-sug-sub { margin-top: 6px; }
     .wk-callout b { color: var(--text); font-weight: 700; }
 
     /* ---- time-of-day chart (insights) ---- */
@@ -1932,6 +1940,8 @@
     <div class="goal-label" id="goalText"></div>
     <!-- where today is heading, but only while that's still useful to know -->
     <div class="pace-today" id="paceToday" style="display:none" aria-live="polite"></div>
+    <!-- the target gap between them, once one is set -->
+    <div class="pace-today gap-line" id="gapLine" style="display:none"></div>
     <div class="swipe-hint" id="swipeHint"><span class="arrow">↓</span> swipe down to undo</div>
   </div>
 
@@ -1954,7 +1964,7 @@
     <button id="insightsBtn">Insights</button>
   </div>
 
-  <div class="version">v10.55</div>
+  <div class="version">v10.56</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -2040,6 +2050,7 @@
         <!-- JOURNEY: the arc of the whole thing -->
         <div class="seg-page" id="segJourney" style="display:none">
           <div class="chart-card hero-card" id="ladderCard" style="display:none"></div>
+          <div class="chart-card" id="startCard" style="display:none"></div>
           <div class="chart-card" id="progressCard" style="display:none"></div>
           <div class="chart-card" id="recordsCard" style="display:none"></div>
           <div class="chart-card" id="calCard" style="display:none"></div>

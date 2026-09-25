@@ -92,6 +92,7 @@ const el = {
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
   paceToday: document.getElementById("paceToday"),
+  gapLine: document.getElementById("gapLine"),
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
@@ -126,6 +127,7 @@ const el = {
   compareLine: document.getElementById("compareLine"),
   riskLine: document.getElementById("riskLine"),
   ladderCard: document.getElementById("ladderCard"),
+  startCard: document.getElementById("startCard"),
   progressCard: document.getElementById("progressCard"),
   habitsSummaryCard: document.getElementById("habitsSummaryCard"),
   habitsImpactCard: document.getElementById("habitsImpactCard"),
@@ -279,6 +281,12 @@ let experiment = load(KEY_EXPERIMENT, null);   // the factor currently under tes
 const KEY_HARD_NOTES = "count.hardNotes";       // [{ id, text, at }]
 const KEY_HARD_NOTE_ASK = "count.hardNoteAsk";  // ISO of the last time a note was offered
 let hardNotes = load(KEY_HARD_NOTES, []);
+// A target gap between taps (see "spacing them out").
+const KEY_GAP = "count.gap";   // { on, target (ms), setAt, askAt }
+let gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load(KEY_GAP, {}));
+// What one costs, for the money line in "Since you started". 0 = not set.
+const KEY_UNIT_COST = "count.unitCost";
+let unitCost = load(KEY_UNIT_COST, 0);
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
 // One per day, picked by date like the theme rotation — holds still while
@@ -591,13 +599,26 @@ function runTaperPrompts() {
   if (maybeZeroHandoff()) return true;
   if (maybeRaiseOffer()) return true;
   if (maybeTaperOffer()) return true;
+  if (maybeGapStretch()) return true;
+  if (maybeGapOffer()) return true;
   return maybeHardNoteOffer();
 }
 
 // ---- taper: offer the next rung down once it's been earned ----
 function maybeTaperOffer() {
-  if (!taper.on || !hasGoal() || goal <= 0 || weekMode()) return false;
+  if (!taper.on || !hasGoal() || goal <= 0) return false;
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  if (weekMode()) return maybeEndgameStep();
+  // about one a day: the last stretch goes in weeks rather than one cliff
+  const bridge = endgameBridge();
+  if (bridge && endgameBridgeReady(bridge)) {
+    const asked = load(KEY_TAPER_ASK, null);
+    if (!asked || Date.now() - new Date(asked).getTime() >= 14 * 864e5) {
+      save(KEY_TAPER_ASK, new Date().toISOString());
+      openEndgameOffer(bridge);
+      return true;
+    }
+  }
   const sug = currentSuggestion();
   // smart mode paces by how long your own rungs have held; manual by the
   // number you typed
@@ -630,7 +651,14 @@ function openTaperOffer(sug, perf) {
     addEl(card, "div", fmt(next), "taper-to");
     s.appendChild(card);
     if (next === 0) addEl(s, "p", "That's the finish line — a daily goal of zero.", "sub");
-    s.appendChild(makeBtn(next === 0 ? "Go to zero ✓" : `Make it ${fmt(next)} ✓`, "primary", () => {
+    const hint = slotHint();
+    if (hint) addEl(s, "p", hint, "slot-hint");
+    const bridge = next === 0 ? endgameBridge() : null;
+    if (bridge) {
+      addEl(s, "p", `Or take the last stretch in weeks: ${bridge} a week leaves room for a few zero days before every day is one.`, "sub");
+      s.appendChild(makeBtn(`Try ${bridge} a week first`, "primary", () => setTaperGoal(bridge, "week")));
+    }
+    s.appendChild(makeBtn(next === 0 ? "Go to zero ✓" : `Make it ${fmt(next)} ✓`, bridge ? "ghost" : "primary", () => {
       goal = next; goalOn = true;
       save(KEY_GOAL, goal); save(KEY_GOAL_ON, true); noteGoalChange(goal);
       closeSheet(); render();
@@ -647,10 +675,20 @@ function openTaperOffer(sug, perf) {
 // alternative is stacking red days until you give up on the whole thing.
 const RAISE_GAP_MS = 14 * 864e5;
 function maybeRaiseOffer() {
-  if (!taper.on || !hasGoal() || weekMode()) return false;   // the taper works in days; it waits out a weekly budget
+  if (!taper.on || !hasGoal()) return false;
+  if (weekMode() && goal > ENDGAME_TOP) return false;   // the taper works in days; it waits out a big weekly budget
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const last = load(KEY_RAISE_ASK, null);
   if (last && Date.now() - new Date(last).getTime() < RAISE_GAP_MS) return false;
+  if (weekMode()) {
+    if (Date.now() - rungStart() < 14 * 864e5) return false;   // a new rung gets two full weeks
+    const weeks = endgameWeeks();
+    const up = [1, 3, 5, ENDGAME_TOP].find((r) => r > goal);
+    if (up == null || !endgameSlipping(weeks, goal)) return false;
+    save(KEY_RAISE_ASK, new Date().toISOString());
+    openEndgameRaise(weeks, up);
+    return true;
+  }
   const perf = goalPerformance(history, goal, 14);
   if (!backslideReady(perf, goal)) return false;
   save(KEY_RAISE_ASK, new Date().toISOString());
@@ -681,6 +719,222 @@ function openRaiseOffer(perf) {
     }));
     s.appendChild(makeBtn(`Keep it at ${fmt(goal)}`, "ghost", closeSheet));
   });
+}
+
+// Any rung the taper sets: the mode goes first, since the ladder records it
+// with the rung — a weekly 5 and a daily 5 are very different limits.
+function setTaperGoal(v, mode) {
+  goalMode = mode; save(KEY_GOAL_MODE, goalMode);
+  goal = v; goalOn = true;
+  save(KEY_GOAL, goal); save(KEY_GOAL_ON, true); noteGoalChange(goal);
+  save(KEY_TAPER_ASK, new Date().toISOString());
+  closeSheet(); render();
+  buzz([0, 40, 60, 40, 60, 90]);
+  const r = el.ringWrap.getBoundingClientRect();
+  confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 26);
+  toast(v === 0 ? "Goal is now zero 🎯" : mode === "week" ? `New budget: ${fmt(v)} a week — nicely done` : `New goal: ${fmt(v)} — nicely done`, 3600);
+}
+
+// ---- the last stretch ----
+// One a day to none is the hardest drop there is — the whole habit gone in one
+// step. So near the bottom the taper moves in weeks instead: 5 a week, then 3,
+// then 1, then zero, each rung a couple more zero days than the last.
+const ENDGAME_TOP = 7;   // a weekly budget this small is the last stretch
+function rungStart() {
+  const last = goalLog.length ? new Date(goalLog[goalLog.length - 1].at).getTime() : NaN;
+  return isNaN(last) ? 0 : last;
+}
+// On a daily goal of about one, the weekly rung to offer instead of zero.
+function endgameBridge() {
+  if (weekMode() || !hasGoal() || !(goal > 0) || goal > 1) return null;
+  const r = endgameNext(round2(goal * 7));
+  return r > 0 ? r : null;
+}
+// Offered on the same terms as any drop: the daily limit held, and the week
+// already running halfway down to the rung.
+function endgameBridgeReady(bridge) {
+  const perf = goalPerformance(history, goal, 21);
+  if (perf.n < 14 || perf.underPct < 0.8) return false;
+  return perf.avg * 7 <= (goal * 7 + bridge) / 2;
+}
+function endgameWeeks() { return lastWeeks(dayTotalsMap(), sessionDate(), 2); }
+// The next weekly rung down, or null when it hasn't been earned yet.
+function endgameStep() {
+  if (!weekMode() || !hasGoal() || !(goal > 0) || goal > ENDGAME_TOP) return null;
+  if (Date.now() - rungStart() < 14 * 864e5) return null;
+  const weeks = endgameWeeks();
+  const next = endgameNext(goal);
+  return endgameReady(weeks, goal, next) ? { next, weeks } : null;
+}
+function maybeEndgameStep() {
+  const last = load(KEY_TAPER_ASK, null);
+  if (last && Date.now() - new Date(last).getTime() < 14 * 864e5) return false;
+  const st = endgameStep();
+  if (!st) return false;
+  save(KEY_TAPER_ASK, new Date().toISOString());
+  openEndgameStep(st);
+  return true;
+}
+function openEndgameOffer(bridge) {
+  const perf = goalPerformance(history, goal, 21);
+  openSheet((s) => {
+    addEl(s, "h3", "The last stretch");
+    addEl(s, "p", `You've kept to ${fmt(goal)} a day on ${perf.under} of the last ${perf.n} days. From here, one step to zero is the hardest drop there is, so take it in weeks: ${bridge} a week, then fewer, then none.`, "sub");
+    const card = document.createElement("div"); card.className = "taper-card";
+    addEl(card, "div", `${fmt(round2(goal * 7))}/wk`, "taper-from");
+    addEl(card, "div", "→", "taper-arrow");
+    addEl(card, "div", `${bridge}/wk`, "taper-to");
+    s.appendChild(card);
+    addEl(s, "p", "Any day can use them, and a day only counts against your streak once the week goes over.", "sub");
+    s.appendChild(makeBtn(`Try ${bridge} a week ✓`, "primary", () => setTaperGoal(bridge, "week")));
+    s.appendChild(makeBtn("Straight to zero", "ghost", () => setTaperGoal(0, "day")));
+    s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
+  });
+}
+function openEndgameStep(st) {
+  openSheet((s) => {
+    addEl(s, "h3", st.next === 0 ? "Ready for zero?" : "Next rung down?");
+    addEl(s, "p", `Your last two weeks came in at ${fmt(st.weeks[0])} and ${fmt(st.weeks[1])}, inside your ${fmt(goal)} a week.`, "sub");
+    const card = document.createElement("div"); card.className = "taper-card";
+    addEl(card, "div", `${fmt(goal)}/wk`, "taper-from");
+    addEl(card, "div", "→", "taper-arrow");
+    addEl(card, "div", st.next === 0 ? "0" : `${st.next}/wk`, "taper-to");
+    s.appendChild(card);
+    if (st.next === 0) addEl(s, "p", "That's the finish line — a daily goal of zero.", "sub");
+    const hint = slotHint();
+    if (hint) addEl(s, "p", hint, "slot-hint");
+    s.appendChild(makeBtn(st.next === 0 ? "Go to zero ✓" : `Make it ${st.next} a week ✓`, "primary",
+      () => setTaperGoal(st.next, st.next === 0 ? "day" : "week")));
+    s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
+  });
+}
+function openEndgameRaise(weeks, up) {
+  openSheet((s) => {
+    addEl(s, "h3", "This rung looks tight");
+    addEl(s, "p", `Your last two weeks came in at ${fmt(weeks[0])} and ${fmt(weeks[1])}, over your ${fmt(goal)} a week. That's information, not a failure — a rung you can hold beats one you can't.`, "sub");
+    const card = document.createElement("div"); card.className = "taper-card";
+    addEl(card, "div", `${fmt(goal)}/wk`, "taper-from");
+    addEl(card, "div", "→", "taper-arrow");
+    const to = addEl(card, "div", `${up}/wk`, "taper-to"); to.classList.add("up");
+    s.appendChild(card);
+    s.appendChild(makeBtn(`Move up to ${up} a week`, "primary", () => {
+      goal = up; goalOn = true;
+      save(KEY_GOAL, goal); save(KEY_GOAL_ON, true); noteGoalChange(goal);
+      save(KEY_TAPER_ASK, new Date().toISOString());
+      closeSheet(); render(); buzz(20);
+      toast(`Budget is now ${up} a week — steady beats strict`, 3600);
+    }));
+    s.appendChild(makeBtn(`Keep ${fmt(goal)} a week`, "ghost", closeSheet));
+  });
+}
+
+// ---- where to cut first ----
+// Tap times that added something (a minus-tap isn't an occasion).
+function positiveTimes(arr) {
+  return (arr || []).map(tapEntry).filter((e) => e && typeof e.t === "number" && (e.amt == null || e.amt > 0)).map((e) => e.t);
+}
+function historyByDate() {
+  return history.filter((d) => d && d.date).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+// The last month of days, as tap times. A zero day counts (the slot didn't
+// happen); a day typed in afterwards has no times and says nothing either way.
+function slotDays() {
+  return historyByDate().slice(-30)
+    .filter((d) => d.total === 0 || (d.tapTimes || []).length)
+    .map((d) => positiveTimes(d.tapTimes));
+}
+function slotHint() {
+  const sl = easiestSlot(slotDays());
+  if (!sl) return "";
+  return `Where to start: your ${slotLabel(sl.start)} one turns up on only ${sl.days} of your last ${sl.n} days. It's the least fixed part of your day, so it's likely the easiest to drop.`;
+}
+
+// ---- spacing them out ----
+// Fewer a day and further apart are two sides of the same taper; this is the
+// second. A target gap starts at your usual one and stretches as you hold it.
+// It says when the next one's due and never blocks a tap.
+function gapOn() { return gap.on && gap.target > 0 && !(hasGoal() && goal === 0); }
+function lastTapAt() {
+  const t = positiveTimes(tapLog);
+  return t.length ? t[t.length - 1] : null;
+}
+// Days of tap times, newest `n` logged days plus today; `from` drops earlier taps.
+function recentTapDays(n, from) {
+  const keep = (arr) => positiveTimes(arr).filter((t) => !from || t >= from);
+  const days = historyByDate().slice(-n).map((d) => keep(d.tapTimes));
+  days.push(keep(tapLog));
+  return days.filter((a) => a.length);
+}
+function renderGapLine() {
+  const line = el.gapLine;
+  if (!line) return;
+  const last = gapOn() ? lastTapAt() : null;
+  if (!last) { line.style.display = "none"; return; }
+  const since = Date.now() - last;
+  line.style.display = "";
+  if (since < gap.target) {
+    const at = new Date(last + gap.target).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    line.innerHTML = `Next one after <b>${at}</b> · ${gapLabel(gap.target)} gap`;
+  } else {
+    line.innerHTML = `<b>${gapLabel(since)}</b> since the last one`;
+  }
+}
+// Said once, after the tap, and never as a gate.
+function noteEarlyTap(prevAt) {
+  if (!gapOn() || !prevAt) return;
+  const d = Date.now() - prevAt;
+  if (d < OCCASION_MS || d >= gap.target) return;
+  toast(`${gapLabel(gap.target - d)} before your ${gapLabel(gap.target)} gap. The next one counts from now.`, 3400);
+}
+function setGap(target) {
+  gap.on = true; gap.target = target; gap.setAt = new Date().toISOString();
+  save(KEY_GAP, gap);
+  renderGapLine();
+}
+function maybeGapOffer() {
+  if (gap.on || (hasGoal() && goal === 0)) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  if (gap.askAt && Date.now() - new Date(gap.askAt).getTime() < 30 * 864e5) return false;
+  const t = gapTarget(recentTapDays(14));
+  if (!t) return false;
+  gap.askAt = new Date().toISOString(); save(KEY_GAP, gap);
+  openSheet((s) => {
+    addEl(s, "h3", "Space them out?");
+    addEl(s, "p", `Your usual gap between them is about ${gapLabel(t)}. Keep at least that long between each one, and once it's easy the app will suggest stretching it.`, "sub");
+    addEl(s, "p", "It shows when the next one's due. Nothing is ever blocked.", "sub");
+    s.appendChild(makeBtn(`Try ${gapLabel(t)}`, "primary", () => {
+      setGap(t); closeSheet(); buzz(12);
+      toast(`Gap set: ${gapLabel(t)}`);
+    }));
+    s.appendChild(makeBtn("Not now", "ghost", closeSheet));
+  });
+  return true;
+}
+function maybeGapStretch() {
+  if (!gapOn()) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const setAt = new Date(gap.setAt || 0).getTime();
+  if (Date.now() - setAt < 7 * 864e5) return false;
+  if (gap.askAt && Date.now() - new Date(gap.askAt).getTime() < 7 * 864e5) return false;
+  const held = gapHeld(recentTapDays(14, setAt), gap.target);
+  if (!held.ready) return false;
+  const next = nextGap(gap.target);
+  gap.askAt = new Date().toISOString(); save(KEY_GAP, gap);
+  openSheet((s) => {
+    addEl(s, "h3", "Stretch the gap?");
+    addEl(s, "p", `You kept ${gapLabel(gap.target)} or more between them ${held.held} of ${held.n} times since you set it. Try ${gapLabel(next)}?`, "sub");
+    const card = document.createElement("div"); card.className = "taper-card";
+    addEl(card, "div", gapLabel(gap.target), "taper-from");
+    addEl(card, "div", "→", "taper-arrow");
+    addEl(card, "div", gapLabel(next), "taper-to");
+    s.appendChild(card);
+    s.appendChild(makeBtn(`Make it ${gapLabel(next)} ✓`, "primary", () => {
+      setGap(next); closeSheet(); buzz([0, 30, 50, 30]);
+      toast(`New gap: ${gapLabel(next)} — nicely done`, 3200);
+    }));
+    s.appendChild(makeBtn(`Keep ${gapLabel(gap.target)}`, "ghost", closeSheet));
+  });
+  return true;
 }
 
 // Reaching and holding zero is the entire point — mark it properly.
@@ -1647,7 +1901,7 @@ function renderRangeRow() {
 // were reconstructed for panels nobody had open.
 const SEG_RENDER = {
   overview: () => { renderTopInsight(); renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
-  journey:  () => { renderLadder(); renderProgress(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
+  journey:  () => { renderLadder(); renderStart(); renderProgress(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
   habits:   () => { renderHabits(); renderHabitImpact(); },
   patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderWeekHeat(); renderMood(); renderConnections(); renderWins(); },
 };
@@ -1906,14 +2160,6 @@ function renderPace() {
 // it's heading. This is the story of the whole journey in one card.
 function renderLadder() {
   const card = el.ladderCard;
-  // the ladder charts a daily goal stepping down; a weekly budget is a different
-  // unit, so rather than plot 28 beside 4, it says what it's waiting for
-  if (weekMode()) {
-    card.style.display = "block"; card.textContent = "";
-    addEl(card, "div", "Taper ladder", "section-title");
-    addEl(card, "div", "The ladder follows a daily goal. It picks up again if you switch back from a weekly budget.", "card-empty");
-    return;
-  }
   if (goalLog.length < 2) {
     card.style.display = "block"; card.textContent = "";
     addEl(card, "div", 'Taper ladder', "section-title");
@@ -1924,7 +2170,11 @@ function renderLadder() {
   card.textContent = "";
   addEl(card, "div", "Taper ladder", "section-title");
 
-  const pts = goalLog.map((g) => ({ at: new Date(g.at).getTime(), goal: g.goal })).filter((g) => !isNaN(g.at)).sort((a, b) => a.at - b.at);
+  // one scale for every rung: a weekly budget is drawn as its daily share, so
+  // the last stretch (5, 3, 1 a week) keeps stepping down the same staircase
+  const pts = goalLog.map((g) => ({ at: new Date(g.at).getTime(), goal: g.mode === "week" ? round2(g.goal / 7) : g.goal, raw: g.goal, week: g.mode === "week" }))
+    .filter((g) => !isNaN(g.at)).sort((a, b) => a.at - b.at);
+  const rungText = (p) => (p.week ? `${fmt(p.raw)}/wk` : fmt(p.goal));
   const t0 = pts[0].at, tN = Date.now();
   const span = Math.max(1, tN - t0);
   const maxG = Math.max(...pts.map((p) => p.goal), 1);
@@ -1944,19 +2194,19 @@ function renderLadder() {
   // the staircase draws itself down, so the descent to zero reads as motion
   drawPath(card.querySelector(".ladder-path"), 900);
 
-  const first = pts[0].goal, cur = pts[pts.length - 1].goal;
+  const first = pts[0], curP = pts[pts.length - 1], cur = curP.goal;
   const rungs = pts.filter((p, i) => i > 0 && p.goal < pts[i - 1].goal).length;
   const line = document.createElement("div"); line.className = "wk-callout";
   if (cur === 0) {
-    line.innerHTML = `<b>You made it to zero.</b> From ${fmt(first)} down, ${rungs} step${rungs === 1 ? "" : "s"}.`;
-  } else if (cur < first) {
-    line.innerHTML = `<b>${fmt(first)} → ${fmt(cur)}</b> · ${rungs} step${rungs === 1 ? "" : "s"} down`;
+    line.innerHTML = `<b>You made it to zero.</b> From ${rungText(first)} down, ${rungs} step${rungs === 1 ? "" : "s"}.`;
+  } else if (cur < first.goal) {
+    line.innerHTML = `<b>${rungText(first)} → ${rungText(curP)}</b> · ${rungs} step${rungs === 1 ? "" : "s"} down`;
   } else {
-    line.innerHTML = `Currently <b>${fmt(cur)}</b>`;
+    line.innerHTML = `Currently <b>${rungText(curP)}</b>`;
   }
   card.appendChild(line);
 
-  const zp = projectZero(goalLog);
+  const zp = projectZero(pts.map((p) => ({ at: p.at, goal: p.goal })));
   if (zp && !zp.done) {
     const eta = document.createElement("div"); eta.className = "mood-corr";
     const days = Math.max(1, Math.round((zp.date.getTime() - Date.now()) / 864e5));
@@ -1966,15 +2216,53 @@ function renderLadder() {
   appendSuggestion(card);
 }
 
+// How far you've come: your first two weeks against your last two. Shown only
+// once there's a real drop to show — a card that tells you you're no better
+// than when you started isn't one anybody opens the app to read.
+function renderStart() {
+  const card = el.startCard;
+  if (!card) return;
+  const r = sinceStart(history);
+  if (!r || r.pct < 0.05) { card.style.display = "none"; return; }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "Since you started", "section-title");
+  const big = document.createElement("div"); big.className = "start-big";
+  addEl(big, "span", `${Math.round(r.pct * 100)}%`, "start-pct");
+  addEl(big, "span", " down", "start-word");
+  card.appendChild(big);
+  addEl(card, "div", `${fmtAvg(r.baseline)} a day in your first two weeks, ${fmtAvg(r.recent)} a day in your last two.`, "start-line");
+  if (r.fewer >= 1) {
+    const what = countLabel || "logged";
+    addEl(card, "div", `About ${r.fewer} fewer ${what} over ${r.days} days than your starting pace would have come to.`, "start-line");
+    if (unitCost > 0) addEl(card, "div", `That's about $${fmt(round2(r.fewer * unitCost))} not spent.`, "start-line start-money");
+  }
+}
+
 // The live suggestion, readable here rather than only when the app interrupts
 // you with it — the opening budget means the offer may not surface for days.
 function appendSuggestion(card) {
+  const st = endgameStep();
+  if (st) {
+    const box = document.createElement("div");
+    box.className = "ladder-sug";
+    box.innerHTML = `Suggested next rung: <b>${fmt(goal)} → ${st.next === 0 ? "0" : `${st.next}`} a week</b>` +
+      `<span class="ladder-sug-sub">your last two weeks came in at ${fmt(st.weeks[0])} and ${fmt(st.weeks[1])}</span>`;
+    const go = document.createElement("button");
+    go.type = "button"; go.className = "plan-add";
+    go.textContent = st.next === 0 ? "Go to zero" : `Make it ${st.next} a week`;
+    go.addEventListener("click", () => setTaperGoal(st.next, st.next === 0 ? "day" : "week"));
+    box.appendChild(go);
+    card.appendChild(box);
+    return;
+  }
   const sug = currentSuggestion();
   if (!sug) return;
   const box = document.createElement("div");
   box.className = "ladder-sug";
   box.innerHTML = `Suggested next rung: <b>${fmt(goal)} → ${fmt(sug.next)}</b>` +
     `<span class="ladder-sug-sub">${sug.metDays} of your last ${sug.n} days were already at or under ${fmt(sug.next)} · ${taperPace().label.toLowerCase()} pace</span>`;
+  const hint = slotHint();
+  if (hint) addEl(box, "span", hint, "ladder-sug-sub");
   const go = document.createElement("button");
   go.type = "button"; go.className = "plan-add";
   go.textContent = sug.next === 0 ? "Go to zero" : `Make it ${fmt(sug.next)}`;
@@ -3261,6 +3549,7 @@ function renderTop(animate) {
 
   renderPulse();
   renderPaceToday();
+  renderGapLine();
   showSwipeHint();
   announceTotal();
 }
@@ -3357,6 +3646,7 @@ function applyDelta(amt, confirmed) {
     return;
   }
   const prev = today;
+  const prevAt = amt > 0 && !confirmed ? lastTapAt() : null;
   today = round2(today + amt);
   if (today < 0) today = 0;
   taps += 1;
@@ -3369,6 +3659,7 @@ function applyDelta(amt, confirmed) {
     if (prev < lim && today === lim) atGoalHeadsUp();          // landed exactly on the limit
     else if (prev <= lim && today > lim) warnOver();            // crossed over it
   }
+  noteEarlyTap(prevAt);
   renderTop(true);   // history list doesn't change on a tap
 }
 // The moment of truth: going over the goal requires an explicit yes.
@@ -4627,7 +4918,7 @@ function openTrackingSettings() {
         ? "Weekly budget, Sunday to Saturday — leave blank for none"
         : "Daily goal — leave blank for none, 0 is the finish line";
       modeNote.textContent = mode === "week"
-        ? "A big day is fine while the week has room. A day only counts against your streak once it takes the week over budget. Taper suggestions pause while you use a weekly budget."
+        ? "A big day is fine while the week has room. A day only counts against your streak once it takes the week over budget. Step-downs pause on a weekly budget, except in the last stretch: at 7 a week or fewer they step through 5, 3 and 1 a week to zero."
         : "";
       modeNote.style.display = mode === "week" ? "" : "none";
     };
@@ -4647,6 +4938,10 @@ function openTrackingSettings() {
       modeRow.appendChild(b);
     });
     paintMode();
+    addEl(s, "label", "What one costs (optional)");
+    const costInput = numInput(unitCost > 0 ? fmt(unitCost) : "", "0.01");
+    costInput.placeholder = "e.g. 0.50";
+    s.appendChild(costInput);
     // one slip won't reset your streak — the day is bridged and marked with a shield
     const graceToggle = makeToggle(s, "Streak grace — one slip won't reset it", streakGrace);
     graceToggle.addEventListener("change", () => { streakGrace = graceToggle.checked; save(KEY_STREAK_GRACE, streakGrace); buzz(8); render(); });
@@ -4661,6 +4956,9 @@ function openTrackingSettings() {
       save(KEY_GOAL_ON, goalOn);
       goalMode = mode; save(KEY_GOAL_MODE, goalMode);
       if (goalOn) noteGoalChange(goal);
+      const nc = parseFloat(costInput.value);
+      unitCost = costInput.value.trim() === "" || isNaN(nc) || nc < 0 ? 0 : round2(nc);
+      save(KEY_UNIT_COST, unitCost);
       countLabel = labelInput.value.trim();
       save(KEY_STEP, step); save(KEY_GOAL, goal); save(KEY_LABEL, countLabel);
       closeSheet(); render();
@@ -4672,7 +4970,8 @@ function openTrackingSettings() {
 function openTaperSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Taper to zero");
-    if (weekMode()) addEl(s, "p", "Paused while you use a weekly budget — the taper steps a daily goal down. Your settings here are kept for when you switch back.", "sub");
+    if (weekMode() && goal > ENDGAME_TOP) addEl(s, "p", "Paused while you use a weekly budget — the taper steps a daily goal down. Your settings here are kept for when you switch back.", "sub");
+    else if (weekMode()) addEl(s, "p", "The last stretch: step-downs go 5, 3, then 1 a week, then zero — each once your last two weeks have come in under.", "sub");
     const taperToggle = makeToggle(s, "Suggest step-downs", taper.on);
     taperToggle.addEventListener("change", () => { taper.on = taperToggle.checked; save(KEY_TAPER, taper); buzz(8); });
 
@@ -4734,6 +5033,33 @@ function openTaperSettings() {
     syncAll();
 
     addEl(s, "p", "The app only offers a rung down when you've been holding the current one and aren't sliding. It never suggests one while you're struggling.", "sub");
+
+    // the other half of tapering: the same number, further apart
+    addEl(s, "label", "Space them out");
+    const gapToggle = makeToggle(s, "Keep a gap between them", gap.on);
+    const gapWrap = document.createElement("div");
+    addEl(gapWrap, "label", "Gap (minutes)");
+    const gapIn = numInput(gap.target ? String(Math.round(gap.target / 60000)) : "", "5");
+    gapIn.placeholder = "e.g. 90";
+    gapWrap.appendChild(gapIn);
+    addEl(gapWrap, "p", "Home shows when the next one's due; a tap before then is still logged, with a quiet note. Once you've held the gap for a week, the app suggests stretching it.", "sub");
+    s.appendChild(gapWrap);
+    const syncGap = () => { gapWrap.style.display = gapToggle.checked ? "" : "none"; };
+    gapToggle.addEventListener("change", () => {
+      buzz(8);
+      if (gapToggle.checked) {
+        const t = gap.target || gapTarget(recentTapDays(14)) || 60 * 60000;
+        gapIn.value = String(Math.round(t / 60000));
+        setGap(t);
+      } else { gap.on = false; save(KEY_GAP, gap); renderGapLine(); }
+      syncGap();
+    });
+    gapIn.addEventListener("change", () => {
+      const m = parseInt(gapIn.value, 10);
+      if (m >= 5 && m <= 24 * 60) setGap(m * 60000);
+      else toast("Pick a gap between 5 minutes and a day");
+    });
+    syncGap();
     const zp = hasGoal() ? projectZero(goalLog) : null;
     if (zp && !zp.done) addEl(s, "p", `At your current pace you'd reach 0 around ${zp.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`, "sub");
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
@@ -7489,6 +7815,8 @@ window.addEventListener("storage", (e) => {
   experiment = load(KEY_EXPERIMENT, null);
   moodDaily = load(KEY_MOOD_DAILY, {});
   hardNotes = load(KEY_HARD_NOTES, []);
+  gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load(KEY_GAP, {}));
+  unitCost = load(KEY_UNIT_COST, 0);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
   goalMode = load(KEY_GOAL_MODE, "day");
@@ -7514,6 +7842,7 @@ checkReminder();
 scheduleReminders();
 setInterval(() => {
   rolloverIfStale();   // a phone left open crosses the 4am line here
+  renderGapLine();     // "next one after 3:10" turns into "1h 40m since" on its own
   maybeFinishExperiment();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight

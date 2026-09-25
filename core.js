@@ -1132,6 +1132,139 @@ function dayStamp(dateStr, now) {
   return { date: isoLocal(when), label: dayLabel(when), endedAt: when.toISOString() };
 }
 
+// ---- spacing: stretching the time between them ----
+// Taps a few minutes apart are one occasion (a double tap, a half step logged
+// twice), so they never count as a gap and never count as early.
+const OCCASION_MS = 5 * 60000;
+const FIVE_MIN = 5 * 60000;
+// Gaps between one occasion and the next, within each day. `days` is a list of
+// timestamp arrays, one per day; the first tap of a day has no gap, because
+// overnight isn't spacing anything out.
+function dayGaps(days) {
+  const out = [];
+  (days || []).forEach((ts) => {
+    const s = (ts || []).filter((t) => typeof t === "number" && isFinite(t)).sort((a, b) => a - b);
+    for (let i = 1; i < s.length; i++) {
+      const g = s[i] - s[i - 1];
+      if (g >= OCCASION_MS) out.push(g);
+    }
+  });
+  return out;
+}
+// Where to start: your usual gap, rounded down to five minutes so the first
+// target is one you already keep about half the time. Null on thin data.
+function gapTarget(days) {
+  const g = dayGaps(days);
+  if (g.length < 15) return null;
+  return Math.max(15 * 60000, Math.floor(median(g) / FIVE_MIN) * FIVE_MIN);
+}
+// Has the target been held? Offer the next one once three in four gaps clear it.
+function gapHeld(days, target) {
+  const g = dayGaps(days);
+  const held = g.filter((x) => x >= target).length;
+  return { n: g.length, held, ready: g.length >= 10 && held / g.length >= 0.75 };
+}
+// The next target: a quarter hour, or a tenth of the gap once that's bigger.
+function nextGap(target) {
+  return target + Math.max(15 * 60000, Math.round((target * 0.1) / FIVE_MIN) * FIVE_MIN);
+}
+// "1h 30m", "45m" — a gap reads in hours and minutes, never seconds.
+function gapLabel(ms) {
+  const m = Math.round(ms / 60000);
+  const h = Math.floor(m / 60), r = m % 60;
+  if (!h) return `${r}m`;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+
+// ---- the easiest one to drop ----
+// The two-hour block you tap in on the fewest days, among the blocks that are a
+// real part of the routine (a quarter of days or more) but not a fixture of it
+// (70% or less). The least fixed habit is usually the least needed one.
+function easiestSlot(days) {
+  const n = (days || []).length;
+  if (n < 14) return null;
+  const hit = new Array(12).fill(0);
+  days.forEach((ts) => {
+    const seen = new Set();
+    (ts || []).forEach((t) => { const h = new Date(t).getHours(); if (!isNaN(h)) seen.add(Math.floor(h / 2)); });
+    seen.forEach((b) => hit[b]++);
+  });
+  let best = null;
+  for (let b = 0; b < 12; b++) {
+    const share = hit[b] / n;
+    if (share < 0.25 || share > 0.7) continue;
+    if (!best || hit[b] < best.days) best = { start: b * 2, end: b * 2 + 2, days: hit[b], n };
+  }
+  return best;
+}
+// "2–4 pm", "11 am–1 pm", "midnight–2 am"
+function slotLabel(start) {
+  const part = (h) => { h %= 24; if (h === 0) return ["midnight", ""]; if (h === 12) return ["noon", ""]; return [String(h % 12), h < 12 ? "am" : "pm"]; };
+  const [a, am] = part(start), [b, bm] = part(start + 2);
+  const left = am && am !== bm ? `${a} ${am}` : a;
+  return `${left}–${bm ? `${b} ${bm}` : b}`;
+}
+
+// ---- the last stretch: from about one a day to none ----
+// One a day to zero is the hardest drop there is, so near the bottom the taper
+// moves in weeks — a few zero days a week, then most, then all.
+const ENDGAME_RUNGS = [5, 3, 1];
+// The next rung below a weekly budget; 0 once there's none left.
+function endgameNext(weekBudget) {
+  const r = ENDGAME_RUNGS.find((x) => x < weekBudget);
+  return r == null ? 0 : r;
+}
+// Totals of the last `k` complete Sunday–Saturday weeks before the week that
+// holds `ds`, oldest first. `totals` maps day key → total.
+function lastWeeks(totals, ds, k) {
+  const d = new Date(ds + "T12:00:00");
+  d.setDate(d.getDate() - d.getDay() - 7);   // the Sunday of last week
+  const out = [];
+  for (let w = 0; w < k; w++) {
+    let sum = 0;
+    for (let i = 0; i < 7; i++) {
+      const x = new Date(d); x.setDate(d.getDate() + i);
+      sum += Number(totals[isoLocal(x)]) || 0;
+    }
+    out.unshift(round2(sum));
+    d.setDate(d.getDate() - 7);
+  }
+  return out;
+}
+// A rung down is earned the same way as everywhere else in the taper: the
+// current one held, and already living halfway to the next.
+function endgameReady(weeks, budget, next) {
+  if (!weeks || weeks.length < 2) return false;
+  if (weeks.some((w) => w > budget)) return false;
+  const avg = weeks.reduce((s, w) => s + w, 0) / weeks.length;
+  return avg <= (budget + next) / 2;
+}
+// And the way back up: every recent week over.
+function endgameSlipping(weeks, budget) {
+  return !!weeks && weeks.length >= 2 && weeks.every((w) => w > budget);
+}
+
+// ---- how far you've come ----
+// Your first two logged weeks against your last two, and how many fewer you've
+// logged since than your starting pace would have. Null until there are two
+// separate fortnights to compare, or when there was nothing to come down from.
+function sinceStart(entries) {
+  const days = (entries || []).filter((d) => d && typeof d.total === "number" && d.date)
+    .slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (days.length < 28) return null;
+  const mean = (a) => a.reduce((s, d) => s + d.total, 0) / a.length;
+  const baseline = mean(days.slice(0, 14));
+  if (!(baseline > 0)) return null;
+  const recent = mean(days.slice(-14));
+  const after = days.slice(14);
+  const fewer = after.reduce((s, d) => s + (baseline - d.total), 0);
+  return {
+    baseline: round2(baseline), recent: round2(recent),
+    pct: 1 - recent / baseline,
+    fewer: Math.round(fewer), days: after.length,
+  };
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1150,5 +1283,7 @@ if (typeof module !== "undefined" && module.exports) {
     highestMile, mileLabelFor, savedText, csvField, resetPatterns, rollingAverage,
     goalPerformance, taperReady, projectZero, zeroStreak,
     backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
+    OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
+    ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
   };
 }
