@@ -929,7 +929,7 @@ check("number stays centred in the ring after End Day", centred);
     check("accepting it stores the gap", (await pg.evaluate(() => JSON.parse(localStorage.getItem("count.gap")).target)) === 90 * 60000);
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
-    check("home says when the next one's due", /^Next one after .* · 1h 30m gap$/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
+    check("home says when the next one's due", /^Last one just now · next after \d/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
     await pg.evaluate(() => { tapLog[tapLog.length - 1].t = Date.now() - 30 * 60000; save("count.tapLog", tapLog); });
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
@@ -937,6 +937,32 @@ check("number stays centred in the ring after End Day", centred);
       (await pg.evaluate(() => [document.getElementById("toast").textContent, ...toastQ.map((t) => t.msg)].some((m) => /1h before your 1h 30m gap/.test(m)))));
     await pg.evaluate(() => { tapLog[tapLog.length - 1].t = Date.now() - 100 * 60000; renderGapLine(); });
     check("past the gap it counts up instead", /^1h 40m since the last one$/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
+    await ctx.close();
+  }
+
+  // time since the last tap, with no gap set, reaching back past today
+  {
+    const d = ago(1); d.setHours(20, 0, 0, 0);
+    const last = Date.now() - 26 * 3600e3 - 10 * 60000;
+    const hist = [
+      { date: isoOf(ago(3)), total: 1, taps: 1, endedAt: ago(3).toISOString(), tapTimes: [{ t: last - 2 * 864e5, amt: 1 }] },
+      { date: isoOf(ago(2)), total: 1, taps: 1, endedAt: ago(2).toISOString(), tapTimes: [{ t: last, amt: 1 }] },
+      { date: isoOf(ago(1)), total: 0, taps: 0, endedAt: ago(1).toISOString(), tapTimes: [] },
+    ];
+    const { ctx, pg } = await open16({ "count.history": hist, "count.gap": { on: false, askAt: new Date().toISOString() } }, "since last");
+    const line = () => pg.evaluate(() => { const l = document.getElementById("gapLine"); return l.style.display === "none" ? null : l.textContent; });
+    check("home shows time since the last tap, across days", (await line()) === "1d 2h since the last one");
+    await pg.click("#addBtn");
+    await pg.waitForTimeout(300);
+    check("a tap resets it", (await line()) === "Last one just now");
+    await pg.evaluate(() => { sinceLastOn = false; renderGapLine(); });
+    check("it can be switched off", (await line()) === null);
+    await pg.evaluate(() => {
+      history.push({ date: "2000-01-01", total: 0 });   // harmless: sorted to the front
+      history[history.length - 2].total = 2;            // a typed-in day with no times, newest
+      tapLog = []; sinceLastOn = true; renderGapLine();
+    });
+    check("a day with no tap times isn't guessed past", (await line()) === null);
     await ctx.close();
   }
 

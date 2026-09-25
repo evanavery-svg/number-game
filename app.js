@@ -275,6 +275,8 @@ let gameBest = load(KEY_GAME_BEST, 0);      // best focus-game score
 let plans = load(KEY_PLANS, []);            // if-then plans
 let urgeWins = load(KEY_URGE_WINS, []);     // urges ridden out from the counter
 let paceOn = load(KEY_PACE_ON, true);       // a way out for anyone it lands badly for
+const KEY_SINCE_LAST_ON = "count.sinceLastOn";
+let sinceLastOn = load(KEY_SINCE_LAST_ON, true);   // "2h 10m since the last one" on home
 let experiment = load(KEY_EXPERIMENT, null);   // the factor currently under test
 // Notes written on a good day for a harder one. Shown when the day's risk
 // nudge fires, and on the over-goal sheet — the moments they were written for.
@@ -865,18 +867,37 @@ function recentTapDays(n, from) {
   days.push(keep(tapLog));
   return days.filter((a) => a.length);
 }
+// The last tap you logged, looking back past today if need be. A logged day
+// with no tap times (typed in afterwards) means we can't know, so say nothing
+// rather than count from an older tap.
+function lastTapEver() {
+  const t = lastTapAt();
+  if (t) return t;
+  const days = historyByDate();
+  if (pending) days.push(pending);
+  for (let i = days.length - 1; i >= 0; i--) {
+    const times = positiveTimes(days[i].tapTimes);
+    if (times.length) return Math.max(...times);
+    if (days[i].total > 0) return null;
+  }
+  return null;
+}
+// Time since the last one, always — and while a target gap is running, when
+// the next one's due.
 function renderGapLine() {
   const line = el.gapLine;
   if (!line) return;
-  const last = gapOn() ? lastTapAt() : null;
+  const gapLast = gapOn() ? lastTapAt() : null;
+  const last = gapLast || (sinceLastOn ? lastTapEver() : null);
   if (!last) { line.style.display = "none"; return; }
-  const since = Date.now() - last;
+  const since = Math.max(0, Date.now() - last);
   line.style.display = "";
-  if (since < gap.target) {
+  const ago = since < 60000 ? "Last one <b>just now</b>" : `<b>${gapLabel(since)}</b> since the last one`;
+  if (gapLast && since < gap.target) {
     const at = new Date(last + gap.target).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    line.innerHTML = `Next one after <b>${at}</b> · ${gapLabel(gap.target)} gap`;
+    line.innerHTML = `${ago} · next after <b>${at}</b>`;
   } else {
-    line.innerHTML = `<b>${gapLabel(since)}</b> since the last one`;
+    line.innerHTML = ago;
   }
 }
 // Said once, after the tap, and never as a gate.
@@ -5153,6 +5174,12 @@ function openAppearanceSettings() {
     });
     addEl(s, "p", "A line under the ring in the afternoon, when it still helps to know.", "sub");
 
+    const sinceToggle = makeToggle(s, "Show time since the last one", sinceLastOn);
+    sinceToggle.addEventListener("change", () => {
+      sinceLastOn = sinceToggle.checked; save(KEY_SINCE_LAST_ON, sinceLastOn); buzz(8); renderGapLine();
+    });
+    addEl(s, "p", "A line under the ring counting up from your last tap.", "sub");
+
     autoInput = makeToggle(s, "Switch theme every day", themeAuto);
     autoInput.addEventListener("change", () => {
       themeAuto = autoInput.checked;
@@ -7817,6 +7844,7 @@ window.addEventListener("storage", (e) => {
   hardNotes = load(KEY_HARD_NOTES, []);
   gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load(KEY_GAP, {}));
   unitCost = load(KEY_UNIT_COST, 0);
+  sinceLastOn = load(KEY_SINCE_LAST_ON, true);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
   goalMode = load(KEY_GOAL_MODE, "day");
@@ -7835,6 +7863,7 @@ document.addEventListener("visibilitychange", () => {
   runDailyGates();
   setTimeout(runPassiveNotice, 1200);
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
+  renderGapLine();   // the clock kept going while the app was away
 });
 
 // Daily reminder + keep the unlock window fresh during active use.
@@ -7842,7 +7871,6 @@ checkReminder();
 scheduleReminders();
 setInterval(() => {
   rolloverIfStale();   // a phone left open crosses the 4am line here
-  renderGapLine();     // "next one after 3:10" turns into "1h 40m since" on its own
   maybeFinishExperiment();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight
@@ -7852,6 +7880,7 @@ setInterval(() => {
 // keep the main-page "time since" strip ticking every second; milestone
 // crossings only need a coarser watch (a few seconds late is fine)
 setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1000);
+setInterval(() => { if (!document.hidden) renderGapLine(); }, 15000);   // minute resolution, read within a few seconds
 setInterval(() => { if (!document.hidden && since.length) checkMilestones(); }, 10000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint

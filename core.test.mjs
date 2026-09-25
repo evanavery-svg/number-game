@@ -1298,6 +1298,8 @@ test("gapLabel reads in hours and minutes", () => {
   assert.equal(core.gapLabel(45 * 60000), "45m");
   assert.equal(core.gapLabel(90 * 60000), "1h 30m");
   assert.equal(core.gapLabel(120 * 60000), "2h");
+  assert.equal(core.gapLabel(26 * 3600e3 + 10 * 60000), "1d 2h");
+  assert.equal(core.gapLabel(48 * 3600e3), "2d");
 });
 
 // ---- the easiest one to drop ----

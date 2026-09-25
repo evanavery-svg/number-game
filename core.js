@@ -1169,9 +1169,11 @@ function nextGap(target) {
   return target + Math.max(15 * 60000, Math.round((target * 0.1) / FIVE_MIN) * FIVE_MIN);
 }
 // "1h 30m", "45m" — a gap reads in hours and minutes, never seconds.
+// Past a day it's days and hours — minutes stop meaning much by then.
 function gapLabel(ms) {
   const m = Math.round(ms / 60000);
   const h = Math.floor(m / 60), r = m % 60;
+  if (h >= 24) { const d = Math.floor(h / 24), hh = h % 24; return hh ? `${d}d ${hh}h` : `${d}d`; }
   if (!h) return `${r}m`;
   return r ? `${h}h ${r}m` : `${h}h`;
 }
