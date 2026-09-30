@@ -142,6 +142,8 @@ const el = {
   calCard: document.getElementById("calCard"),
   weekdayCard: document.getElementById("weekdayCard"),
   timeCard: document.getElementById("timeCard"),
+  whyCard: document.getElementById("whyCard"),
+  whyRow: document.getElementById("whyRow"),
   moodCard: document.getElementById("moodCard"),
   connCard: document.getElementById("connCard"),
   winsCard: document.getElementById("winsCard"),
@@ -289,6 +291,15 @@ let gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load
 // What one costs, for the money line in "Since you started". 0 = not set.
 const KEY_UNIT_COST = "count.unitCost";
 let unitCost = load(KEY_UNIT_COST, 0);
+// Why each one happened: a row of chips after a tap, ignorable.
+const KEY_TAP_WHY_ON = "count.tapWhyOn";
+const KEY_WHY_TIP = "count.whyTip";
+let tapWhyOn = load(KEY_TAP_WHY_ON, true);
+// How each step-down settles: a daily "how much are you feeling it" after a drop.
+const KEY_SETTLE_ON = "count.settleOn";
+const KEY_SETTLE_LOG = "count.settleLog";   // [{ at, date, from, to, answers: { day: 1–5 }, days }]
+let settleOn = load(KEY_SETTLE_ON, true);
+let settleLog = load(KEY_SETTLE_LOG, []);
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
 // One per day, picked by date like the theme rotation — holds still while
@@ -441,9 +452,14 @@ function weekUsed() { return round2(goal - todayGoal() + today); }
 function noteGoalChange(v) {
   const last = goalLog.length ? goalLog[goalLog.length - 1] : null;
   if (last && last.goal === v && (last.mode || "day") === goalMode) return;
-  goalLog.push({ at: new Date().toISOString(), goal: v, mode: goalMode });
+  const rung = { at: new Date().toISOString(), goal: v, mode: goalMode };
+  goalLog.push(rung);
   save(KEY_GOAL_LOG, goalLog);
+  if (last && rungDaily(rung) < rungDaily(last)) startSettle(last, rung);
 }
+// A rung as a daily amount, so a weekly budget compares with a daily goal.
+function rungDaily(e) { return e.mode === "week" ? e.goal / 7 : e.goal; }
+function rungText(e) { return e.mode === "week" ? `${fmt(e.goal)} a week` : `${fmt(e.goal)} a day`; }
 let water = load(KEY_WATER, null);   // hydration for today (auto-reset on a new day)
 let waterGlass = load(KEY_WATER_GLASS, 8);
 let waterGoal = load(KEY_WATER_GOAL, 64);
@@ -599,6 +615,7 @@ function openOnboarding(step) {
 function runTaperPrompts() {
   if (maybeZeroWin()) return true;
   if (maybeZeroHandoff()) return true;
+  if (maybeSettleCheck()) return true;
   if (maybeRaiseOffer()) return true;
   if (maybeTaperOffer()) return true;
   if (maybeGapStretch()) return true;
@@ -610,6 +627,7 @@ function runTaperPrompts() {
 function maybeTaperOffer() {
   if (!taper.on || !hasGoal() || goal <= 0) return false;
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  if (dropStillFelt()) return false;   // the next drop waits until the last one has settled
   if (weekMode()) return maybeEndgameStep();
   // about one a day: the last stretch goes in weeks rather than one cliff
   const bridge = endgameBridge();
@@ -653,8 +671,9 @@ function openTaperOffer(sug, perf) {
     addEl(card, "div", fmt(next), "taper-to");
     s.appendChild(card);
     if (next === 0) addEl(s, "p", "That's the finish line — a daily goal of zero.", "sub");
-    const hint = slotHint();
-    if (hint) addEl(s, "p", hint, "slot-hint");
+    cutHints().forEach((h) => addEl(s, "p", h, "slot-hint"));
+    const settled = settleLine();
+    if (settled) addEl(s, "p", settled, "sub");
     const bridge = next === 0 ? endgameBridge() : null;
     if (bridge) {
       addEl(s, "p", `Or take the last stretch in weeks: ${bridge} a week leaves room for a few zero days before every day is one.`, "sub");
@@ -803,8 +822,9 @@ function openEndgameStep(st) {
     addEl(card, "div", st.next === 0 ? "0" : `${st.next}/wk`, "taper-to");
     s.appendChild(card);
     if (st.next === 0) addEl(s, "p", "That's the finish line — a daily goal of zero.", "sub");
-    const hint = slotHint();
-    if (hint) addEl(s, "p", hint, "slot-hint");
+    cutHints().forEach((h) => addEl(s, "p", h, "slot-hint"));
+    const settled = settleLine();
+    if (settled) addEl(s, "p", settled, "sub");
     s.appendChild(makeBtn(st.next === 0 ? "Go to zero ✓" : `Make it ${st.next} a week ✓`, "primary",
       () => setTaperGoal(st.next, st.next === 0 ? "day" : "week")));
     s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
@@ -956,6 +976,153 @@ function maybeGapStretch() {
     s.appendChild(makeBtn(`Keep ${gapLabel(gap.target)}`, "ghost", closeSheet));
   });
   return true;
+}
+
+// ---- why this one ----
+// After a tap, a row of reasons slides over the buttons below for a few
+// seconds. One touch tags the tap; ignoring it costs nothing.
+const WHY_SHOW_MS = 6000;
+let whyTimer = null;
+function reasonOf(k) { return TAP_REASONS.find((r) => r.key === k); }
+function showWhyRow() {
+  const row = el.whyRow;
+  if (!row || !tapWhyOn) return;
+  if (el.overlay.classList.contains("show")) return;
+  if (!row.childElementCount) {
+    addEl(row, "span", "Why?", "why-q");
+    const chips = document.createElement("div"); chips.className = "why-chips";
+    TAP_REASONS.forEach((r) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "why-chip"; b.dataset.why = r.key;
+      b.textContent = `${r.emoji} ${r.label}`;
+      b.addEventListener("click", () => tagWhy(r.key, b));
+      chips.appendChild(b);
+    });
+    row.appendChild(chips);
+  }
+  row.querySelectorAll(".why-chip.on").forEach((b) => b.classList.remove("on"));
+  row.classList.add("show");
+  row.setAttribute("aria-hidden", "false");
+  clearTimeout(whyTimer);
+  whyTimer = setTimeout(hideWhyRow, WHY_SHOW_MS);
+  if (!load(KEY_WHY_TIP, false)) {
+    save(KEY_WHY_TIP, true);
+    toast("Tap a reason to tag it, or ignore it — it goes away on its own", 4200);
+  }
+}
+function hideWhyRow() {
+  const row = el.whyRow;
+  if (!row) return;
+  clearTimeout(whyTimer);
+  row.classList.remove("show");
+  row.setAttribute("aria-hidden", "true");
+}
+// Tags the last tap, and any untagged ones in the same occasion (a double tap
+// for one unit is one reason, not two).
+function tagWhy(key, chip) {
+  let i = tapLog.length - 1;
+  while (i >= 0 && !(tapEntry(tapLog[i]).amt == null || tapEntry(tapLog[i]).amt > 0)) i--;
+  if (i < 0) { hideWhyRow(); return; }
+  if (typeof tapLog[i] === "number") tapLog[i] = tapEntry(tapLog[i]);
+  const anchorT = tapLog[i].t;
+  tapLog[i].why = key;
+  for (let j = i - 1; j >= 0; j--) {
+    const e = tapEntry(tapLog[j]);
+    if (anchorT - e.t >= OCCASION_MS) break;
+    if (typeof tapLog[j] === "number") tapLog[j] = e;
+    if (!tapLog[j].why && (e.amt == null || e.amt > 0)) tapLog[j].why = key;
+  }
+  save(KEY_TAPLOG, tapLog);
+  buzz(8);
+  if (chip) chip.classList.add("on");
+  clearTimeout(whyTimer);
+  whyTimer = setTimeout(hideWhyRow, 450);   // long enough to see which one took
+}
+// Every tagged tap, history and today.
+function taggedTaps() {
+  const out = [];
+  const add = (arr) => (arr || []).forEach((raw) => { const e = tapEntry(raw); if (e && e.why) out.push(e); });
+  history.forEach((d) => add(d.tapTimes));
+  add(tapLog);
+  return out;
+}
+// Per day, the reasons tagged — the input to "which is easiest to drop".
+function reasonDays() {
+  const days = historyByDate().slice(-30).map((d) => (d.tapTimes || []).map(tapEntry).filter((e) => e && e.why).map((e) => e.why));
+  days.push(tapLog.map(tapEntry).filter((e) => e && e.why).map((e) => e.why));
+  return days;
+}
+function reasonHint() {
+  const r = easiestReason(reasonDays());
+  const rs = r && reasonOf(r.key);
+  if (!rs) return "";
+  return `Your “${rs.label.toLowerCase()}” ones turn up on only ${r.days} of the ${r.n} days you tagged. They're the least fixed reason, so they're likely the easiest to drop.`;
+}
+// What a step-down offer says about where to find the drop.
+function cutHints() { return [slotHint(), reasonHint()].filter(Boolean); }
+
+// ---- how each drop settles ----
+// Cutting down can be felt — headaches, irritability, poor sleep, cravings —
+// for a few days after each drop. A quick daily 1–5 learns how long yours
+// take to settle, and the next drop waits until the last one has.
+const SETTLE_SCALE = [
+  { v: 1, emoji: "😌", label: "Not at all" },
+  { v: 2, emoji: "🙂", label: "A little" },
+  { v: 3, emoji: "😐", label: "Some" },
+  { v: 4, emoji: "😣", label: "A lot" },
+  { v: 5, emoji: "😖", label: "Rough" },
+];
+function startSettle(from, to) {
+  settleLog.push({ at: to.at, date: sessionDate(), from: { goal: from.goal, mode: from.mode || "day" }, to: { goal: to.goal, mode: to.mode || "day" }, answers: {}, days: null });
+  if (settleLog.length > 20) settleLog = settleLog.slice(-20);
+  save(KEY_SETTLE_LOG, settleLog);
+}
+function lastDrop() { return settleLog.length ? settleLog[settleLog.length - 1] : null; }
+function dropStillFelt() { return dropSettling(lastDrop(), sessionDate()); }
+// Asked from the day after the drop, once a day, for a week — or until settled.
+function maybeSettleCheck() {
+  if (!settleOn) return false;
+  if (gatesUp() || el.overlay.classList.contains("show")) return false;
+  const rec = lastDrop();
+  if (!rec || rec.days != null) return false;
+  const ds = sessionDate();
+  const n = dayNumber(rec.date, ds);
+  if (n < 2 || n > 8 || rec.answers[ds] != null) return false;
+  openSettleCheck(rec, n);
+  return true;
+}
+function openSettleCheck(rec, n) {
+  const ds = sessionDate();
+  openSheet((s) => {
+    addEl(s, "h3", `Day ${n} on ${rungText(rec.to)}`);
+    addEl(s, "p", "How much are you feeling the drop? Headaches, irritability, sleep, cravings — whatever it is for you.", "sub");
+    const row = document.createElement("div"); row.className = "settle-row";
+    SETTLE_SCALE.forEach((o) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "settle-btn";
+      addEl(b, "span", o.emoji, "settle-emoji");
+      addEl(b, "span", o.label, "settle-lbl");
+      b.addEventListener("click", () => {
+        rec.answers[ds] = o.v;
+        if (o.v <= SETTLED_AT) rec.days = n;
+        save(KEY_SETTLE_LOG, settleLog);
+        buzz(10); closeSheet();
+        toast(o.v <= SETTLED_AT ? `Settled by day ${n} — noted` : "Noted. It'll check in again tomorrow", 3000);
+        renderInsights();
+      });
+      row.appendChild(b);
+    });
+    s.appendChild(row);
+    s.appendChild(makeBtn("Stop asking after drops", "ghost", () => {
+      settleOn = false; save(KEY_SETTLE_ON, false); closeSheet();
+      toast("Turned off — it's in Taper settings if you want it back", 3600);
+    }));
+  });
+}
+// A line for the offers and the ladder, once there's a pattern.
+function settleLine() {
+  const typ = typicalSettle(settleLog);
+  return typ ? `Your last drops settled in about ${typ} day${typ === 1 ? "" : "s"}.` : "";
 }
 
 // Reaching and holding zero is the entire point — mark it properly.
@@ -1924,7 +2091,7 @@ const SEG_RENDER = {
   overview: () => { renderTopInsight(); renderRangeRow(); renderStatTiles(); renderPace(); renderCompare(); renderRisk(); renderTrend(); renderTapLog(); },
   journey:  () => { renderLadder(); renderStart(); renderProgress(); renderRecords(); renderCalendar(); renderYear(); renderLife(); renderHistory(); },
   habits:   () => { renderHabits(); renderHabitImpact(); },
-  patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderWeekHeat(); renderMood(); renderConnections(); renderWins(); },
+  patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderWhy(); renderWeekHeat(); renderMood(); renderConnections(); renderWins(); },
 };
 function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
 
@@ -2262,6 +2429,12 @@ function renderStart() {
 // The live suggestion, readable here rather than only when the app interrupts
 // you with it — the opening budget means the offer may not surface for days.
 function appendSuggestion(card) {
+  const settled = settleLine();
+  if (dropStillFelt()) {
+    addEl(card, "div", "Your last drop is still settling. The next one waits until it has.", "mood-corr");
+    return;
+  }
+  if (settled) addEl(card, "div", settled, "mood-corr");
   const st = endgameStep();
   if (st) {
     const box = document.createElement("div");
@@ -2282,8 +2455,7 @@ function appendSuggestion(card) {
   box.className = "ladder-sug";
   box.innerHTML = `Suggested next rung: <b>${fmt(goal)} → ${fmt(sug.next)}</b>` +
     `<span class="ladder-sug-sub">${sug.metDays} of your last ${sug.n} days were already at or under ${fmt(sug.next)} · ${taperPace().label.toLowerCase()} pace</span>`;
-  const hint = slotHint();
-  if (hint) addEl(box, "span", hint, "ladder-sug-sub");
+  cutHints().forEach((h) => addEl(box, "span", h, "ladder-sug-sub"));
   const go = document.createElement("button");
   go.type = "button"; go.className = "plan-add";
   go.textContent = sug.next === 0 ? "Go to zero" : `Make it ${fmt(sug.next)}`;
@@ -2913,6 +3085,44 @@ function renderWins() {
   });
 }
 
+// Why they happen, from the taps you've tagged. Waits for ten tags so a
+// couple of stray ones don't read as a pattern.
+function renderWhy() {
+  const card = el.whyCard;
+  if (!card) return;
+  const sum = reasonSummary(taggedTaps());
+  if (!sum || sum.tagged < 10) {
+    if (!tapWhyOn) { card.style.display = "none"; return; }
+    card.style.display = "block"; card.textContent = "";
+    addEl(card, "div", "Why they happen", "section-title");
+    const left = 10 - (sum ? sum.tagged : 0);
+    addEl(card, "div", `Tag the reason after a tap and this fills in — ${left} more to go.`, "card-empty");
+    return;
+  }
+  card.style.display = "block"; card.textContent = "";
+  addEl(card, "div", "Why they happen", "section-title");
+  const top = reasonOf(sum.top.key);
+  const call = document.createElement("div"); call.className = "wk-callout";
+  call.innerHTML = `Top reason: <b>${top.emoji} ${top.label}</b>, ${Math.round(sum.top.share * 100)}% of the ones you tagged` +
+    (sum.peak != null ? `, mostly around <b>${slotLabel(sum.peak)}</b>` : "");
+  card.appendChild(call);
+  const bars = document.createElement("div"); bars.className = "why-bars";
+  sum.rows.forEach((r) => {
+    const rs = reasonOf(r.key);
+    const row = document.createElement("div"); row.className = "why-bar-row";
+    addEl(row, "span", `${rs.emoji} ${rs.label}`, "why-bar-lbl");
+    const bar = document.createElement("div"); bar.className = "why-bar";
+    const fill = document.createElement("i"); fill.style.width = Math.round((r.n / sum.top.n) * 100) + "%";
+    bar.appendChild(fill); row.appendChild(bar);
+    addEl(row, "span", String(r.n), "why-bar-n");
+    bars.appendChild(row);
+  });
+  card.appendChild(bars);
+  const hint = reasonHint();
+  if (hint) addEl(card, "div", hint, "mood-corr");
+  addEl(card, "div", `From ${sum.tagged} tagged tap${sum.tagged === 1 ? "" : "s"}.`, "mood-corr");
+}
+
 // Today's taps, by the clock — count plus a row per tap: the time, how much
 // that tap added, and the running total after it. Resets when the day ends.
 function tapEntry(e) {
@@ -2939,8 +3149,10 @@ function tapRows(taps, editable) {
       last.count += 1;
       last.to = i;
     } else {
-      groups.push({ label, amt: e.amt, total: e.total, count: 1, from: i, to: i });
+      groups.push({ label, amt: e.amt, total: e.total, count: 1, from: i, to: i, why: [] });
     }
+    const g = groups[groups.length - 1];
+    if (e.why && !g.why.includes(e.why)) g.why.push(e.why);
   });
 
   groups.forEach((g) => {
@@ -2949,7 +3161,8 @@ function tapRows(taps, editable) {
 
     const time = document.createElement("span");
     time.className = "tap-t";
-    time.textContent = g.label + (g.count > 1 ? ` · ${g.count} taps` : "");
+    time.textContent = g.label + (g.count > 1 ? ` · ${g.count} taps` : "") +
+      g.why.map((k) => { const r = reasonOf(k); return r ? ` ${r.emoji}` : ""; }).join("");
 
     const amt = document.createElement("span");
     amt.className = "tap-amt" + (g.amt < 0 ? " neg" : "");
@@ -3681,6 +3894,7 @@ function applyDelta(amt, confirmed) {
     else if (prev <= lim && today > lim) warnOver();            // crossed over it
   }
   noteEarlyTap(prevAt);
+  if (amt > 0) showWhyRow();
   renderTop(true);   // history list doesn't change on a tap
 }
 // The moment of truth: going over the goal requires an explicit yes.
@@ -4120,6 +4334,7 @@ function undo() {
   if (today < 0) today = 0;
   taps -= 1;
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
+  hideWhyRow();
   if (!reduceMotion()) { const rc = el.total.parentElement; rc.classList.remove("unbump"); void rc.offsetWidth; rc.classList.add("unbump"); }
   renderTop(true);
   toast("Undone");
@@ -5055,6 +5270,12 @@ function openTaperSettings() {
 
     addEl(s, "p", "The app only offers a rung down when you've been holding the current one and aren't sliding. It never suggests one while you're struggling.", "sub");
 
+    const settleToggle = makeToggle(s, "Check how each drop feels", settleOn);
+    settleToggle.addEventListener("change", () => { settleOn = settleToggle.checked; save(KEY_SETTLE_ON, settleOn); buzz(8); });
+    addEl(s, "p", "For a week after a step-down, one quick question a day. The next drop waits until the last one has settled.", "sub");
+    const settled = settleLine();
+    if (settled) addEl(s, "p", settled, "sub");
+
     // the other half of tapering: the same number, further apart
     addEl(s, "label", "Space them out");
     const gapToggle = makeToggle(s, "Keep a gap between them", gap.on);
@@ -5179,6 +5400,12 @@ function openAppearanceSettings() {
       sinceLastOn = sinceToggle.checked; save(KEY_SINCE_LAST_ON, sinceLastOn); buzz(8); renderGapLine();
     });
     addEl(s, "p", "A line under the ring counting up from your last tap.", "sub");
+
+    const whyToggle = makeToggle(s, "Ask why after a tap", tapWhyOn);
+    whyToggle.addEventListener("change", () => {
+      tapWhyOn = whyToggle.checked; save(KEY_TAP_WHY_ON, tapWhyOn); buzz(8); if (!tapWhyOn) hideWhyRow();
+    });
+    addEl(s, "p", "A row of reasons for a few seconds after each tap. Ignore it and it goes away.", "sub");
 
     autoInput = makeToggle(s, "Switch theme every day", themeAuto);
     autoInput.addEventListener("change", () => {
@@ -5584,6 +5811,9 @@ function csvRowFor(d, inProgress) {
     }).join(" | "),
     Object.keys(vits).map((n) => `${n}x${vitCount(vits[n])}`).join("; "),
     (d.tapTimes || []).map((raw) => new Date(tapEntry(raw).t).toISOString()).join(" "),
+    // "bored:2 meal:1" — counts per reason for the day
+    (() => { const c = {}; (d.tapTimes || []).forEach((raw) => { const w = tapEntry(raw).why; if (w) c[w] = (c[w] || 0) + 1; });
+      return Object.keys(c).map((k) => `${k}:${c[k]}`).join(" "); })(),
     // the experiment's own answer for this day, so the comparison can be redone
     // outside the app rather than taken on trust
     experiment && experiment.log && d.date in experiment.log ? experiment.factor : "",
@@ -5597,7 +5827,7 @@ function csvHeader() {
   return [
     "date", "ended_at", "in_progress", "total", "taps", "mood", "mood_label",
     ...FACTORS.map((f) => "factor_" + f.key),
-    "win_1", "win_2", "win_3", "worries", "habits", "tap_times",
+    "win_1", "win_2", "win_3", "worries", "habits", "tap_times", "tap_reasons",
     "experiment_factor", "experiment_did", "note",
   ];
 }
@@ -7845,6 +8075,9 @@ window.addEventListener("storage", (e) => {
   gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load(KEY_GAP, {}));
   unitCost = load(KEY_UNIT_COST, 0);
   sinceLastOn = load(KEY_SINCE_LAST_ON, true);
+  tapWhyOn = load(KEY_TAP_WHY_ON, true);
+  settleOn = load(KEY_SETTLE_ON, true);
+  settleLog = load(KEY_SETTLE_LOG, []);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
   goalMode = load(KEY_GOAL_MODE, "day");

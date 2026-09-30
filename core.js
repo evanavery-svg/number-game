@@ -1267,6 +1267,81 @@ function sinceStart(entries) {
   };
 }
 
+// ---- why each one happens ----
+// Tagged right after a tap, one touch, optional. Keys are stored; labels can change.
+const TAP_REASONS = [
+  { key: "bored", emoji: "😐", label: "Bored" },
+  { key: "stress", emoji: "😣", label: "Stressed" },
+  { key: "social", emoji: "👥", label: "Social" },
+  { key: "meal", emoji: "🍽️", label: "After a meal" },
+  { key: "habit", emoji: "🔁", label: "Habit" },
+  { key: "craving", emoji: "🔥", label: "Craving" },
+];
+// Tagged taps across `entries` (objects with t and why): counts per reason, the
+// share each has, and for the most common one, the two-hour block it peaks in.
+function reasonSummary(entries) {
+  const tagged = (entries || []).filter((e) => e && e.why && TAP_REASONS.some((r) => r.key === e.why));
+  if (!tagged.length) return null;
+  const counts = {};
+  tagged.forEach((e) => { counts[e.why] = (counts[e.why] || 0) + 1; });
+  const rows = TAP_REASONS.filter((r) => counts[r.key])
+    .map((r) => ({ key: r.key, n: counts[r.key], share: counts[r.key] / tagged.length }))
+    .sort((a, b) => b.n - a.n);
+  const top = rows[0];
+  const blocks = new Array(12).fill(0);
+  tagged.filter((e) => e.why === top.key).forEach((e) => { const h = new Date(e.t).getHours(); if (!isNaN(h)) blocks[Math.floor(h / 2)]++; });
+  let pb = 0;
+  blocks.forEach((c, b) => { if (c > blocks[pb]) pb = b; });
+  // a peak only means something when it holds a real share of that reason
+  const peak = blocks[pb] >= 3 && blocks[pb] / top.n >= 0.35 ? pb * 2 : null;
+  return { tagged: tagged.length, rows, top, peak };
+}
+// The reason that turns up on the fewest of the days you tagged, among the
+// regular ones — same rule as the easiest time slot. `days` holds, per day,
+// the reason keys tagged that day; only days with a tag count.
+function easiestReason(days) {
+  const tagged = (days || []).filter((d) => d && d.length);
+  const n = tagged.length;
+  if (n < 10) return null;
+  const hit = {};
+  tagged.forEach((d) => new Set(d).forEach((k) => { hit[k] = (hit[k] || 0) + 1; }));
+  let best = null;
+  TAP_REASONS.forEach((r) => {
+    const c = hit[r.key] || 0, share = c / n;
+    if (share < 0.25 || share > 0.7) return;
+    if (!best || c < best.days) best = { key: r.key, days: c, n };
+  });
+  return best;
+}
+
+// ---- how each drop settles ----
+// After a step-down, a daily 1–5 "how much are you feeling it". 2 or less is
+// settled. Day 1 is the day of the drop.
+const SETTLED_AT = 2;
+function dayNumber(fromDs, ds) {
+  return Math.round((Date.parse(ds + "T12:00:00") - Date.parse(fromDs + "T12:00:00")) / DAY) + 1;
+}
+// How many days the drop took to settle, or null while it hasn't.
+function settleDays(answers, fromDs) {
+  const days = Object.keys(answers || {}).filter((ds) => answers[ds] <= SETTLED_AT && ds >= fromDs).sort();
+  return days.length ? dayNumber(fromDs, days[0]) : null;
+}
+// Your usual settling time: the median of your last three drops that settled.
+// Needs two to say anything.
+function typicalSettle(log) {
+  const done = (log || []).map((r) => r.days).filter((d) => typeof d === "number" && d > 0).slice(-3);
+  if (done.length < 2) return null;
+  return Math.round(median(done));
+}
+// Is the latest drop still being felt? Only if you've said so: an unanswered
+// drop never holds anything up, and three weeks is long enough to wait.
+function dropSettling(rec, todayDs) {
+  if (!rec || rec.days != null) return false;
+  const vals = Object.values(rec.answers || {});
+  if (!vals.length) return false;
+  return dayNumber(rec.date, todayDs) <= 21;
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1287,5 +1362,6 @@ if (typeof module !== "undefined" && module.exports) {
     backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
+    TAP_REASONS, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };
 }

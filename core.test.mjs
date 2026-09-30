@@ -1360,3 +1360,47 @@ test("sinceStart compares the first fortnight with the last", () => {
   assert.equal(core.sinceStart(days.slice(0, 27)), null);
   assert.equal(core.sinceStart(days.map((d) => ({ ...d, total: 0 }))), null);
 });
+
+// ---- why each one happens ----
+test("reasonSummary counts tags and finds the top reason's peak", () => {
+  const e = (h, why) => ({ t: new Date(2026, 8, 1, h, 10).getTime(), why });
+  const taps = [e(14, "bored"), e(15, "bored"), e(14, "bored"), e(9, "bored"), e(12, "meal"), e(19, "meal"), e(20, "stress"), e(21, null), e(8, "nonsense")];
+  const s = core.reasonSummary(taps);
+  assert.equal(s.tagged, 7);
+  assert.deepEqual(s.rows.map((r) => [r.key, r.n]), [["bored", 4], ["meal", 2], ["stress", 1]]);
+  assert.equal(s.top.key, "bored");
+  assert.equal(s.peak, 14);   // 3 of 4 between 2 and 4 pm
+  assert.equal(core.reasonSummary([e(9, null)]), null);
+});
+test("easiestReason picks the least regular of the regular reasons", () => {
+  const days = [];
+  for (let i = 0; i < 12; i++) {
+    const d = ["habit"];                  // every day: a fixture
+    if (i < 4) d.push("bored");           // 4 of 12
+    if (i < 7) d.push("meal");            // 7 of 12
+    if (i === 0) d.push("social");        // once: not a pattern
+    days.push(d);
+  }
+  days.push([]);                          // an untagged day doesn't count
+  assert.deepEqual(core.easiestReason(days), { key: "bored", days: 4, n: 12 });
+  assert.equal(core.easiestReason(days.slice(0, 9)), null);
+});
+
+// ---- how each drop settles ----
+test("settleDays counts from the drop day to the first easy answer", () => {
+  assert.equal(core.settleDays({ "2026-09-11": 4, "2026-09-12": 3, "2026-09-14": 2, "2026-09-15": 1 }, "2026-09-10"), 5);
+  assert.equal(core.settleDays({ "2026-09-11": 4 }, "2026-09-10"), null);
+  assert.equal(core.settleDays({ "2026-09-09": 1 }, "2026-09-10"), null);   // before the drop doesn't count
+});
+test("typicalSettle needs two settled drops and takes the recent median", () => {
+  assert.equal(core.typicalSettle([{ days: 4 }]), null);
+  assert.equal(core.typicalSettle([{ days: 9 }, { days: null }, { days: 3 }, { days: 5 }, { days: 4 }]), 4);
+});
+test("dropSettling holds only while you've said it's still felt", () => {
+  const rec = { date: "2026-09-10", answers: { "2026-09-11": 4 }, days: null };
+  assert.equal(core.dropSettling(rec, "2026-09-13"), true);
+  assert.equal(core.dropSettling({ ...rec, answers: {} }, "2026-09-13"), false);   // never answered
+  assert.equal(core.dropSettling({ ...rec, days: 3 }, "2026-09-13"), false);       // settled
+  assert.equal(core.dropSettling(rec, "2026-09-30"), true);                         // day 21: still waiting
+  assert.equal(core.dropSettling(rec, "2026-10-01"), false);                        // day 22: long enough
+});

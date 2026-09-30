@@ -1021,6 +1021,85 @@ check("number stays centred in the ring after End Day", centred);
   }
 }
 
+// why each one happens, and how each drop settles
+{
+  const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ago = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return d; };
+  const open17 = async (seed, label) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => errors.push(label + ": " + String(e)));
+    await pg.addInitScript(({ dk, seed }) => {
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      const base = { "count.onboarded": true, "count.moodDaily": { [dk]: 4 }, "count.gamePlayed": dk, "count.gameOn": false,
+        "count.greetShown": dk, "count.ringTapTip": true, "count.hardNoteAsk": new Date().toISOString(), "count.backupNudge": dk,
+        "count.gap": { on: false, askAt: new Date().toISOString() } };
+      Object.entries(Object.assign(base, seed)).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v)));
+    }, { dk, seed });
+    await pg.goto(BASE);
+    await pg.waitForTimeout(2000);
+    return { ctx, pg };
+  };
+
+  {
+    const hist = [];
+    for (let n = 14; n >= 1; n--) {
+      const d = ago(n); const t = (h, why) => { const x = new Date(d); x.setHours(h, 0, 0, 0); return { t: x.getTime(), amt: 1, why }; };
+      const tapTimes = [t(8, "habit"), t(13, n % 2 ? "meal" : null), t(15, n <= 5 ? "bored" : null), t(20, n % 3 ? "stress" : "habit")];
+      hist.push({ date: isoOf(d), total: 4, taps: 4, endedAt: d.toISOString(), tapTimes });
+    }
+    const { ctx, pg } = await open17({ "count.goal": 6, "count.goalOn": true, "count.step": 1, "count.history": hist }, "why");
+    const shown = () => pg.evaluate(() => document.getElementById("whyRow").classList.contains("show"));
+    await pg.click("#addBtn");
+    await pg.waitForTimeout(300);
+    check("a tap offers the reasons", await shown());
+    await pg.click("#addBtn");
+    await pg.waitForTimeout(200);
+    await pg.click('.why-chip[data-why="bored"]');
+    await pg.waitForTimeout(700);
+    check("a reason tags the tap, and the one just before it in the same occasion",
+      await pg.evaluate(() => tapLog.length === 2 && tapLog.every((e) => e.why === "bored")));
+    check("and the row gets out of the way", !(await shown()));
+    await pg.evaluate(() => { tapWhyOn = false; });
+    await pg.click("#addBtn");
+    await pg.waitForTimeout(300);
+    check("it can be switched off", !(await shown()));
+    check("the export carries reasons", await pg.evaluate(() => csvRowFor(history[history.length - 1], false)[csvHeader().indexOf("tap_reasons")] === "habit:1 meal:1 bored:1 stress:1"));
+    await pg.evaluate(() => openInsights());
+    await pg.waitForTimeout(500);
+    await pg.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Patterns").click());
+    await pg.waitForTimeout(900);
+    const card = await pg.evaluate(() => document.getElementById("whyCard").textContent);
+    check("Patterns shows why they happen", /Top reason: 🔁 Habit/.test(card) && /From \d+ tagged taps/.test(card));
+    check("and names the easiest reason to drop", /Your “bored” ones turn up on only 6 of/.test(card));
+    await ctx.close();
+  }
+
+  {
+    const { ctx, pg } = await open17({ "count.goal": 3, "count.goalOn": true, "count.step": 1,
+      "count.goalLog": [{ at: ago(30).toISOString(), goal: 4 }, { at: ago(2).toISOString(), goal: 3 }],
+      "count.settleLog": [{ at: ago(2).toISOString(), date: isoOf(ago(2)), from: { goal: 4, mode: "day" }, to: { goal: 3, mode: "day" }, answers: {}, days: null }] }, "settle");
+    check("after a drop, it asks how it feels", (await pg.evaluate(() => document.querySelector("#sheet h3")?.textContent)) === "Day 3 on 3 a day");
+    await pg.evaluate(() => [...document.querySelectorAll(".settle-btn")].find((b) => /A lot/.test(b.textContent)).click());
+    await pg.waitForTimeout(400);
+    check("still feeling it holds the next drop", await pg.evaluate(() => dropStillFelt() && maybeTaperOffer() === false));
+    await pg.evaluate(() => { const r = settleLog[settleLog.length - 1]; r.answers[sessionDate()] = 4; });
+    check("it asks once a day", await pg.evaluate(() => maybeSettleCheck() === false));
+    await pg.evaluate(() => { const r = settleLog[settleLog.length - 1]; r.date = isoLocal(new Date(Date.now() - 4 * 864e5)); r.answers = { [r.date]: 4 }; save("count.settleLog", settleLog); });
+    await pg.evaluate(() => openSettleCheck(settleLog[settleLog.length - 1], 5));
+    await pg.waitForTimeout(400);
+    await pg.evaluate(() => [...document.querySelectorAll(".settle-btn")].find((b) => /A little/.test(b.textContent)).click());
+    await pg.waitForTimeout(400);
+    check("an easy day marks it settled", await pg.evaluate(() => settleLog[settleLog.length - 1].days === 5 && !dropStillFelt()));
+    await pg.evaluate(() => { goal = 2; noteGoalChange(2); });
+    check("a step down starts a new check", await pg.evaluate(() => settleLog.length === 2 && settleLog[1].to.goal === 2));
+    await pg.evaluate(() => { goal = 3; noteGoalChange(3); });
+    check("a step up doesn't", await pg.evaluate(() => settleLog.length === 2));
+    await ctx.close();
+  }
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

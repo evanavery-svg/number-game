@@ -1577,6 +1577,45 @@
     .wk-labels { display: flex; gap: 6px; margin-top: 7px; }
     .wk-labels span { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--faint); }
     .wk-callout { font-size: 13px; color: var(--muted); margin-top: var(--sp-3); }
+    /* ---- why this one: chips over the button row after a tap ---- */
+    .row-wrap { position: relative; }
+    .why-row {
+      position: absolute; left: 0; right: 0; top: 0; height: calc(100% - 18px);
+      display: flex; align-items: center; gap: var(--sp-2);
+      background: var(--bg); border-radius: 15px;
+      opacity: 0; transform: translateY(8px); pointer-events: none;
+      transition: opacity .22s ease, transform .22s ease;
+    }
+    .why-row.show { opacity: 1; transform: none; pointer-events: auto; }
+    .why-q { flex: none; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .why-chips { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding: 2px 0; }
+    .why-chips::-webkit-scrollbar { display: none; }
+    /* fade the far edge so it reads as a row that scrolls, not one that's cut off */
+    .why-chips { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); padding-right: 28px; }
+    .why-chip {
+      flex: none; border: none; border-radius: 999px; padding: 10px 13px;
+      background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 600;
+      box-shadow: inset 0 0 0 1px var(--hair); white-space: nowrap;
+      transition: background .15s ease, transform .15s ease;
+    }
+    .why-chip:active { transform: scale(0.96); }
+    .why-chip.on { background: var(--accent); color: #000; box-shadow: none; }
+    @media (prefers-reduced-motion: reduce) { .why-row { transition: none; transform: none; } }
+    .why-bars { margin-top: var(--sp-3); display: grid; gap: 8px; }
+    .why-bar-row { display: grid; grid-template-columns: 116px 1fr 38px; align-items: center; gap: 8px; font-size: 13px; }
+    .why-bar-lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .why-bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+    .why-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+    .why-bar-n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    /* ---- how the drop feels ---- */
+    .settle-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: var(--sp-3) 0; }
+    .settle-btn {
+      border: none; border-radius: 14px; padding: 12px 2px; background: var(--surface-2); color: var(--text);
+      display: flex; flex-direction: column; align-items: center; gap: 6px; font: inherit;
+    }
+    .settle-btn:active { transform: scale(0.96); }
+    .settle-emoji { font-size: 24px; line-height: 1; }
+    .settle-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-align: center; line-height: 1.2; }
     .start-big { margin-top: var(--sp-2); line-height: 1; }
     .start-pct { font-size: 40px; font-weight: 800; color: var(--safe); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
     .start-word { font-size: 17px; font-weight: 700; color: var(--text); }
@@ -1959,12 +1998,16 @@
     <button type="button" id="srEndDay">End the day</button>
   </div>
 
-  <div class="row">
-    <button id="vitaminsBtn" style="display:none">Daily Habits</button>
-    <button id="insightsBtn">Insights</button>
+  <div class="row-wrap">
+    <div class="row">
+      <button id="vitaminsBtn" style="display:none">Daily Habits</button>
+      <button id="insightsBtn">Insights</button>
+    </div>
+    <!-- after a tap: why this one? Slides over the buttons, gone in a few seconds -->
+    <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.57</div>
+  <div class="version">v10.58</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -2077,6 +2120,7 @@
           <div class="chart-card" id="shapeCard" style="display:none"></div>
           <div class="chart-card" id="weekdayCard" style="display:none"></div>
           <div class="chart-card" id="timeCard" style="display:none"></div>
+          <div class="chart-card" id="whyCard" style="display:none"></div>
           <div class="chart-card" id="weekHeatCard" style="display:none"></div>
           <div class="chart-card" id="moodCard" style="display:none"></div>
           <div class="chart-card" id="connCard" style="display:none"></div>
