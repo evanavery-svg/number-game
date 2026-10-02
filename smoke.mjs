@@ -473,9 +473,13 @@ check("number stays centred in the ring after End Day", centred);
 // month and year reviews, reachable without the hidden flag
 {
   const ctx9 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  // a review of a month two days old is rightly thin, so pin the clock mid-month
+  { const mid = new Date(); mid.setDate(20); mid.setHours(12, 0, 0, 0); await ctx9.clock.setFixedTime(mid); }
   const p9 = await ctx9.newPage();
   p9.on("pageerror", (e) => errors.push("review: " + String(e)));
-  await p9.addInitScript((dk) => {
+  await p9.addInitScript(() => {
+    const now = new Date();
+    const dk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const hist = [], moods = {};
     for (let i = 200; i >= 1; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
@@ -494,7 +498,7 @@ check("number stays centred in the ring after End Day", centred);
     localStorage.setItem("count.gamePlayed", JSON.stringify(dk));
     localStorage.setItem("count.gameOn", "false");
     localStorage.setItem("count.greetShown", JSON.stringify(dk));
-  }, dk);
+  });
   await p9.goto(BASE);
   await p9.waitForTimeout(700);
 
@@ -1065,6 +1069,7 @@ check("number stays centred in the ring after End Day", centred);
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
     check("it can be switched off", !(await shown()));
+    check("at work is one of the reasons", await pg.evaluate(() => [...document.querySelectorAll(".why-chip")].some((b) => b.dataset.why === "work" && b.textContent === "💼 At work")));
     check("the export carries reasons", await pg.evaluate(() => csvRowFor(history[history.length - 1], false)[csvHeader().indexOf("tap_reasons")] === "habit:1 meal:1 bored:1 stress:1"));
     await pg.evaluate(() => openInsights());
     await pg.waitForTimeout(500);

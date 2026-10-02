@@ -1273,6 +1273,7 @@ const TAP_REASONS = [
   { key: "bored", emoji: "😐", label: "Bored" },
   { key: "stress", emoji: "😣", label: "Stressed" },
   { key: "social", emoji: "👥", label: "Social" },
+  { key: "work", emoji: "💼", label: "At work" },
   { key: "meal", emoji: "🍽️", label: "After a meal" },
   { key: "habit", emoji: "🔁", label: "Habit" },
   { key: "craving", emoji: "🔥", label: "Craving" },
