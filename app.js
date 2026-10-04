@@ -93,6 +93,7 @@ const el = {
   goalText: document.getElementById("goalText"),
   paceToday: document.getElementById("paceToday"),
   gapLine: document.getElementById("gapLine"),
+  headsUp: document.getElementById("headsUp"),
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
@@ -300,6 +301,12 @@ const KEY_SETTLE_ON = "count.settleOn";
 const KEY_SETTLE_LOG = "count.settleLog";   // [{ at, date, from, to, answers: { day: 1–5 }, days }]
 let settleOn = load(KEY_SETTLE_ON, true);
 let settleLog = load(KEY_SETTLE_LOG, []);
+// A quiet line on home before your most common reason's usual time.
+const KEY_HEADSUP_ON = "count.headsUpOn";
+let headsUpOn = load(KEY_HEADSUP_ON, true);
+// Rungs held on purpose: [{ at, until, kind: "rung" | "hard" }]. The newest decides.
+const KEY_HOLDS = "count.holds";
+let holds = load(KEY_HOLDS, []);
 let ringStyle = load(KEY_RING_STYLE, "ring");   // how the day's progress is drawn
 let sheenOn = load(KEY_SHEEN, true);            // always-on motion needs a way out
 // One per day, picked by date like the theme rotation — holds still while
@@ -628,6 +635,7 @@ function maybeTaperOffer() {
   if (!taper.on || !hasGoal() || goal <= 0) return false;
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
   if (dropStillFelt()) return false;   // the next drop waits until the last one has settled
+  if (holdActive(holds)) return false;  // held on purpose — not asked again until it ends
   if (weekMode()) return maybeEndgameStep();
   // about one a day: the last stretch goes in weeks rather than one cliff
   const bridge = endgameBridge();
@@ -688,6 +696,7 @@ function openTaperOffer(sug, perf) {
       confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 26);
       toast(next === 0 ? "Goal is now zero 🎯" : `New goal: ${fmt(next)} — nicely done`, 3600);
     }));
+    s.appendChild(holdBtn());
     s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
   });
 }
@@ -809,6 +818,7 @@ function openEndgameOffer(bridge) {
     addEl(s, "p", "Any day can use them, and a day only counts against your streak once the week goes over.", "sub");
     s.appendChild(makeBtn(`Try ${bridge} a week ✓`, "primary", () => setTaperGoal(bridge, "week")));
     s.appendChild(makeBtn("Straight to zero", "ghost", () => setTaperGoal(0, "day")));
+    s.appendChild(holdBtn());
     s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
   });
 }
@@ -827,6 +837,7 @@ function openEndgameStep(st) {
     if (settled) addEl(s, "p", settled, "sub");
     s.appendChild(makeBtn(st.next === 0 ? "Go to zero ✓" : `Make it ${st.next} a week ✓`, "primary",
       () => setTaperGoal(st.next, st.next === 0 ? "day" : "week")));
+    s.appendChild(holdBtn());
     s.appendChild(makeBtn("Not yet", "ghost", closeSheet));
   });
 }
@@ -952,7 +963,7 @@ function maybeGapOffer() {
   return true;
 }
 function maybeGapStretch() {
-  if (!gapOn()) return false;
+  if (!gapOn() || holdActive(holds)) return false;
   if (gatesUp() || el.overlay.classList.contains("show")) return false;
   const setAt = new Date(gap.setAt || 0).getTime();
   if (Date.now() - setAt < 7 * 864e5) return false;
@@ -1126,6 +1137,147 @@ function openSettleCheck(rec, n) {
 function settleLine() {
   const typ = typicalSettle(settleLog);
   return typ ? `Your last drops settled in about ${typ} day${typ === 1 ? "" : "s"}.` : "";
+}
+
+// ---- holding a rung on purpose ----
+// A plateau you chose is part of the plan, not a stall: offers to step down or
+// stretch the gap pause until it ends. Offers to step back up still come —
+// a hold should never keep you on a rung that's too tight.
+const HOLD_RUNG_DAYS = 14, HARD_WEEK_DAYS = 7;
+function setHold(days, kind) {
+  const until = new Date(Date.now() + days * 864e5);
+  holds.push({ at: new Date().toISOString(), until: until.toISOString(), kind });
+  if (holds.length > 30) holds = holds.slice(-30);
+  save(KEY_HOLDS, holds);
+}
+// Ends the current hold today, keeping it on the ladder up to now.
+function endHold() {
+  const h = holdActive(holds);
+  if (!h) return;
+  h.until = new Date().toISOString();
+  save(KEY_HOLDS, holds);
+}
+function holdDate(h) { return new Date(h.until).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+function holdBtn() {
+  return makeBtn(`Hold here for ${HOLD_RUNG_DAYS / 7} weeks`, "ghost", () => {
+    setHold(HOLD_RUNG_DAYS, "rung");
+    closeSheet(); buzz(12); render();
+    toast(`Holding here until ${holdDate(holdActive(holds))} — no step-downs till then`, 3600);
+  });
+}
+
+// ---- heads-up before your usual time ----
+function renderHeadsUp() {
+  const line = el.headsUp;
+  if (!line) return;
+  const win = headsUpOn ? headsUpWindow(reasonSummary(taggedTaps())) : null;
+  const rs = win && reasonOf(win.key);
+  if (!rs || !inHeadsUp(win, new Date())) { line.style.display = "none"; return; }
+  line.textContent = "";
+  line.appendChild(document.createTextNode(`Your “${rs.label.toLowerCase()}” ones usually start around now.`));
+  const plan = planFor(plans, null, new Date().getHours());
+  if (plan) addEl(line, "span", ` Your plan: ${plan.action}`, "headsup-plan");
+  reveal(line, "block");
+}
+
+// ---- share your progress ----
+// An image for a friend or anyone keeping you accountable. It carries only
+// numbers about the taper — never notes, reasons, mood, the journal, or even
+// what you're counting.
+function shareStats() {
+  const r = sinceStart(history);
+  return {
+    pct: r && r.pct >= 0.05 ? Math.round(r.pct * 100) : null,
+    baseline: r ? r.baseline : null,
+    now: !hasGoal() ? null : goal === 0 ? "Zero" : weekMode() ? `${fmt(goal)} a week` : `${fmt(goal)} a day`,
+    rungs: rungsDown(goalLog),
+    streak: underStreakInfo().streak,
+    days: history.length,
+  };
+}
+function drawShareCard(st) {
+  const W = 1080, H = 1350, P = 96;
+  const css = getComputedStyle(document.documentElement);
+  const v = (name, fb) => (css.getPropertyValue(name) || "").trim() || fb;
+  const C = { bg: v("--bg", "#000"), text: v("--text", "#fff"), muted: v("--muted", "#939397"), accent: v("--accent", "#ff9500"), safe: v("--safe", "#30d158"), surface: v("--surface", "#1c1c1e") };
+  const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif';
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  g.textBaseline = "alphabetic";
+  const text = (str, x, y, size, weight, color, align) => {
+    g.font = `${weight} ${size}px ${FONT}`; g.fillStyle = color; g.textAlign = align || "left"; g.fillText(str, x, y);
+  };
+  text("MY TAPER", P, P + 40, 40, 800, C.accent);
+  text(new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }), P, P + 96, 36, 500, C.muted);
+
+  // the one number that says the most
+  let hero, heroSub, heroColor = C.safe, used = null;
+  if (st.pct != null) { hero = `${st.pct}%`; heroSub = "down since I started"; used = "pct"; }
+  else if (st.streak > 0) { hero = String(st.streak); heroSub = st.streak === 1 ? "day under my goal" : "days under my goal"; used = "streak"; }
+  else if (st.rungs > 0) { hero = String(st.rungs); heroSub = st.rungs === 1 ? "step down so far" : "steps down so far"; used = "rungs"; heroColor = C.accent; }
+  else { hero = String(st.days); heroSub = st.days === 1 ? "day logged" : "days logged"; heroColor = C.accent; used = "days"; }
+  text(hero, P - 8, 520, 280, 800, heroColor);
+  text(heroSub, P, 600, 56, 700, C.text);
+
+  // the staircase, as a picture of the whole thing
+  const rungs = goalLog.map((x) => ({ at: Date.parse(x.at), goal: x.mode === "week" ? x.goal / 7 : x.goal })).filter((x) => !isNaN(x.at)).sort((a, b) => a.at - b.at);
+  if (rungs.length >= 2) {
+    const top = 680, h = 190, t0 = rungs[0].at, tN = Date.now(), span = Math.max(1, tN - t0);
+    const max = Math.max(...rungs.map((x) => x.goal), 1);
+    const X = (t) => P + ((t - t0) / span) * (W - 2 * P);
+    const Y = (val) => top + h - (val / max) * h;
+    g.strokeStyle = C.safe; g.globalAlpha = 0.5; g.setLineDash([10, 10]); g.lineWidth = 3;
+    g.beginPath(); g.moveTo(P, Y(0)); g.lineTo(W - P, Y(0)); g.stroke();
+    g.setLineDash([]); g.globalAlpha = 1;
+    g.strokeStyle = C.accent; g.lineWidth = 9; g.lineJoin = "round"; g.lineCap = "round";
+    g.beginPath(); g.moveTo(X(rungs[0].at), Y(rungs[0].goal));
+    for (let i = 1; i < rungs.length; i++) { g.lineTo(X(rungs[i].at), Y(rungs[i - 1].goal)); g.lineTo(X(rungs[i].at), Y(rungs[i].goal)); }
+    g.lineTo(W - P, Y(rungs[rungs.length - 1].goal));
+    g.stroke();
+  }
+
+  // up to three supporting numbers, never repeating the hero
+  const rows = [];
+  if (st.now) rows.push(["Now", st.now]);
+  if (used !== "rungs" && st.rungs > 0) rows.push(["Steps down", String(st.rungs)]);
+  if (used !== "streak" && st.streak > 0) rows.push(["Days under goal", String(st.streak)]);
+  if (st.baseline != null && rows.length < 3) rows.push(["Started at", `${fmtAvg(st.baseline)} a day`]);
+  const rowY = 960, rowH = 92;
+  rows.slice(0, 3).forEach(([k, val], i) => {
+    const y = rowY + i * rowH;
+    if (i) { g.fillStyle = C.surface; g.fillRect(P, y - rowH + 30, W - 2 * P, 2); }
+    text(k, P, y + 14, 40, 500, C.muted);
+    text(val, W - P, y + 16, 52, 800, C.text, "right");
+  });
+  text("One step at a time.", W / 2, H - P + 20, 34, 600, C.muted, "center");
+  return cv;
+}
+async function shareImage(blob) {
+  const file = new File([blob], "progress.png", { type: "image/png" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;   // closed the share sheet — not an error
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = "progress.png";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Image saved");
+}
+function openShareCard() {
+  openSheet((s) => {
+    addEl(s, "h3", "Share progress");
+    addEl(s, "p", "Only the numbers about your taper. No notes, reasons, mood or journal — and not what you're counting.", "sub");
+    const cv = drawShareCard(shareStats());
+    const img = document.createElement("img");
+    img.className = "share-preview"; img.alt = "Your progress card";
+    img.src = cv.toDataURL("image/png");
+    s.appendChild(img);
+    s.appendChild(makeBtn("Share", "primary", () => { cv.toBlob((b) => { if (b) shareImage(b); }, "image/png"); buzz(10); }));
+    s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
 }
 
 // Reaching and holding zero is the entire point — mark it properly.
@@ -2378,10 +2530,19 @@ function renderLadder() {
     d += ` L ${X(pts[i].at).toFixed(2)} ${Y(pts[i - 1].goal).toFixed(2)} L ${X(pts[i].at).toFixed(2)} ${Y(pts[i].goal).toFixed(2)}`;
   }
   d += ` L ${W} ${Y(pts[pts.length - 1].goal).toFixed(2)}`;
+  // holds you chose sit on the staircase as a soft band: flat on purpose
+  const goalAtT = (t) => { let g = pts[0].goal; for (const p of pts) if (p.at <= t) g = p.goal; return g; };
+  const holdSegs = holds.map((h) => {
+    const a = Math.max(Date.parse(h.at), t0), b = Math.min(Date.parse(h.until), tN);
+    if (!(b > a)) return "";
+    const y = Y(goalAtT(a)).toFixed(2);
+    return `<line x1="${X(a).toFixed(2)}" y1="${y}" x2="${X(b).toFixed(2)}" y2="${y}" class="ladder-hold"/>`;
+  }).join("");
   card.insertAdjacentHTML("beforeend",
     `<svg class="ladder-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
     `<line x1="0" y1="${Y(0).toFixed(2)}" x2="${W}" y2="${Y(0).toFixed(2)}" class="ladder-zero"/>` +
-    `<path d="${d}" class="ladder-path"/></svg>`);
+    holdSegs + `<path d="${d}" class="ladder-path"/></svg>`);
+  if (holdSegs) addEl(card, "div", "The soft bands are rungs you chose to hold.", "ladder-hold-key");
   // the staircase draws itself down, so the descent to zero reads as motion
   drawPath(card.querySelector(".ladder-path"), 900);
 
@@ -2432,6 +2593,17 @@ function renderStart() {
 // The live suggestion, readable here rather than only when the app interrupts
 // you with it — the opening budget means the offer may not surface for days.
 function appendSuggestion(card) {
+  const held = holdActive(holds);
+  if (held) {
+    const box = document.createElement("div"); box.className = "ladder-sug";
+    addEl(box, "span", held.kind === "hard" ? `Hard week — step-downs are paused until ${holdDate(held)}.` : `Holding this rung until ${holdDate(held)}.`);
+    const end = document.createElement("button");
+    end.type = "button"; end.className = "plan-add"; end.textContent = "End the hold";
+    end.addEventListener("click", () => { endHold(); buzz(8); render(); renderInsights(); });
+    box.appendChild(end);
+    card.appendChild(box);
+    return;
+  }
   const settled = settleLine();
   if (dropStillFelt()) {
     addEl(card, "div", "Your last drop is still settling. The next one waits until it has.", "mood-corr");
@@ -3789,6 +3961,7 @@ function renderTop(animate) {
   renderPulse();
   renderPaceToday();
   renderGapLine();
+  renderHeadsUp();
   showSwipeHint();
   announceTotal();
 }
@@ -5045,6 +5218,7 @@ const ICONS = {
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.9 1.8-1.8 0-1.8 1.4-2.2 2.7-2.2H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
   database: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
   undo: '<path d="M4 9h9a5 5 0 0 1 0 10h-3"/><path d="M8 5 4 9l4 4"/>',
+  share: '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
 };
 // makeBtn sets textContent, so icon buttons get their own builder.
 function makeIconBtn(iconKey, label, cls, onClick, opts) {
@@ -5107,6 +5281,7 @@ function openSettings() {
     if (timelineOn) act("clock", "Your week", openWeeklyRecap);
     act("calendar", "This month", () => openReview("month"));
     act("star", "This year", () => openReview("year"));
+    row("share", "Share progress", openShareCard);
 
     group("Your setup");
     row("target", "Tracking", openTrackingSettings);
@@ -5215,6 +5390,23 @@ function openTaperSettings() {
     else if (weekMode()) addEl(s, "p", "The last stretch: step-downs go 5, 3, then 1 a week, then zero — each once your last two weeks have come in under.", "sub");
     const taperToggle = makeToggle(s, "Suggest step-downs", taper.on);
     taperToggle.addEventListener("change", () => { taper.on = taperToggle.checked; save(KEY_TAPER, taper); buzz(8); });
+
+    // a rough stretch is a reason to hold, not to quit the taper
+    const held = holdActive(holds);
+    const hardToggle = makeToggle(s, "Hard week", !!held && held.kind === "hard");
+    const hardNote = addEl(s, "p", "", "sub");
+    const paintHard = () => {
+      const h = holdActive(holds);
+      hardNote.textContent = h && h.kind === "hard" ? `Step-downs and gap stretches are paused until ${holdDate(h)}. It switches itself off.`
+        : h ? `You're holding this rung until ${holdDate(h)}.`
+        : "Pauses step-downs and gap stretches for a week, then switches itself off. Offers to step back up still come.";
+    };
+    hardToggle.addEventListener("change", () => {
+      if (hardToggle.checked) { endHold(); setHold(HARD_WEEK_DAYS, "hard"); }
+      else endHold();
+      buzz(8); paintHard(); render();
+    });
+    paintHard();
 
     // Smart mode: the size and timing of each drop come from your own history
     // rather than numbers you type.
@@ -5405,6 +5597,12 @@ function openAppearanceSettings() {
       sinceLastOn = sinceToggle.checked; save(KEY_SINCE_LAST_ON, sinceLastOn); buzz(8); renderGapLine();
     });
     addEl(s, "p", "A line under the ring counting up from your last tap.", "sub");
+
+    const headsToggle = makeToggle(s, "Heads-up before your usual time", headsUpOn);
+    headsToggle.addEventListener("change", () => {
+      headsUpOn = headsToggle.checked; save(KEY_HEADSUP_ON, headsUpOn); buzz(8); renderHeadsUp();
+    });
+    addEl(s, "p", "Once a reason you tag has a usual time, a line under the ring from half an hour before it.", "sub");
 
     const whyToggle = makeToggle(s, "Ask why after a tap", tapWhyOn);
     whyToggle.addEventListener("change", () => {
@@ -8083,6 +8281,8 @@ window.addEventListener("storage", (e) => {
   tapWhyOn = load(KEY_TAP_WHY_ON, true);
   settleOn = load(KEY_SETTLE_ON, true);
   settleLog = load(KEY_SETTLE_LOG, []);
+  headsUpOn = load(KEY_HEADSUP_ON, true);
+  holds = load(KEY_HOLDS, []);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
   goalMode = load(KEY_GOAL_MODE, "day");
@@ -8118,7 +8318,7 @@ setInterval(() => {
 // keep the main-page "time since" strip ticking every second; milestone
 // crossings only need a coarser watch (a few seconds late is fine)
 setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1000);
-setInterval(() => { if (!document.hidden) renderGapLine(); }, 15000);   // minute resolution, read within a few seconds
+setInterval(() => { if (!document.hidden) { renderGapLine(); renderHeadsUp(); } }, 15000);   // minute resolution, read within a few seconds
 setInterval(() => { if (!document.hidden && since.length) checkMilestones(); }, 10000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint

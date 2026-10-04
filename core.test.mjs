@@ -1415,3 +1415,39 @@ test("dropSettling holds only while you've said it's still felt", () => {
   assert.equal(core.dropSettling(rec, "2026-09-30"), true);                         // day 21: still waiting
   assert.equal(core.dropSettling(rec, "2026-10-01"), false);                        // day 22: long enough
 });
+
+// ---- heads-up ----
+test("headsUpWindow needs a clear peak from ten tags", () => {
+  assert.deepEqual(core.headsUpWindow({ tagged: 12, top: { key: "work" }, peak: 14 }), { key: "work", start: 14, end: 16 });
+  assert.equal(core.headsUpWindow({ tagged: 8, top: { key: "work" }, peak: 14 }), null);
+  assert.equal(core.headsUpWindow({ tagged: 12, top: { key: "work" }, peak: null }), null);
+  assert.equal(core.headsUpWindow({ tagged: 12, top: null, peak: 14 }), null);
+});
+test("inHeadsUp runs from half an hour before the peak to its end", () => {
+  const w = { start: 14, end: 16 };
+  const at = (h, m) => new Date(2026, 9, 4, h, m);
+  assert.equal(core.inHeadsUp(w, at(13, 29)), false);
+  assert.equal(core.inHeadsUp(w, at(13, 30)), true);
+  assert.equal(core.inHeadsUp(w, at(15, 59)), true);
+  assert.equal(core.inHeadsUp(w, at(16, 0)), false);
+  const night = { start: 0, end: 2 };
+  assert.equal(core.inHeadsUp(night, at(23, 45)), true);    // the evening before a midnight peak
+  assert.equal(core.inHeadsUp(night, at(1, 0)), true);
+  assert.equal(core.inHeadsUp(night, at(23, 0)), false);
+});
+
+// ---- holds ----
+test("holdActive reads the newest hold", () => {
+  const now = Date.parse("2026-10-04T12:00:00Z");
+  assert.equal(core.holdActive([], now), null);
+  assert.equal(core.holdActive([{ until: "2026-10-10T00:00:00Z", kind: "rung" }], now).kind, "rung");
+  assert.equal(core.holdActive([{ until: "2026-10-01T00:00:00Z" }], now), null);
+  assert.equal(core.holdActive([{ until: "2026-10-30T00:00:00Z" }, { until: "2026-10-03T00:00:00Z" }], now), null);   // ended early
+});
+test("rungsDown counts drops, weekly rungs as their daily share", () => {
+  assert.equal(core.rungsDown([
+    { at: "2026-01-01", goal: 6 }, { at: "2026-02-01", goal: 4 }, { at: "2026-03-01", goal: 5 },
+    { at: "2026-04-01", goal: 3 }, { at: "2026-05-01", goal: 14, mode: "week" }, { at: "2026-06-01", goal: 5, mode: "week" },
+  ]), 4);
+  assert.equal(core.rungsDown([{ at: "2026-01-01", goal: 4 }]), 0);
+});

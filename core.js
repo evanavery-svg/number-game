@@ -1358,6 +1358,39 @@ function dropSettling(rec, todayDs) {
   return dayNumber(rec.date, todayDs) <= 21;
 }
 
+// ---- heads-up before your usual time ----
+// When your most common reason has a clear peak, the half hour before it and
+// the two hours of it are when a quiet line on home is worth showing.
+const HEADSUP_LEAD_MIN = 30;
+function headsUpWindow(sum) {
+  if (!sum || !sum.top || sum.peak == null || sum.tagged < 10) return null;
+  return { key: sum.top.key, start: sum.peak, end: sum.peak + 2 };
+}
+function inHeadsUp(win, d) {
+  if (!win) return false;
+  const m = d.getHours() * 60 + d.getMinutes();
+  const from = win.start * 60 - HEADSUP_LEAD_MIN, to = win.end * 60;
+  if (from < 0) return m >= from + 1440 || m < to;   // a midnight peak starts the evening before
+  return m >= from && m < to;
+}
+
+// ---- holding a rung on purpose ----
+// A hold pauses step-down offers until a date. The newest one decides.
+function holdActive(holds, now) {
+  const h = (holds || [])[(holds || []).length - 1];
+  if (!h || !h.until) return null;
+  return Date.parse(h.until) > (now == null ? Date.now() : now) ? h : null;
+}
+// Steps down the ladder, a weekly rung counting as its daily share.
+function rungsDown(goalLog) {
+  const daily = (goalLog || []).filter((g) => g && typeof g.goal === "number")
+    .slice().sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+    .map((g) => (g.mode === "week" ? g.goal / 7 : g.goal));
+  let n = 0;
+  for (let i = 1; i < daily.length; i++) if (daily[i] < daily[i - 1]) n++;
+  return n;
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1378,6 +1411,7 @@ if (typeof module !== "undefined" && module.exports) {
     backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
+    HEADSUP_LEAD_MIN, headsUpWindow, inHeadsUp, holdActive, rungsDown,
     TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };
 }

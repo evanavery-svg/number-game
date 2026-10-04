@@ -1113,6 +1113,90 @@ check("number stays centred in the ring after End Day", centred);
   }
 }
 
+// heads-up before your usual time, holding a rung, and the share card
+{
+  const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ago = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return d; };
+  const block2 = Math.floor(new Date().getHours() / 2) * 2;   // the two-hour block we're in now
+  const hist = [];
+  for (let n = 40; n >= 1; n--) {
+    const d = ago(n); const t = (h, why) => { const x = new Date(d); x.setHours(h, 10, 0, 0); return { t: x.getTime(), amt: 1, why }; };
+    hist.push({ date: isoOf(d), total: n > 26 ? 5 : 2, taps: 2, endedAt: d.toISOString(), tapTimes: [t(block2, "work"), t((block2 + 6) % 24, n % 3 ? "stress" : null)] });
+  }
+  const ctx18 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p18 = await ctx18.newPage();
+  p18.on("pageerror", (e) => errors.push("heads-up/hold/share: " + String(e)));
+  await p18.addInitScript(({ dk, hist, rung1, rung2 }) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false);
+    set("count.greetShown", dk); set("count.ringTapTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+    set("count.hardNoteAsk", new Date().toISOString()); set("count.gap", { on: false, askAt: new Date().toISOString() });
+    set("count.taperAsk", new Date().toISOString());
+    set("count.goal", 3); set("count.goalOn", true); set("count.step", 1); set("count.history", hist); set("count.label", "coffees");
+    set("count.taper", { on: true, smart: true, pace: "balanced", step: 1, everyDays: 30 });
+    set("count.goalLog", [{ at: rung1, goal: 5 }, { at: rung2, goal: 3 }]);
+  }, { dk, hist, rung1: ago(60).toISOString(), rung2: ago(25).toISOString() });
+  await p18.goto(BASE);
+  await p18.waitForTimeout(1800);
+
+  // a heads-up only inside the window, and only while it's on
+  const heads = () => p18.evaluate(() => { const l = document.getElementById("headsUp"); return l.style.display === "none" ? null : l.textContent; });
+  check("a heads-up shows in your usual window", /^Your “at work” ones usually start around now\./.test((await heads()) || ""));
+  await p18.evaluate(() => { headsUpOn = false; renderHeadsUp(); });
+  check("the heads-up can be switched off", (await heads()) === null);
+  check("the window starts half an hour early and ends with the block", await p18.evaluate(() =>
+    inHeadsUp({ start: 14, end: 16 }, new Date(2026, 0, 1, 13, 45)) && !inHeadsUp({ start: 14, end: 16 }, new Date(2026, 0, 1, 16, 5))));
+
+  // holding a rung
+  await p18.evaluate(() => openTaperOffer({ next: 2, metDays: 20, n: 25, avg: 2, everyDays: 14 }));
+  await p18.waitForTimeout(400);
+  check("a step-down offer can be held instead", await p18.evaluate(() => [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Hold here for 2 weeks")));
+  await p18.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Hold here for 2 weeks").click());
+  await p18.waitForTimeout(400);
+  check("holding pauses step-downs for two weeks", await p18.evaluate(() => {
+    const h = holdActive(holds); localStorage.removeItem("count.taperAsk");
+    return !!h && h.kind === "rung" && Math.round((Date.parse(h.until) - Date.now()) / 864e5) === 14 && maybeTaperOffer() === false;
+  }));
+  check("and gap stretches too", await p18.evaluate(() => { gap.on = true; gap.target = 3600e3; gap.setAt = new Date(Date.now() - 30 * 864e5).toISOString(); gap.askAt = null; const r = maybeGapStretch(); gap.on = false; return r === false; }));
+  await p18.evaluate(() => openInsights());
+  await p18.waitForTimeout(500);
+  await p18.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Journey").click());
+  await p18.waitForTimeout(900);
+  check("the ladder shows the hold, with a way to end it", await p18.evaluate(() =>
+    document.querySelectorAll("#ladderCard .ladder-hold").length === 1 && /Holding this rung until/.test(document.getElementById("ladderCard").textContent)));
+  await p18.evaluate(() => [...document.querySelectorAll("#ladderCard button")].find((b) => b.textContent === "End the hold").click());
+  await p18.waitForTimeout(300);
+  check("ending it lifts the pause", await p18.evaluate(() => holdActive(holds) === null));
+  await p18.evaluate(() => closeInsights());
+  await p18.waitForTimeout(400);
+  await p18.evaluate(() => openTaperSettings());
+  await p18.waitForTimeout(400);
+  await p18.evaluate(() => { const row = [...document.querySelectorAll("#sheet .toggle-row")].find((r) => /Hard week/.test(r.textContent)); const i = row.querySelector("input"); i.checked = true; i.dispatchEvent(new Event("change")); });
+  check("a hard week pauses offers for seven days", await p18.evaluate(() => {
+    const h = holdActive(holds); return !!h && h.kind === "hard" && Math.round((Date.parse(h.until) - Date.now()) / 864e5) === 7;
+  }));
+  await p18.evaluate(() => closeSheet());
+  await p18.waitForTimeout(400);
+  check("but a step back up can still be offered", await p18.evaluate(() => {
+    localStorage.removeItem("count.raiseAsk");
+    const real = history; history = real.map((d, i) => (i > real.length - 15 ? { ...d, total: 6 } : d));
+    const r = maybeRaiseOffer(); history = real; closeSheet(); return r === true;
+  }));
+  await p18.evaluate(() => closeSheet());
+  await p18.waitForTimeout(400);
+
+  // the share card
+  await p18.evaluate(() => openShareCard());
+  await p18.waitForTimeout(500);
+  const card = await p18.evaluate(() => { const img = document.querySelector("#sheet .share-preview"); return img ? { w: img.naturalWidth, h: img.naturalHeight } : null; });
+  check("the share card is drawn", !!card && card.w === 1080 && card.h === 1350);
+  check("it says how far you've come", await p18.evaluate(() => { const st = shareStats(); return st.pct >= 5 && st.now === "3 a day" && st.rungs === 1; }));
+  check("and never what you're counting", await p18.evaluate(() => !JSON.stringify(shareStats()).includes("coffee")));
+  await ctx18.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 
