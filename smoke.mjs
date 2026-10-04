@@ -1050,7 +1050,7 @@ check("number stays centred in the ring after End Day", centred);
     const hist = [];
     for (let n = 14; n >= 1; n--) {
       const d = ago(n); const t = (h, why) => { const x = new Date(d); x.setHours(h, 0, 0, 0); return { t: x.getTime(), amt: 1, why }; };
-      const tapTimes = [t(8, "habit"), t(13, n % 2 ? "meal" : null), t(15, n <= 5 ? "bored" : null), t(20, n % 3 ? "stress" : "habit")];
+      const tapTimes = [t(8, "habit"), t(13, n % 2 ? "meal" : null), t(15, n <= 5 ? "work" : null), t(20, n % 3 ? "stress" : "habit")];
       hist.push({ date: isoOf(d), total: 4, taps: 4, endedAt: d.toISOString(), tapTimes });
     }
     const { ctx, pg } = await open17({ "count.goal": 6, "count.goalOn": true, "count.step": 1, "count.history": hist }, "why");
@@ -1060,24 +1060,32 @@ check("number stays centred in the ring after End Day", centred);
     check("a tap offers the reasons", await shown());
     await pg.click("#addBtn");
     await pg.waitForTimeout(200);
-    await pg.click('.why-chip[data-why="bored"]');
+    const fit = await pg.evaluate(() => {
+      const row = document.querySelector(".why-chips").getBoundingClientRect();
+      const chips = [...document.querySelectorAll(".why-chip")];
+      return { n: chips.length, inside: chips.every((c) => { const r = c.getBoundingClientRect(); return r.left >= row.left - 1 && r.right <= row.right + 1 && r.right <= innerWidth; }),
+        labels: chips.every((c) => { const l = c.querySelector(".why-lbl"); return l.scrollWidth <= l.clientWidth; }) };
+    });
+    check("all five reasons fit on screen, no scrolling", fit.n === 5 && fit.inside && fit.labels);
+    await pg.click('.why-chip[data-why="work"]');
     await pg.waitForTimeout(700);
     check("a reason tags the tap, and the one just before it in the same occasion",
-      await pg.evaluate(() => tapLog.length === 2 && tapLog.every((e) => e.why === "bored")));
+      await pg.evaluate(() => tapLog.length === 2 && tapLog.every((e) => e.why === "work")));
     check("and the row gets out of the way", !(await shown()));
     await pg.evaluate(() => { tapWhyOn = false; });
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
     check("it can be switched off", !(await shown()));
-    check("at work is one of the reasons", await pg.evaluate(() => [...document.querySelectorAll(".why-chip")].some((b) => b.dataset.why === "work" && b.textContent === "💼 At work")));
-    check("the export carries reasons", await pg.evaluate(() => csvRowFor(history[history.length - 1], false)[csvHeader().indexOf("tap_reasons")] === "habit:1 meal:1 bored:1 stress:1"));
+    check("the reasons are the five chosen", (await pg.evaluate(() => [...document.querySelectorAll(".why-chip .why-lbl")].map((l) => l.textContent).join(","))) === "Stressed,Social,At work,Habit,Craving");
+    check("the export carries reasons", await pg.evaluate(() => csvRowFor(history[history.length - 1], false)[csvHeader().indexOf("tap_reasons")] === "habit:1 meal:1 work:1 stress:1"));
     await pg.evaluate(() => openInsights());
     await pg.waitForTimeout(500);
     await pg.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Patterns").click());
     await pg.waitForTimeout(900);
     const card = await pg.evaluate(() => document.getElementById("whyCard").textContent);
     check("Patterns shows why they happen", /Top reason: 🔁 Habit/.test(card) && /From \d+ tagged taps/.test(card));
-    check("and names the easiest reason to drop", /Your “bored” ones turn up on only 6 of/.test(card));
+    check("and names the easiest reason to drop", /Your “at work” ones turn up on only 6 of/.test(card));
+    check("old tags are kept as Other", /🏷️ Other/.test(card));
     await ctx.close();
   }
 

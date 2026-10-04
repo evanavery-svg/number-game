@@ -1364,25 +1364,36 @@ test("sinceStart compares the first fortnight with the last", () => {
 // ---- why each one happens ----
 test("reasonSummary counts tags and finds the top reason's peak", () => {
   const e = (h, why) => ({ t: new Date(2026, 8, 1, h, 10).getTime(), why });
-  const taps = [e(14, "bored"), e(15, "bored"), e(14, "bored"), e(9, "bored"), e(12, "meal"), e(19, "meal"), e(20, "stress"), e(21, null), e(8, "nonsense")];
+  const taps = [e(14, "stress"), e(15, "stress"), e(14, "stress"), e(9, "stress"), e(12, "work"), e(19, "work"), e(20, "craving"), e(21, null), e(8, "nonsense")];
   const s = core.reasonSummary(taps);
   assert.equal(s.tagged, 7);
-  assert.deepEqual(s.rows.map((r) => [r.key, r.n]), [["bored", 4], ["meal", 2], ["stress", 1]]);
-  assert.equal(s.top.key, "bored");
+  assert.deepEqual(s.rows.map((r) => [r.key, r.n]), [["stress", 4], ["work", 2], ["craving", 1]]);
+  assert.equal(s.top.key, "stress");
   assert.equal(s.peak, 14);   // 3 of 4 between 2 and 4 pm
   assert.equal(core.reasonSummary([e(9, null)]), null);
+});
+test("retired reasons are kept, counted together as Other", () => {
+  const e = (why) => ({ t: new Date(2026, 8, 1, 10).getTime(), why });
+  const s = core.reasonSummary([e("habit"), e("bored"), e("meal"), e("bored")]);
+  assert.deepEqual(s.rows.map((r) => [r.key, r.n]), [["habit", 1], ["other", 3]]);   // Other always sits last
+  assert.equal(s.top.key, "habit");
+  assert.equal(core.reasonSummary([e("bored")]).top, null);   // nothing current to call the top reason
+});
+test("the reasons offered are the five chosen", () => {
+  assert.deepEqual(core.TAP_REASONS.map((r) => r.label), ["Stressed", "Social", "At work", "Habit", "Craving"]);
 });
 test("easiestReason picks the least regular of the regular reasons", () => {
   const days = [];
   for (let i = 0; i < 12; i++) {
     const d = ["habit"];                  // every day: a fixture
-    if (i < 4) d.push("bored");           // 4 of 12
-    if (i < 7) d.push("meal");            // 7 of 12
+    if (i < 4) d.push("work");            // 4 of 12
+    if (i < 7) d.push("stress");          // 7 of 12
     if (i === 0) d.push("social");        // once: not a pattern
+    if (i < 5) d.push("bored");           // retired: never named
     days.push(d);
   }
   days.push([]);                          // an untagged day doesn't count
-  assert.deepEqual(core.easiestReason(days), { key: "bored", days: 4, n: 12 });
+  assert.deepEqual(core.easiestReason(days), { key: "work", days: 4, n: 12 });
   assert.equal(core.easiestReason(days.slice(0, 9)), null);
 });
 

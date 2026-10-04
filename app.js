@@ -983,18 +983,21 @@ function maybeGapStretch() {
 // seconds. One touch tags the tap; ignoring it costs nothing.
 const WHY_SHOW_MS = 6000;
 let whyTimer = null;
-function reasonOf(k) { return TAP_REASONS.find((r) => r.key === k); }
+// Includes retired reasons, so an old tag still shows its emoji in a timeline.
+function reasonOf(k) { return [...TAP_REASONS, ...RETIRED_REASONS, OTHER_REASON].find((r) => r.key === k); }
 function showWhyRow() {
   const row = el.whyRow;
   if (!row || !tapWhyOn) return;
   if (el.overlay.classList.contains("show")) return;
   if (!row.childElementCount) {
-    addEl(row, "span", "Why?", "why-q");
+    // five across, emoji over the word, so the whole set fits with no scrolling
     const chips = document.createElement("div"); chips.className = "why-chips";
     TAP_REASONS.forEach((r) => {
       const b = document.createElement("button");
       b.type = "button"; b.className = "why-chip"; b.dataset.why = r.key;
-      b.textContent = `${r.emoji} ${r.label}`;
+      b.setAttribute("aria-label", `Why: ${r.label}`);
+      addEl(b, "span", r.emoji, "why-emoji");
+      addEl(b, "span", r.label, "why-lbl");
       b.addEventListener("click", () => tagWhy(r.key, b));
       chips.appendChild(b);
     });
@@ -3101,18 +3104,20 @@ function renderWhy() {
   }
   card.style.display = "block"; card.textContent = "";
   addEl(card, "div", "Why they happen", "section-title");
-  const top = reasonOf(sum.top.key);
-  const call = document.createElement("div"); call.className = "wk-callout";
-  call.innerHTML = `Top reason: <b>${top.emoji} ${top.label}</b>, ${Math.round(sum.top.share * 100)}% of the ones you tagged` +
-    (sum.peak != null ? `, mostly around <b>${slotLabel(sum.peak)}</b>` : "");
-  card.appendChild(call);
+  if (sum.top) {
+    const top = reasonOf(sum.top.key);
+    const call = document.createElement("div"); call.className = "wk-callout";
+    call.innerHTML = `Top reason: <b>${top.emoji} ${top.label}</b>, ${Math.round(sum.top.share * 100)}% of the ones you tagged` +
+      (sum.peak != null ? `, mostly around <b>${slotLabel(sum.peak)}</b>` : "");
+    card.appendChild(call);
+  }
   const bars = document.createElement("div"); bars.className = "why-bars";
   sum.rows.forEach((r) => {
     const rs = reasonOf(r.key);
     const row = document.createElement("div"); row.className = "why-bar-row";
     addEl(row, "span", `${rs.emoji} ${rs.label}`, "why-bar-lbl");
     const bar = document.createElement("div"); bar.className = "why-bar";
-    const fill = document.createElement("i"); fill.style.width = Math.round((r.n / sum.top.n) * 100) + "%";
+    const fill = document.createElement("i"); fill.style.width = Math.round((r.n / Math.max(...sum.rows.map((x) => x.n))) * 100) + "%";
     bar.appendChild(fill); row.appendChild(bar);
     addEl(row, "span", String(r.n), "why-bar-n");
     bars.appendChild(row);

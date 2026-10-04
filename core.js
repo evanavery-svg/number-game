@@ -1270,31 +1270,46 @@ function sinceStart(entries) {
 // ---- why each one happens ----
 // Tagged right after a tap, one touch, optional. Keys are stored; labels can change.
 const TAP_REASONS = [
-  { key: "bored", emoji: "😐", label: "Bored" },
   { key: "stress", emoji: "😣", label: "Stressed" },
   { key: "social", emoji: "👥", label: "Social" },
   { key: "work", emoji: "💼", label: "At work" },
-  { key: "meal", emoji: "🍽️", label: "After a meal" },
   { key: "habit", emoji: "🔁", label: "Habit" },
   { key: "craving", emoji: "🔥", label: "Craving" },
 ];
-// Tagged taps across `entries` (objects with t and why): counts per reason, the
-// share each has, and for the most common one, the two-hour block it peaks in.
+// Reasons that were offered once and aren't now. Taps already tagged with them
+// keep their tag; Insights counts them together as "Other".
+const RETIRED_REASONS = [
+  { key: "bored", emoji: "😐", label: "Bored" },
+  { key: "meal", emoji: "🍽️", label: "After a meal" },
+];
+const OTHER_REASON = { key: "other", emoji: "🏷️", label: "Other" };
+// Tagged taps across `entries` (objects with t and why): counts per reason,
+// the share each has, and for the most common one, the two-hour block it
+// peaks in. Retired tags fold into one "Other" row at the end.
 function reasonSummary(entries) {
-  const tagged = (entries || []).filter((e) => e && e.why && TAP_REASONS.some((r) => r.key === e.why));
+  const known = (k) => TAP_REASONS.some((r) => r.key === k) || RETIRED_REASONS.some((r) => r.key === k);
+  const tagged = (entries || []).filter((e) => e && e.why && known(e.why));
   if (!tagged.length) return null;
   const counts = {};
-  tagged.forEach((e) => { counts[e.why] = (counts[e.why] || 0) + 1; });
+  let other = 0;
+  tagged.forEach((e) => {
+    if (TAP_REASONS.some((r) => r.key === e.why)) counts[e.why] = (counts[e.why] || 0) + 1;
+    else other++;
+  });
   const rows = TAP_REASONS.filter((r) => counts[r.key])
     .map((r) => ({ key: r.key, n: counts[r.key], share: counts[r.key] / tagged.length }))
     .sort((a, b) => b.n - a.n);
-  const top = rows[0];
-  const blocks = new Array(12).fill(0);
-  tagged.filter((e) => e.why === top.key).forEach((e) => { const h = new Date(e.t).getHours(); if (!isNaN(h)) blocks[Math.floor(h / 2)]++; });
-  let pb = 0;
-  blocks.forEach((c, b) => { if (c > blocks[pb]) pb = b; });
-  // a peak only means something when it holds a real share of that reason
-  const peak = blocks[pb] >= 3 && blocks[pb] / top.n >= 0.35 ? pb * 2 : null;
+  if (other) rows.push({ key: OTHER_REASON.key, n: other, share: other / tagged.length });
+  const top = rows[0] && rows[0].key !== OTHER_REASON.key ? rows[0] : null;
+  let peak = null;
+  if (top) {
+    const blocks = new Array(12).fill(0);
+    tagged.filter((e) => e.why === top.key).forEach((e) => { const h = new Date(e.t).getHours(); if (!isNaN(h)) blocks[Math.floor(h / 2)]++; });
+    let pb = 0;
+    blocks.forEach((c, b) => { if (c > blocks[pb]) pb = b; });
+    // a peak only means something when it holds a real share of that reason
+    if (blocks[pb] >= 3 && blocks[pb] / top.n >= 0.35) peak = pb * 2;
+  }
   return { tagged: tagged.length, rows, top, peak };
 }
 // The reason that turns up on the fewest of the days you tagged, among the
@@ -1363,6 +1378,6 @@ if (typeof module !== "undefined" && module.exports) {
     backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
-    TAP_REASONS, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
+    TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };
 }
