@@ -494,7 +494,7 @@
        animation class, and a bare .pulse rule collided with it and knocked the
        centred number out of flex. JS still finds this by id="pulse". */
     .pulse-strip {
-      display: block; margin: var(--sp-3) auto 0; max-width: 92%;
+      display: block; margin: var(--sp-3) auto 0; max-width: 100%;
       background: none; border: none; padding: 6px var(--sp-3);
       font-family: inherit; font-size: var(--fs-small); font-weight: 600;
       color: var(--muted); line-height: 1.35; cursor: pointer; text-align: center;
@@ -505,6 +505,12 @@
     .pulse-strip:active { background: var(--key); }
     .pulse-strip b { color: var(--text); font-variant-numeric: tabular-nums; }
     .pulse-strip.swap { opacity: 0; }
+    /* a line about right now reads in the text colour; "tight" stops at warn, never red */
+    .pulse-strip.now { color: var(--text); }
+    .pulse-strip.tight b { color: var(--warn); }
+    .pulse-strip .plan { color: var(--muted); font-weight: 500; }
+    /* a hint there's more behind a tap: a soft dot, only when there is */
+    .pulse-strip.more::after { content: ""; display: inline-block; width: 4px; height: 4px; margin-left: 7px; vertical-align: 3px; border-radius: 50%; background: var(--faint); }
     @keyframes pulseIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
     /* the trend line draws itself rather than simply appearing — the bars
@@ -524,12 +530,9 @@
     .total .meta.streak { color: var(--safe); }
     .goal-label { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; letter-spacing: 0.2px; min-height: 14px; transition: color var(--dur-slow) ease; }
     .goal-label.hint { color: var(--accent); }
-    /* deliberately stops at --warn: this line never turns red at you */
-    .pace-today { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; }
-    .pace-today b { color: var(--text); font-variant-numeric: tabular-nums; }
-    .pace-today.tight b { color: var(--warn); }
-    .heads-up { color: var(--text); font-weight: 600; }
-    .headsup-plan { color: var(--muted); font-weight: 500; }
+    /* the one always-on fact about now: quieter than the strip above it */
+    .pace-today { margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--muted); text-align: center; }
+    .pace-today b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 
     /* ---- big button ---- */
@@ -762,6 +765,10 @@
     .sheet-btn.with-ico .btn-chev { color: var(--faint); font-size: 20px; line-height: 1; flex: none; }
     .sheet-btn.with-ico:active .btn-ico { color: var(--accent); }
     .sheet-btn.with-ico .btn-detail { flex: none; font-size: 14px; font-weight: 600; color: var(--muted); }
+    /* settings: the places you go, two across */
+    .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); margin-top: var(--sp-3); }
+    .quick-grid .sheet-btn.with-ico { margin: 0; flex-direction: column; justify-content: center; gap: 6px; padding: var(--sp-3) var(--sp-2); font-size: 14px; text-align: center; min-height: 72px; }
+    .quick-grid .sheet-btn.with-ico .btn-label { flex: none; }
     .sheet-group { font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); margin: var(--sp-4) 4px var(--sp-2); }
     /* a button that can't act yet should look like it */
     .sheet-btn:disabled { opacity: 0.38; cursor: default; box-shadow: none; }
@@ -1986,12 +1993,8 @@
     <!-- one insight at a time; tap to cycle. Always present, never dismissed. -->
     <button class="pulse-strip" id="pulse" style="display:none" aria-live="polite"></button>
     <div class="goal-label" id="goalText"></div>
-    <!-- where today is heading, but only while that's still useful to know -->
-    <div class="pace-today" id="paceToday" style="display:none" aria-live="polite"></div>
     <!-- time since the last tap, and the target gap once one is set -->
     <div class="pace-today gap-line" id="gapLine" style="display:none"></div>
-    <!-- before your most common reason's usual time -->
-    <div class="pace-today heads-up" id="headsUp" style="display:none"></div>
     <div class="swipe-hint" id="swipeHint"><span class="arrow">↓</span> swipe down to undo</div>
   </div>
 
@@ -2018,7 +2021,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.61</div>
+  <div class="version">v10.62</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

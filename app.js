@@ -91,9 +91,7 @@ const el = {
   ringProg: document.getElementById("ringProg"),
   meta: document.getElementById("meta"),
   goalText: document.getElementById("goalText"),
-  paceToday: document.getElementById("paceToday"),
   gapLine: document.getElementById("gapLine"),
-  headsUp: document.getElementById("headsUp"),
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
@@ -336,22 +334,41 @@ function pulseContext() {
   // today's shape is only today's taps — cheap enough to redo each time
   return Object.assign({ shape: dayShape(tapLog) }, pulseCache.ctx);
 }
-function renderPulse(animate) {
+// The strip is the one slot for "something worth knowing right now". Lines
+// about this moment (a usual-time heads-up, where today is heading) come
+// first; the day-rotated insights follow. Until you tap it, the strip picks
+// the line; after that it's yours for the session.
+let pulseAuto = true;
+function homeLines() {
+  const now = [];
+  const h = headsUpLine(); if (h) now.push(h);
+  const p = paceLine(); if (p) now.push(p);
+  const rest = pulseLines(pulseContext()).map((text) => ({ text, cls: "" }));
+  return { lines: now.concat(rest), priority: now.length };
+}
+function renderPulse() {
   const el0 = el.pulse;
   if (!el0) return;
-  const lines = pulseLines(pulseContext());
+  const { lines, priority } = homeLines();
   if (!lines.length) { el0.style.display = "none"; return; }
-  if (pulseIdx == null) pulseIdx = variantForDay(dayIndex(), lines.map((_, i) => i)) || 0;
+  if (pulseAuto || pulseIdx == null) pulseIdx = priority ? 0 : (variantForDay(dayIndex(), lines.map((_, i) => i)) || 0);
   const line = lines[((pulseIdx % lines.length) + lines.length) % lines.length];
   el0.style.display = "block";
-  // bold the numbers so the line scans without being read word by word
-  el0.innerHTML = line.replace(/(\d[\d.,]*%?)/g, "<b>$1</b>");
-  el0.setAttribute("aria-label", line);
-  if (animate) { el0.classList.remove("swap"); }
+  el0.className = "pulse-strip" + (line.cls ? " " + line.cls : "") + (lines.length > 1 ? " more" : "");
+  if (line.plan) {
+    // user-typed text goes in as text, never markup
+    el0.textContent = line.text;
+    addEl(el0, "span", ` Your plan: ${line.plan}`, "plan");
+  } else {
+    // bold the numbers so the line scans without being read word by word
+    el0.innerHTML = line.text.replace(/(\d[\d.,]*%?)/g, "<b>$1</b>");
+  }
+  el0.setAttribute("aria-label", line.text + (line.plan ? ` Your plan: ${line.plan}` : ""));
 }
 function cyclePulse() {
-  const n = pulseLines(pulseContext()).length;
+  const n = homeLines().lines.length;
   if (n < 2) return;
+  pulseAuto = false;
   pulseIdx = (pulseIdx == null ? 0 : pulseIdx + 1) % n;
   el.pulse.classList.add("swap");
   setTimeout(() => { renderPulse(); el.pulse.classList.remove("swap"); }, reduceMotion() ? 0 : 180);
@@ -992,7 +1009,7 @@ function maybeGapStretch() {
 // ---- why this one ----
 // After a tap, a row of reasons slides over the buttons below for a few
 // seconds. One touch tags the tap; ignoring it costs nothing.
-const WHY_SHOW_MS = 6000;
+const WHY_SHOW_MS = 4500;
 let whyTimer = null;
 // Includes retired reasons, so an old tag still shows its emoji in a timeline.
 function reasonOf(k) { return [...TAP_REASONS, ...RETIRED_REASONS, OTHER_REASON].find((r) => r.key === k); }
@@ -1167,17 +1184,17 @@ function holdBtn() {
 }
 
 // ---- heads-up before your usual time ----
-function renderHeadsUp() {
-  const line = el.headsUp;
-  if (!line) return;
-  const win = headsUpOn ? headsUpWindow(reasonSummary(taggedTaps())) : null;
+// A strip line from half an hour before your most common reason's usual
+// window. Once you've had one inside the window today it has nothing left to
+// say, so it steps aside rather than nag.
+function headsUpLine() {
+  if (!headsUpOn) return null;
+  const win = headsUpWindow(reasonSummary(taggedTaps()));
   const rs = win && reasonOf(win.key);
-  if (!rs || !inHeadsUp(win, new Date())) { line.style.display = "none"; return; }
-  line.textContent = "";
-  line.appendChild(document.createTextNode(`Your “${rs.label.toLowerCase()}” ones usually start around now.`));
+  if (!rs || !inHeadsUp(win, new Date())) return null;
+  if (positiveTimes(tapLog).some((t) => inHeadsUp(win, new Date(t)))) return null;
   const plan = planFor(plans, null, new Date().getHours());
-  if (plan) addEl(line, "span", ` Your plan: ${plan.action}`, "headsup-plan");
-  reveal(line, "block");
+  return { text: `Your “${rs.label.toLowerCase()}” ones usually start around now.`, cls: "now", plan: plan ? plan.action : null };
 }
 
 // ---- share your progress ----
@@ -3959,32 +3976,27 @@ function renderTop(animate) {
   }
 
   renderPulse();
-  renderPaceToday();
   renderGapLine();
-  renderHeadsUp();
   showSwipeHint();
   announceTotal();
 }
 
-// Where today is heading, shown only while it's still something you can act on.
-// Everything about when this stays quiet lives in dayProjection and paceCopy.
-function renderPaceToday() {
-  const line = el.paceToday;
-  if (!line) return;
-  if (!paceOn || !hasGoal()) { line.style.display = "none"; return; }
+// Where today is heading, as a strip line — only while it's still something
+// you can act on. Everything about when this stays quiet lives in
+// dayProjection and paceCopy.
+function paceLine() {
+  if (!paceOn || !hasGoal()) return null;
   const recent = history.slice(-30);
-  if (!recent.length) { line.style.display = "none"; return; }
+  if (!recent.length) return null;
   const avgDaily = recent.reduce((s, d) => s + d.total, 0) / recent.length;
   const { hours } = hourHistogram(allTapTimes());
   const lim = todayGoal();
   const proj = dayProjection(hours, new Date().getHours(), today, lim, avgDaily);
   const copy = paceCopy(proj, today, lim);
-  if (copy && weekMode() && copy.cls === "ok") copy.text = `Today's pace lands around ${fmt(proj.projected)} — within the ${fmt(lim)} this week has left`;
-  if (!copy) { line.style.display = "none"; return; }
-  reveal(line, "block");
-  line.className = "pace-today " + copy.cls;
-  line.innerHTML = copy.text.replace(/(\d[\d.,]*)/g, "<b>$1</b>");
-  line.setAttribute("aria-label", copy.text);
+  if (!copy) return null;
+  if (weekMode() && copy.cls === "ok") copy.text = `Today's pace lands around ${fmt(proj.projected)} — within the ${fmt(lim)} this week has left`;
+  // deliberately stops at "tight": this line never turns red at you
+  return { text: copy.text, cls: copy.cls === "tight" ? "tight" : "" };
 }
 
 // How many history rows to build. A year of use is 365 rows, and nobody
@@ -5270,14 +5282,19 @@ function openSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Settings");
     const row = (icon, label, fn, detail) => s.appendChild(makeIconBtn(icon, label, "", () => { fn(); }, { chevron: true, detail }));
-    const act = (icon, label, fn) => s.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); fn(); }));
+    // the places you go, as tiles two across, so the setup rows start higher
+    let quick = null;
+    const tiles = () => { quick = document.createElement("div"); quick.className = "quick-grid"; s.appendChild(quick); };
+    const act = (icon, label, fn) => quick.appendChild(makeIconBtn(icon, label, "", () => { closeSheet(); fn(); }));
     const group = (label) => addEl(s, "div", label, "sheet-group");
+    tiles();
     act("chart", "Insights", openInsights);
     if (features.since) act("clock", "Time Since", requestSince);
     if (features.water) act("droplet", "Water", openWater);
     if (features.tree) act("tree", "Your Tree", openTree);
 
     group("Look back");
+    tiles();
     if (timelineOn) act("clock", "Your week", openWeeklyRecap);
     act("calendar", "This month", () => openReview("month"));
     act("star", "This year", () => openReview("year"));
@@ -5590,7 +5607,7 @@ function openAppearanceSettings() {
     paceToggle.addEventListener("change", () => {
       paceOn = paceToggle.checked; save(KEY_PACE_ON, paceOn); buzz(8); renderTop();
     });
-    addEl(s, "p", "A line under the ring in the afternoon, when it still helps to know.", "sub");
+    addEl(s, "p", "In the strip under the ring in the afternoon, when it still helps to know.", "sub");
 
     const sinceToggle = makeToggle(s, "Show time since the last one", sinceLastOn);
     sinceToggle.addEventListener("change", () => {
@@ -5600,9 +5617,9 @@ function openAppearanceSettings() {
 
     const headsToggle = makeToggle(s, "Heads-up before your usual time", headsUpOn);
     headsToggle.addEventListener("change", () => {
-      headsUpOn = headsToggle.checked; save(KEY_HEADSUP_ON, headsUpOn); buzz(8); renderHeadsUp();
+      headsUpOn = headsToggle.checked; save(KEY_HEADSUP_ON, headsUpOn); buzz(8); renderPulse();
     });
-    addEl(s, "p", "Once a reason you tag has a usual time, a line under the ring from half an hour before it.", "sub");
+    addEl(s, "p", "Once a reason you tag has a usual time, the strip under the ring says so from half an hour before — until you've had one.", "sub");
 
     const whyToggle = makeToggle(s, "Ask why after a tap", tapWhyOn);
     whyToggle.addEventListener("change", () => {
@@ -8176,6 +8193,12 @@ el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
 document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
+// The reasons row sits over the buttons below the counter. A tap anywhere
+// else means "not now": it clears at once, so nothing is ever stuck behind it.
+document.addEventListener("pointerdown", (e) => {
+  const row = el.whyRow;
+  if (row && row.classList.contains("show") && !(e.target.closest && e.target.closest(".why-chip"))) hideWhyRow();
+}, true);
 // Press and hold the ring to end the day (a parked day is finished first). A
 // quick tap still opens Settings; drifting more than 10px hands off to the
 // swipe-down undo instead.
@@ -8318,7 +8341,7 @@ setInterval(() => {
 // keep the main-page "time since" strip ticking every second; milestone
 // crossings only need a coarser watch (a few seconds late is fine)
 setInterval(() => { if (!document.hidden && since.length) tickSinceStrip(); }, 1000);
-setInterval(() => { if (!document.hidden) { renderGapLine(); renderHeadsUp(); } }, 15000);   // minute resolution, read within a few seconds
+setInterval(() => { if (!document.hidden) { renderGapLine(); renderPulse(); } }, 15000);   // minute resolution, read within a few seconds
 setInterval(() => { if (!document.hidden && since.length) checkMilestones(); }, 10000);
 
 // ---- theme ---- follow the phone's light/dark setting for the status-bar tint

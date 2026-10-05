@@ -410,10 +410,7 @@ check("number stays centred in the ring after End Day", centred);
   }, dk);
   await p7.goto(BASE);
   await p7.waitForTimeout(800);
-  const pace = await p7.evaluate(() => {
-    const e = document.getElementById("paceToday");
-    return { shown: getComputedStyle(e).display !== "none", text: e.textContent || "" };
-  });
+  const pace = await p7.evaluate(() => { const l = paceLine(); return l ? { shown: true, text: l.text } : { shown: false, text: "" }; });
   const hour = new Date().getHours();
   if (pace.shown) {
     check("the pace line reports the pattern, not a verdict", /usually add about|under your/.test(pace.text));
@@ -426,7 +423,7 @@ check("number stays centred in the ring after End Day", centred);
   // and it can be switched off for good
   await p7.evaluate(() => { paceOn = false; save("count.paceOn", false); renderTop(); });
   await p7.waitForTimeout(200);
-  check("the pace line can be turned off", (await p7.evaluate(() => getComputedStyle(document.getElementById("paceToday")).display)) === "none");
+  check("the pace line can be turned off", (await p7.evaluate(() => paceLine())) === null);
   await ctx7.close();
 }
 
@@ -1058,6 +1055,8 @@ check("number stays centred in the ring after End Day", centred);
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
     check("a tap offers the reasons", await shown());
+    await pg.evaluate(() => document.getElementById("goalText").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    check("a tap anywhere else clears the reasons at once", !(await shown()));
     await pg.click("#addBtn");
     await pg.waitForTimeout(200);
     const fit = await pg.evaluate(() => {
@@ -1142,10 +1141,21 @@ check("number stays centred in the ring after End Day", centred);
   await p18.waitForTimeout(1800);
 
   // a heads-up only inside the window, and only while it's on
-  const heads = () => p18.evaluate(() => { const l = document.getElementById("headsUp"); return l.style.display === "none" ? null : l.textContent; });
-  check("a heads-up shows in your usual window", /^Your “at work” ones usually start around now\./.test((await heads()) || ""));
-  await p18.evaluate(() => { headsUpOn = false; renderHeadsUp(); });
-  check("the heads-up can be switched off", (await heads()) === null);
+  const strip = () => p18.evaluate(() => { const l = document.getElementById("pulse"); return l.style.display === "none" ? null : { text: l.textContent, now: l.classList.contains("now") }; });
+  const first = await strip();
+  check("a heads-up leads the strip in your usual window", !!first && first.now && /^Your “at work” ones usually start around now\./.test(first.text));
+  check("nothing stacks under the ring beyond streak, strip and since-last", await p18.evaluate(() => {
+    const shown = [...document.querySelectorAll(".total > *")].filter((n) => getComputedStyle(n).display !== "none").map((n) => n.id);
+    return shown.every((id) => ["ringWrap", "meta", "goalText", "pulse", "gapLine", "swipeHint"].includes(id)) && shown.includes("pulse") && shown.includes("gapLine");
+  }));
+  await p18.evaluate(() => { tapLog.push({ t: Date.now(), amt: 1, why: "work" }); renderPulse(); });
+  check("once you've had one, the heads-up steps aside", !(await strip()).now);
+  await p18.evaluate(() => { tapLog = []; headsUpOn = false; renderPulse(); });
+  check("the heads-up can be switched off", await p18.evaluate(() => headsUpLine() === null));
+  await p18.evaluate(() => { headsUpOn = true; renderPulse(); });
+  await p18.evaluate(() => cyclePulse());
+  await p18.waitForTimeout(300);
+  check("a tap on the strip moves past it to the next line", !(await strip()).now && (await strip()).text.length > 0);
   check("the window starts half an hour early and ends with the block", await p18.evaluate(() =>
     inHeadsUp({ start: 14, end: 16 }, new Date(2026, 0, 1, 13, 45)) && !inHeadsUp({ start: 14, end: 16 }, new Date(2026, 0, 1, 16, 5))));
 
