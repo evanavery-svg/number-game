@@ -1207,6 +1207,73 @@ check("number stays centred in the ring after End Day", centred);
   await ctx18.close();
 }
 
+// the first run: the right defaults, the gestures taught once, and a quiet day one
+{
+  const ctx19 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p19 = await ctx19.newPage();
+  p19.on("pageerror", (e) => errors.push("first run: " + String(e)));
+  const press = (re) => p19.evaluate((src) => { const b = [...document.querySelectorAll("#overlay.show #sheet button")].find((x) => new RegExp(src).test(x.textContent.trim())); b && b.click(); return !!b; }, re);
+  await p19.goto(BASE);
+  await p19.waitForTimeout(1200);
+  await press("^Get started");
+  await p19.waitForTimeout(400);
+  await press("^Next");
+  await p19.waitForTimeout(400);
+  check("a fresh install starts at one per tap, not the screen number", (await p19.evaluate(() => [...document.querySelectorAll("#sheet input[type=number]")].map((i) => i.value))).join(",") === ",1");
+  await p19.fill("#sheet input[min='0']", "4");
+  await press("^Start tracking");
+  await p19.waitForTimeout(500);
+  check("what you typed is what's saved", await p19.evaluate(() => JSON.parse(localStorage.getItem("count.step")) === 1 && JSON.parse(localStorage.getItem("count.goal")) === 4 && step === 1));
+  check("the last screen teaches the three gestures", await p19.evaluate(() => document.querySelector("#sheet h3")?.textContent === "You're set ✓" && document.querySelectorAll("#sheet .how-row").length === 3));
+  await press("^Let's go");
+  await p19.waitForTimeout(2600);
+  check("nothing asks anything on the day you set up", await p19.evaluate(() => !document.getElementById("moodGate").classList.contains("show") && !document.getElementById("gameGate").classList.contains("show") && !document.getElementById("overlay").classList.contains("show")));
+  check("the ring tips don't repeat what was just taught", await p19.evaluate(() => JSON.parse(localStorage.getItem("count.ringTapTip")) === true && JSON.parse(localStorage.getItem("count.ringHoldTip")) === true));
+  await p19.reload();
+  await p19.waitForTimeout(2000);
+  check("and not on reopening either", await p19.evaluate(() => !document.getElementById("moodGate").classList.contains("show") && !document.getElementById("gameGate").classList.contains("show")));
+  await p19.evaluate(() => { localStorage.setItem("count.onboardedOn", JSON.stringify("2000-01-01")); blockingSpent = false; runDailyGates(); });
+  await p19.waitForTimeout(400);   // the gate fades in on the next frame
+  check("but the check-in is back tomorrow", await p19.evaluate(() => document.getElementById("moodGate").classList.contains("show")));
+  await ctx19.close();
+}
+
+// the first weeks of Insights: one list of what's coming, not a wall of "not yet"
+{
+  const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ago = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return d; };
+  const ctx20 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p20 = await ctx20.newPage();
+  p20.on("pageerror", (e) => errors.push("still to come: " + String(e)));
+  await p20.addInitScript(({ dk, hist }) => {
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.goal", 4); set("count.goalOn", true); set("count.step", 1); set("count.history", hist);
+  }, { dk, hist: [1, 2].map((n) => ({ date: isoOf(ago(n)), total: 3, taps: 3, endedAt: ago(n).toISOString(), tapTimes: [] })) });
+  await p20.goto(BASE);
+  await p20.waitForTimeout(1200);
+  await p20.evaluate(() => openInsights());
+  await p20.waitForTimeout(500);
+  await p20.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Patterns").click());
+  await p20.waitForTimeout(800);
+  const pat = await p20.evaluate(() => ({
+    unlock: document.querySelectorAll("#segPatterns > .unlock-card").length,
+    rows: [...document.querySelectorAll("#segPatterns .unlock-row")].map((r) => r.textContent),
+    leftover: [...document.querySelectorAll("#segPatterns > .chart-card:not(.unlock-card)")].filter((c) => c.style.display !== "none" && c.querySelector(".card-empty")).length,
+  }));
+  check("Patterns folds its placeholders into one card", pat.unlock === 1 && pat.leftover === 0);
+  check("each line says how close it is", pat.rows.some((r) => /By weekday2 of 4 days/.test(r)) && pat.rows.some((r) => /By time of day0 of 5 taps/.test(r)));
+  await p20.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Journey").click());
+  await p20.waitForTimeout(800);
+  check("Journey too, with the calendar left in place", await p20.evaluate(() =>
+    document.querySelectorAll("#segJourney > .unlock-card").length === 1 && document.getElementById("calCard").style.display !== "none"));
+  // once a card has something to show, it's back on its own
+  await p20.evaluate(() => { history = Array.from({ length: 5 }, (_, i) => ({ date: `2026-09-0${i + 1}`, total: 2, taps: 2, endedAt: `2026-09-0${i + 1}T20:00:00`, tapTimes: [] })); renderSegment(); });
+  await p20.waitForTimeout(200);
+  check("a card unfolds the moment it has data", await p20.evaluate(() => document.getElementById("recordsCard").style.display !== "none" && !document.getElementById("recordsCard").dataset.folded && document.querySelectorAll("#segJourney > .unlock-card").length === 1));
+  await ctx20.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

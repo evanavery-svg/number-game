@@ -595,13 +595,15 @@ function maybeOnboard() {
   openOnboarding(1);
   return true;
 }
-function openOnboarding(step) {
+// The day you set up is yours: the daily check-ins start tomorrow.
+const KEY_ONBOARDED_ON = "count.onboardedOn";
+function openOnboarding(stage) {
   openSheet((s) => {
-    if (step === 1) {
+    if (stage === 1) {
       addEl(s, "h3", "Welcome 👋");
       addEl(s, "p", "A simple counter for anything you want to keep an eye on — one tap at a time. Everything stays private, on this device.", "sub");
       s.appendChild(makeBtn("Get started", "primary", () => openOnboarding(2)));
-    } else if (step === 2) {
+    } else if (stage === 2) {
       addEl(s, "h3", "What are you counting?");
       addEl(s, "p", "Optional — e.g. coffees, cigarettes, glasses of water, push-ups.", "sub");
       const inp = document.createElement("input");
@@ -610,13 +612,14 @@ function openOnboarding(step) {
       s.appendChild(makeBtn("Next", "primary", () => { countLabel = inp.value.trim(); save(KEY_LABEL, countLabel); openOnboarding(3); }));
       s.appendChild(makeBtn("Skip", "ghost", () => openOnboarding(3)));
       setTimeout(() => inp.focus(), 50);
-    } else {
+    } else if (stage === 3) {
       addEl(s, "h3", "Set a daily goal");
       addEl(s, "p", "Start where you actually are today — the app will help you walk this number down over time, all the way to zero if you want.", "sub");
       addEl(s, "label", "Daily goal (blank for none)");
       const gi = numInput(hasGoal() ? fmt(goal) : "", "0"); s.appendChild(gi);
       addEl(s, "label", "Amount added per tap");
-      const si = numInput(fmt(step), "0.01"); s.appendChild(si);
+      // a fresh install starts at one per tap; an older one keeps what it had
+      const si = numInput(load(KEY_STEP, null) === null ? "1" : fmt(step), "0.01"); s.appendChild(si);
       const tp = makeToggle(s, "Suggest step-downs over time", true);
       s.appendChild(makeBtn("Start tracking ✓", "primary", () => {
         const ng = parseFloat(gi.value);
@@ -625,10 +628,28 @@ function openOnboarding(step) {
         const ns = parseFloat(si.value); if (!isNaN(ns) && ns > 0) step = round2(ns);
         taper.on = tp.checked && goalOn;
         save(KEY_GOAL, goal); save(KEY_GOAL_ON, goalOn); save(KEY_STEP, step);
-        save(KEY_TAPER, taper); save(KEY_ONBOARDED, true);
+        save(KEY_TAPER, taper); save(KEY_ONBOARDED, true); save(KEY_ONBOARDED_ON, sessionDate());
         if (goalOn) noteGoalChange(goal);
-        closeSheet(); render();
-        setTimeout(runDailyGates, 300);
+        render();
+        openOnboarding(4);
+      }));
+    } else {
+      // the three things nothing on screen says, said once here instead of as
+      // three separate tips over the first days
+      addEl(s, "h3", "You're set ✓");
+      addEl(s, "p", "Tap the big button each time. Three things worth knowing:", "sub");
+      const list = document.createElement("div"); list.className = "how-list"; s.appendChild(list);
+      [["target", "Tap the ring for Settings"],
+       ["clock", "Press and hold the ring to end the day — it also rolls over by itself at 4am"],
+       ["undo", "Swipe down on the number to undo a tap"]].forEach(([icon, text]) => {
+        const row = document.createElement("div"); row.className = "how-row";
+        const i = document.createElement("span"); i.className = "btn-ico"; i.innerHTML = ico(ICONS[icon]); row.appendChild(i);
+        addEl(row, "span", text, "how-text"); list.appendChild(row);
+      });
+      addEl(s, "p", "Insights fill in over your first two weeks. Today is just for tapping.", "sub");
+      s.appendChild(makeBtn("Let's go", "primary", () => {
+        save(KEY_RING_TAP_TIP, true); save(KEY_RING_HOLD_TIP, true);
+        closeSheet(); render(); buzz(12);
       }));
     }
   });
@@ -1424,6 +1445,7 @@ function runDailyGates(force) {
   if (el.moodGate.classList.contains("show") || el.gameGate.classList.contains("show")) return;
   if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
   if (blockingSpent && !force) return;                       // already interrupted once
+  if (load(KEY_ONBOARDED_ON, "") === moodGateKey()) return;  // setup day: nothing asks yet
 
   const greetLine = greetDue() ? pickAffirmation(affirms, AFFIRMATIONS, monthDayIndex(new Date())) : null;
   if (features.mood && moodDaily[moodGateKey()] == null) {
@@ -2265,7 +2287,49 @@ const SEG_RENDER = {
   habits:   () => { renderHabits(); renderHabitImpact(); },
   patterns: () => { renderShape(); renderWeekday(); renderTimeOfDay(); renderWhy(); renderWeekHeat(); renderMood(); renderConnections(); renderWins(); },
 };
-function renderSegment() { (SEG_RENDER[insightSeg] || SEG_RENDER.overview)(); }
+function renderSegment() {
+  (SEG_RENDER[insightSeg] || SEG_RENDER.overview)();
+  const page = document.getElementById("seg" + insightSeg.charAt(0).toUpperCase() + insightSeg.slice(1));
+  if (page) foldEmpties(page);
+}
+
+// In the first weeks most of a tab is placeholders, each saying "not yet" in
+// its own words. Two or more of those fold into one card that says what's
+// coming and how close each one is — a list to look forward to, not a wall
+// of nothing. A card is left alone once it has something to show.
+const UNLOCKS = {
+  trendCard:         { label: "Trend line",       need: 10, unit: "days",      have: () => history.length },
+  recordsCard:       { label: "Records",          need: 3,  unit: "days",      have: () => history.length },
+  yearCard:          { label: "Past year",        need: 14, unit: "days",      have: () => history.length },
+  weekdayCard:       { label: "By weekday",       need: 4,  unit: "days",      have: () => history.length },
+  timeCard:          { label: "By time of day",   need: 5,  unit: "taps",      have: () => allTapTimes().length },
+  weekHeatCard:      { label: "When in the week", need: 10, unit: "taps",      have: () => allTapTimes().length },
+  whyCard:           { label: "Why they happen",  need: 10, unit: "tagged",    have: () => taggedTaps().length },
+  moodCard:          { label: "Mood & patterns",  need: 3,  unit: "days with a mood", have: () => history.filter((d) => typeof d.mood === "number" && d.mood >= 1).length },
+  ladderCard:        { label: "Taper ladder",     need: 1,  unit: "step-down", have: () => Math.max(0, goalLog.length - 1) },
+  habitsSummaryCard: { label: "Habits",           need: 1,  unit: "habit",     have: () => vitaminsList.length },
+};
+function foldEmpties(page) {
+  page.querySelectorAll(":scope > .unlock-card").forEach((n) => n.remove());
+  page.querySelectorAll(":scope > .chart-card[data-folded]").forEach((c) => { c.style.display = ""; delete c.dataset.folded; });
+  const empties = [...page.querySelectorAll(":scope > .chart-card")]
+    .filter((c) => UNLOCKS[c.id] && c.style.display !== "none" && c.querySelector(".card-empty"));
+  if (empties.length < 2) return;
+  const card = document.createElement("div"); card.className = "chart-card unlock-card";
+  addEl(card, "div", "Still to come", "section-title");
+  addEl(card, "div", "These fill in as you log — nothing to set up.", "card-empty");
+  empties.forEach((c) => {
+    const u = UNLOCKS[c.id], have = Math.min(u.have(), u.need);
+    const row = document.createElement("div"); row.className = "unlock-row";
+    addEl(row, "span", u.label, "unlock-lbl");
+    addEl(row, "span", `${have} of ${u.need} ${u.unit}`, "unlock-n");
+    const bar = document.createElement("div"); bar.className = "unlock-bar";
+    const fill = document.createElement("i"); fill.style.width = Math.round((have / u.need) * 100) + "%";
+    bar.appendChild(fill); row.appendChild(bar); card.appendChild(row);
+    c.style.display = "none"; c.dataset.folded = "1";
+  });
+  empties[0].parentNode.insertBefore(card, empties[0]);
+}
 
 function renderInsights() {
   // nothing to draw behind a closed panel — openInsights renders on the way in
