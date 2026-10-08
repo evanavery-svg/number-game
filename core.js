@@ -1391,6 +1391,31 @@ function rungsDown(goalLog) {
   return n;
 }
 
+// ---- today against your usual, by this time of day ----
+// For each recent day, how much had been logged by the same point in that
+// day (measured from the 4am start, so a late night lines up with a late
+// night). `days` is [{ start, taps: [{ t, amt }] }], `offset` is ms since
+// today's start. The usual is the median, so one heavy day can't drag it.
+// Null until there are five days to go on.
+function usualByNow(days, offset) {
+  const vals = (days || []).map((d) => round2((d.taps || [])
+    .filter((e) => e && typeof e.t === "number" && e.t - d.start <= offset)
+    .reduce((s, e) => s + (typeof e.amt === "number" ? e.amt : 1), 0)));
+  if (vals.length < 5) return null;
+  return { usual: round2(median(vals)), n: vals.length };
+}
+// The line itself. Under is said plainly and in green; over is said plainly
+// and never in red — it's information about the day, not a verdict on you.
+function paceVsUsual(today, usual, step) {
+  if (usual == null) return null;
+  if (today === 0 && usual === 0) return null;            // nothing to compare yet
+  const diff = round2(today - usual);
+  const near = Math.max(0.5, (step || 1) / 2);
+  if (Math.abs(diff) < near) return { text: "right on your usual pace", cls: "even" };
+  if (diff < 0) return { text: `${fmt(-diff)} fewer than usual by now`, cls: "under" };
+  return { text: `${fmt(diff)} more than usual by now`, cls: "more" };
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1411,6 +1436,7 @@ if (typeof module !== "undefined" && module.exports) {
     backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
+    usualByNow, paceVsUsual,
     HEADSUP_LEAD_MIN, headsUpWindow, inHeadsUp, holdActive, rungsDown,
     TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };

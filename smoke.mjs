@@ -308,6 +308,8 @@ check("number stays centred in the ring after End Day", centred);
     localStorage.setItem("count.gameOn", "false");
     localStorage.setItem("count.greetShown", JSON.stringify(dk));
     localStorage.setItem("count.ringTapTip", "true");   // its save would push the mirror's debounce past the wait
+    localStorage.setItem("count.ringHoldTip", "true");  // likewise in the evening
+    localStorage.setItem("count.whyTip", "true");       // and the first tap's reasons tip
   }, dk);
   await p4.goto(BASE);
   await p4.waitForTimeout(400);
@@ -410,20 +412,34 @@ check("number stays centred in the ring after End Day", centred);
   }, dk);
   await p7.goto(BASE);
   await p7.waitForTimeout(800);
-  const pace = await p7.evaluate(() => { const l = paceLine(); return l ? { shown: true, text: l.text } : { shown: false, text: "" }; });
-  const hour = new Date().getHours();
-  if (pace.shown) {
-    check("the pace line reports the pattern, not a verdict", /usually add about|under your/.test(pace.text));
-    check("the pace line never says you'll go over", !/\bover\b|projected|exceed|fail/i.test(pace.text));
-  } else {
-    // before midday it stays quiet by design
-    check("the pace line stays quiet outside its window", hour < 12 || true);
-    check("the pace line is hidden rather than empty", pace.text === "" || !pace.shown);
-  }
-  // and it can be switched off for good
-  await p7.evaluate(() => { paceOn = false; save("count.paceOn", false); renderTop(); });
-  await p7.waitForTimeout(200);
-  check("the pace line can be turned off", (await p7.evaluate(() => paceLine())) === null);
+  // today against your usual by now: seed fourteen days with taps at fixed hours
+  const cmp = await p7.evaluate(() => {
+    const start = (ds) => new Date(ds + "T00:00:00").getTime() + DAY_CUTOFF_HOUR * 3600e3;
+    const off = Date.now() - start(sessionDate());
+    const days = [];
+    for (let n = 1; n <= 14; n++) {
+      const d = new Date(sessionDate() + "T12:00:00"); d.setDate(d.getDate() - n);
+      const ds = isoLocal(d), s0 = start(ds);
+      // three taps every day, all before this time of day
+      const tapTimes = [0.2, 0.5, 0.8].map((f) => ({ t: s0 + f * off, amt: 1 }));
+      days.push({ date: ds, total: 3, taps: 3, endedAt: new Date(s0 + 20 * 3600e3).toISOString(), tapTimes });
+    }
+    history = days.reverse();
+    const out = {};
+    today = 1; renderGapLine(); out.under = document.getElementById("gapLine").textContent;
+    out.underGreen = !!document.querySelector("#gapLine .pace-under");
+    today = 3; renderGapLine(); out.even = document.getElementById("gapLine").textContent;
+    today = 5; renderGapLine(); out.more = document.getElementById("gapLine").textContent;
+    out.moreRed = !!document.querySelector("#gapLine .pace-over, #gapLine [style*=over]");
+    history = days.slice(0, 3); today = 1; renderGapLine(); out.thin = document.getElementById("gapLine").textContent;
+    history = days; paceOn = false; renderGapLine(); out.off = document.getElementById("gapLine").textContent;
+    return out;
+  });
+  check("fewer than usual by now is said, in green", /2 fewer than usual by now/.test(cmp.under) && cmp.underGreen);
+  check("on your usual is said too", /right on your usual pace/.test(cmp.even));
+  check("more than usual is plain, never red", /2 more than usual by now/.test(cmp.more) && !cmp.moreRed);
+  check("it waits for five days before comparing", !/usual/.test(cmp.thin));
+  check("and it can be switched off", !/usual/.test(cmp.off));
   await ctx7.close();
 }
 
@@ -930,14 +946,14 @@ check("number stays centred in the ring after End Day", centred);
     check("accepting it stores the gap", (await pg.evaluate(() => JSON.parse(localStorage.getItem("count.gap")).target)) === 90 * 60000);
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
-    check("home says when the next one's due", /^Last one just now · next after \d/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
+    check("home says when the next one's due", /^Last one just now · (.* · )?next after \d/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
     await pg.evaluate(() => { tapLog[tapLog.length - 1].t = Date.now() - 30 * 60000; save("count.tapLog", tapLog); });
     await pg.click("#addBtn");
     await pg.waitForTimeout(300);
     check("an early tap is logged, with a note", (await pg.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 2 &&
       (await pg.evaluate(() => [document.getElementById("toast").textContent, ...toastQ.map((t) => t.msg)].some((m) => /1h before your 1h 30m gap/.test(m)))));
     await pg.evaluate(() => { tapLog[tapLog.length - 1].t = Date.now() - 100 * 60000; renderGapLine(); });
-    check("past the gap it counts up instead", /^1h 40m since the last one$/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
+    check("past the gap it counts up instead", /^1h 40m since the last one( · [^·]*usual[^·]*)?$/.test(await pg.evaluate(() => document.getElementById("gapLine").textContent)));
     await ctx.close();
   }
 

@@ -1451,3 +1451,25 @@ test("rungsDown counts drops, weekly rungs as their daily share", () => {
   ]), 4);
   assert.equal(core.rungsDown([{ at: "2026-01-01", goal: 4 }]), 0);
 });
+
+// ---- today against your usual, by now ----
+test("usualByNow counts each day up to the same time and takes the median", () => {
+  const H = 3600e3, start = (n) => n * 864e5;
+  const day = (n, hours) => ({ start: start(n), taps: hours.map((h) => ({ t: start(n) + h * H, amt: 1 })) });
+  const days = [day(0, [2, 5, 9]), day(1, [3, 10]), day(2, [1, 4, 6, 12]), day(3, []), day(4, [8])];
+  // by 6 hours in: 2, 1, 3, 0, 0 → median 1
+  assert.deepEqual(core.usualByNow(days, 6 * H), { usual: 1, n: 5 });
+  assert.equal(core.usualByNow(days.slice(0, 4), 6 * H), null);   // too few days
+  // amounts, not just taps, and an old-format tap counts as one
+  const mixed = [{ start: 0, taps: [{ t: H, amt: 0.5 }, { t: 2 * H, amt: null }] }, day(1, []), day(2, []), day(3, [1, 1]), day(4, [1])];
+  assert.equal(core.usualByNow(mixed, 3 * H).usual, 1);
+});
+test("paceVsUsual says under, even or over, and never as a verdict", () => {
+  assert.deepEqual(core.paceVsUsual(1, 3, 1), { text: "2 fewer than usual by now", cls: "under" });
+  assert.deepEqual(core.paceVsUsual(3, 3, 1), { text: "right on your usual pace", cls: "even" });
+  assert.deepEqual(core.paceVsUsual(4, 2.5, 1), { text: "1.5 more than usual by now", cls: "more" });
+  assert.equal(core.paceVsUsual(0, 0, 1), null);            // nothing to say before the day starts
+  assert.equal(core.paceVsUsual(2, null, 1), null);
+  assert.equal(core.paceVsUsual(2.25, 2, 0.25).cls, "even"); // within half a unit is even
+  for (const r of [core.paceVsUsual(5, 1, 1), core.paceVsUsual(0, 4, 1)]) assert.ok(!/fail|bad|too many|over/i.test(r.text));
+});

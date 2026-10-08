@@ -342,7 +342,6 @@ let pulseAuto = true;
 function homeLines() {
   const now = [];
   const h = headsUpLine(); if (h) now.push(h);
-  const p = paceLine(); if (p) now.push(p);
   const rest = pulseLines(pulseContext()).map((text) => ({ text, cls: "" }));
   return { lines: now.concat(rest), priority: now.length };
 }
@@ -953,21 +952,29 @@ function lastTapEver() {
 }
 // Time since the last one, always — and while a target gap is running, when
 // the next one's due.
+// One quiet line under the strip: time since the last one, how today
+// compares with your usual by now, and — with a gap running — when the next
+// one's due. Each part shows on its own when the others have nothing to say.
 function renderGapLine() {
   const line = el.gapLine;
   if (!line) return;
+  const parts = [];
   const gapLast = gapOn() ? lastTapAt() : null;
   const last = gapLast || (sinceLastOn ? lastTapEver() : null);
-  if (!last) { line.style.display = "none"; return; }
-  const since = Math.max(0, Date.now() - last);
-  line.style.display = "";
-  const ago = since < 60000 ? "Last one <b>just now</b>" : `<b>${gapLabel(since)}</b> since the last one`;
+  const since = last ? Math.max(0, Date.now() - last) : null;
+  if (last) parts.push(since < 60000 ? "Last one <b>just now</b>" : `<b>${gapLabel(since)}</b> since the last one`);
+  const pace = paceNow();
+  if (pace) {
+    const txt = pace.text.replace(/^(\d[\d.]*)/, "<b>$1</b>");
+    parts.push(`<span class="pace-${pace.cls}">${parts.length ? txt : txt.charAt(0).toUpperCase() + txt.slice(1)}</span>`);
+  }
   if (gapLast && since < gap.target) {
     const at = new Date(last + gap.target).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    line.innerHTML = `${ago} · next after <b>${at}</b>`;
-  } else {
-    line.innerHTML = ago;
+    parts.push(`next after <b>${at}</b>`);
   }
+  if (!parts.length) { line.style.display = "none"; return; }
+  line.style.display = "";
+  line.innerHTML = parts.join(" · ");
 }
 // Said once, after the tap, and never as a gate.
 function noteEarlyTap(prevAt) {
@@ -4045,22 +4052,19 @@ function renderTop(animate) {
   announceTotal();
 }
 
-// Where today is heading, as a strip line — only while it's still something
-// you can act on. Everything about when this stays quiet lives in
-// dayProjection and paceCopy.
-function paceLine() {
-  if (!paceOn || !hasGoal()) return null;
-  const recent = history.slice(-30);
-  if (!recent.length) return null;
-  const avgDaily = recent.reduce((s, d) => s + d.total, 0) / recent.length;
-  const { hours } = hourHistogram(allTapTimes());
-  const lim = todayGoal();
-  const proj = dayProjection(hours, new Date().getHours(), today, lim, avgDaily);
-  const copy = paceCopy(proj, today, lim);
-  if (!copy) return null;
-  if (weekMode() && copy.cls === "ok") copy.text = `Today's pace lands around ${fmt(proj.projected)} — within the ${fmt(lim)} this week has left`;
-  // deliberately stops at "tight": this line never turns red at you
-  return { text: copy.text, cls: copy.cls === "tight" ? "tight" : "" };
+// Today so far against your usual by this time of day, from the last 14
+// logged days that have tap times. A day typed in afterwards has none and is
+// left out rather than counted as a day of nothing.
+const PACE_DAYS = 14;
+function paceNow() {
+  if (!paceOn) return null;
+  const startOf = (ds) => new Date(ds + "T00:00:00").getTime() + DAY_CUTOFF_HOUR * 3600e3;
+  const days = historyByDate()
+    .filter((d) => d.total === 0 || (d.tapTimes || []).length)
+    .slice(-PACE_DAYS)
+    .map((d) => ({ start: startOf(d.date), taps: (d.tapTimes || []).map(tapEntry) }));
+  const u = usualByNow(days, Date.now() - startOf(sessionDate()));
+  return u ? paceVsUsual(today, u.usual, step) : null;
 }
 
 // How many history rows to build. A year of use is 365 rows, and nobody
@@ -5667,11 +5671,11 @@ function openAppearanceSettings() {
     });
     addEl(s, "p", "A slow sheen around the ring — a different one each day.", "sub");
 
-    const paceToggle = makeToggle(s, "Show today's pace", paceOn);
+    const paceToggle = makeToggle(s, "Compare today with usual", paceOn);
     paceToggle.addEventListener("change", () => {
-      paceOn = paceToggle.checked; save(KEY_PACE_ON, paceOn); buzz(8); renderTop();
+      paceOn = paceToggle.checked; save(KEY_PACE_ON, paceOn); buzz(8); renderGapLine();
     });
-    addEl(s, "p", "In the strip under the ring in the afternoon, when it still helps to know.", "sub");
+    addEl(s, "p", "Under the ring: how many you've had so far against your usual by this time, from your last two weeks.", "sub");
 
     const sinceToggle = makeToggle(s, "Show time since the last one", sinceLastOn);
     sinceToggle.addEventListener("change", () => {

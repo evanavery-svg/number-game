@@ -533,6 +533,8 @@
     /* the one always-on fact about now: quieter than the strip above it */
     .pace-today { margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--muted); text-align: center; }
     .pace-today b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    /* under your usual reads green; over stays in the line's own grey, never red */
+    .pace-today .pace-under, .pace-today .pace-under b { color: var(--safe); }
 
 
     /* ---- big button ---- */
@@ -2032,7 +2034,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.63</div>
+  <div class="version">v10.64</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
