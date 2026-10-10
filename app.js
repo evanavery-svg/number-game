@@ -266,6 +266,13 @@ let haptic = load(KEY_HAPTIC, true);
 let sound = load(KEY_SOUND, false);
 let reminderOn = load(KEY_REMIND, false);
 let reminderTime = load(KEY_REMIND_TIME, "20:00");
+// A nudge to go to bed: on home while the app's open, as a notification where
+// the phone allows one.
+const KEY_BED_ON = "count.bedOn";
+const KEY_BED_TIME = "count.bedTime";     // "HH:MM"
+const KEY_BED_LAST = "count.bedLast";     // session day the bedtime notification last went out
+let bedOn = load(KEY_BED_ON, false);
+let bedTime = load(KEY_BED_TIME, "23:00");
 let streakGrace = load(KEY_STREAK_GRACE, true);   // one over-goal slip won't reset the under-goal streak
 let since = load(KEY_SINCE, []);
 let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
@@ -341,6 +348,7 @@ function pulseContext() {
 let pulseAuto = true;
 function homeLines() {
   const now = [];
+  const b = bedLine(); if (b) now.push(b);
   const h = headsUpLine(); if (h) now.push(h);
   const rest = pulseLines(pulseContext()).map((text) => ({ text, cls: "" }));
   return { lines: now.concat(rest), priority: now.length };
@@ -349,7 +357,7 @@ function renderPulse() {
   const el0 = el.pulse;
   if (!el0) return;
   const { lines, priority } = homeLines();
-  if (!lines.length) { el0.style.display = "none"; return; }
+  if (!lines.length) { el0.style.display = "none"; el0.textContent = ""; return; }
   if (pulseAuto || pulseIdx == null) pulseIdx = priority ? 0 : (variantForDay(dayIndex(), lines.map((_, i) => i)) || 0);
   const line = lines[((pulseIdx % lines.length) + lines.length) % lines.length];
   el0.style.display = "block";
@@ -1209,6 +1217,30 @@ function holdBtn() {
     closeSheet(); buzz(12); render();
     toast(`Holding here until ${holdDate(holdActive(holds))} — no step-downs till then`, 3600);
   });
+}
+
+// ---- bedtime ----
+function bedDue() { return bedOn && inBedWindow(bedTime, new Date()); }
+function bedLine() {
+  if (!bedDue()) return null;
+  return { text: `Past your ${bedLabel(bedTime)} bedtime — time to wind down.`, cls: "now bed" };
+}
+// Once per night, and only while the app is running — see scheduleReminders
+// for the closed-app side.
+function checkBedtime() {
+  if (!bedDue()) return;
+  const day = sessionDate();
+  if (load(KEY_BED_LAST, null) === day) return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  save(KEY_BED_LAST, day);
+  const body = `It's past your ${bedLabel(bedTime)} bedtime. Time to wind down.`;
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bedtime", { body, icon: "icon-192.png", badge: "icon-192.png", tag: "bedtime" })).catch(() => {});
+    } else {
+      new Notification("Bedtime", { body });
+    }
+  } catch (e) {}
 }
 
 // ---- heads-up before your usual time ----
@@ -5721,11 +5753,24 @@ function openReminderSettings() {
     addEl(s, "p", reminderScheduling()
       ? "A nudge if you haven't tracked by this time. Scheduled ahead, so it arrives even when the app is closed."
       : "A nudge if you haven't tracked by this time. This browser can't wake a web app on a schedule, so on iPhone it appears the next time you open the app — a real background alert would need a server behind it.", "sub");
+    addEl(s, "div", "Bedtime", "sheet-group");
+    const bedToggle = makeToggle(s, "Remind me to go to bed", bedOn);
+    addEl(s, "label", "Bedtime");
+    const bedInput = document.createElement("input");
+    bedInput.type = "time"; bedInput.value = bedTime || "23:00";
+    s.appendChild(bedInput);
+    addEl(s, "p", reminderScheduling()
+      ? "A notification at this time, and a line on home until 4am."
+      : "A line on home from this time until 4am, and a notification if the app is open. For one that always arrives on iPhone, set a Sleep schedule in the Clock app (Alarms › Sleep | Wake Up) — it's built for exactly this.", "sub");
     s.appendChild(makeBtn("Save", "primary", () => {
       reminderOn = remindToggle.checked;
       reminderTime = timeInput.value || "20:00";
       save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
-      if (reminderOn && "Notification" in window && Notification.permission === "default") {
+      bedOn = bedToggle.checked;
+      bedTime = bedInput.value || "23:00";
+      save(KEY_BED_ON, bedOn); save(KEY_BED_TIME, bedTime);
+      renderPulse();
+      if ((reminderOn || bedOn) && "Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().then(scheduleReminders).catch(() => {});
       } else {
         scheduleReminders();
@@ -6568,7 +6613,25 @@ async function scheduleReminders() {
     // clear any previously scheduled ones so changing the time doesn't stack up
     const pending = await reg.getNotifications({ includeTriggered: true, tag: "daily-scheduled" });
     pending.forEach((n) => n.close());
-    if (!reminderOn || Notification.permission !== "granted") return;
+    const bedPending = await reg.getNotifications({ includeTriggered: true, tag: "bed-scheduled" });
+    bedPending.forEach((n) => n.close());
+    if (Notification.permission !== "granted") return;
+    if (bedOn) {
+      const [bh, bm] = (bedTime || "23:00").split(":").map(Number);
+      for (let i = 0; i < REMIND_AHEAD_DAYS; i++) {
+        const when = new Date();
+        when.setDate(when.getDate() + i);
+        when.setHours(bh, bm, 0, 0);
+        if (when.getTime() <= Date.now()) continue;
+        await reg.showNotification("Bedtime", {
+          body: `It's ${bedLabel(bedTime)}. Time to wind down.`,
+          icon: "icon-192.png", badge: "icon-192.png",
+          tag: "bed-scheduled",
+          showTrigger: new TimestampTrigger(when.getTime()),
+        });
+      }
+    }
+    if (!reminderOn) return;
     const [h, m] = (reminderTime || "20:00").split(":").map(Number);
     for (let i = 0; i < REMIND_AHEAD_DAYS; i++) {
       const when = new Date();
@@ -8373,6 +8436,8 @@ window.addEventListener("storage", (e) => {
   settleOn = load(KEY_SETTLE_ON, true);
   settleLog = load(KEY_SETTLE_LOG, []);
   headsUpOn = load(KEY_HEADSUP_ON, true);
+  bedOn = load(KEY_BED_ON, false);
+  bedTime = load(KEY_BED_TIME, "23:00");
   holds = load(KEY_HOLDS, []);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
@@ -8393,13 +8458,16 @@ document.addEventListener("visibilitychange", () => {
   setTimeout(runPassiveNotice, 1200);
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
   renderGapLine();   // the clock kept going while the app was away
+  checkBedtime(); renderPulse();
 });
 
 // Daily reminder + keep the unlock window fresh during active use.
 checkReminder();
 scheduleReminders();
+checkBedtime();
 setInterval(() => {
   rolloverIfStale();   // a phone left open crosses the 4am line here
+  checkBedtime();
   maybeFinishExperiment();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight

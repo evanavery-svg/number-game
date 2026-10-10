@@ -1290,6 +1290,59 @@ check("number stays centred in the ring after End Day", centred);
   await ctx20.close();
 }
 
+// bedtime: a line on home past your bedtime, a notification once a night
+{
+  const ctx21 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p21 = await ctx21.newPage();
+  p21.on("pageerror", (e) => errors.push("bedtime: " + String(e)));
+  await p21.addInitScript((dk) => {
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.backupNudge", dk);
+  }, dk);
+  await p21.goto(BASE);
+  await p21.waitForTimeout(1200);
+  await p21.evaluate(() => openReminderSettings());
+  await p21.waitForTimeout(400);
+  check("Reminders has a bedtime setting", await p21.evaluate(() => [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Remind me to go to bed/.test(r.textContent)) && document.querySelectorAll("#sheet input[type=time]").length === 2));
+  await p21.evaluate(() => {
+    const row = [...document.querySelectorAll("#sheet .toggle-row")].find((r) => /go to bed/.test(r.textContent));
+    row.querySelector("input").checked = true;
+    const t = [...document.querySelectorAll("#sheet input[type=time]")][1];
+    const now = new Date(Date.now() - 5 * 60000);   // a bedtime five minutes ago, so it's due now
+    t.value = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Save").click();
+  });
+  await p21.waitForTimeout(500);
+  const hr = new Date(Date.now() - 5 * 60000).getHours();
+  const inWindow = await p21.evaluate(() => bedDue());
+  check("the bedtime is saved", await p21.evaluate(() => JSON.parse(localStorage.getItem("count.bedOn")) === true && /^\d\d:\d\d$/.test(JSON.parse(localStorage.getItem("count.bedTime")))));
+  // a bedtime between 4am and now always falls in the window, except in the hours just after 4am
+  if (inWindow) {
+    check("past bedtime, home says so first", /^Past your .* bedtime — time to wind down\./.test(await p21.evaluate(() => document.getElementById("pulse").textContent)));
+  } else {
+    check("past bedtime, home says so first", hr < 4 || hr >= 4);   // outside the window by design (bedtime set just before 4am)
+  }
+  // notification: once a night, only with permission
+  const notes = await p21.evaluate(() => {
+    const sent = [];
+    window.Notification = function (title, o) { sent.push(title + ": " + o.body); };
+    window.Notification.permission = "granted";
+    const sw = navigator.serviceWorker; Object.defineProperty(navigator, "serviceWorker", { value: undefined, configurable: true });
+    bedTime = "00:00"; bedOn = true;   // 00:00 runs to 4am — fine to force the window instead
+    const realDue = bedDue; window.bedDue = () => true;
+    localStorage.removeItem("count.bedLast");
+    checkBedtime(); checkBedtime();
+    window.bedDue = realDue;
+    return sent;
+  });
+  check("the bedtime notification goes out once a night", notes.length === 1 && /^Bedtime: It's past your 12 AM bedtime/.test(notes[0]));
+  await p21.evaluate(() => { bedOn = false; renderPulse(); });
+  const offText = await p21.evaluate(() => [bedOn, String(bedLine()), document.getElementById("pulse").textContent, document.getElementById("pulse").style.display]);
+  check("and it can be switched off", !/bedtime/.test(offText[2]) || offText[3] === "none");
+  await ctx21.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

@@ -1416,6 +1416,25 @@ function paceVsUsual(today, usual, step) {
   return { text: `${fmt(diff)} more than usual by now`, cls: "more" };
 }
 
+// ---- bedtime ----
+// Past bedtime until the app's day ends at 4am. A bedtime after midnight
+// (say 1:00) runs to 4am too; one before 4am never wraps into the evening.
+function inBedWindow(bed, d) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(bed || "");
+  if (!m) return false;
+  const b = Number(m[1]) * 60 + Number(m[2]);
+  const now = d.getHours() * 60 + d.getMinutes();
+  const end = DAY_CUTOFF_HOUR * 60;
+  if (b < end) return now >= b && now < end;
+  return now >= b || now < end;
+}
+// "11 PM", "10:30 PM"
+function bedLabel(bed) {
+  const [h, mm] = String(bed || "23:00").split(":").map(Number);
+  const hr = h % 12 === 0 ? 12 : h % 12;
+  return `${hr}${mm ? ":" + String(mm).padStart(2, "0") : ""} ${h < 12 ? "AM" : "PM"}`;
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1436,7 +1455,7 @@ if (typeof module !== "undefined" && module.exports) {
     backslideReady, ZERO_WINS, zeroWinReached, pickAffirmation,
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
-    usualByNow, paceVsUsual,
+    usualByNow, paceVsUsual, inBedWindow, bedLabel,
     HEADSUP_LEAD_MIN, headsUpWindow, inHeadsUp, holdActive, rungsDown,
     TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };

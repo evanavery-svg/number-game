@@ -1473,3 +1473,22 @@ test("paceVsUsual says under, even or over, and never as a verdict", () => {
   assert.equal(core.paceVsUsual(2.25, 2, 0.25).cls, "even"); // within half a unit is even
   for (const r of [core.paceVsUsual(5, 1, 1), core.paceVsUsual(0, 4, 1)]) assert.ok(!/fail|bad|too many|over/i.test(r.text));
 });
+
+// ---- bedtime ----
+test("inBedWindow runs from bedtime to the 4am day end", () => {
+  const at = (h, m) => new Date(2026, 9, 10, h, m);
+  assert.equal(core.inBedWindow("23:00", at(22, 59)), false);
+  assert.equal(core.inBedWindow("23:00", at(23, 0)), true);
+  assert.equal(core.inBedWindow("23:00", at(1, 30)), true);    // after midnight still counts
+  assert.equal(core.inBedWindow("23:00", at(4, 0)), false);    // a new day
+  assert.equal(core.inBedWindow("23:00", at(15, 0)), false);
+  assert.equal(core.inBedWindow("01:00", at(0, 30)), false);   // a 1am bedtime doesn't start at midnight
+  assert.equal(core.inBedWindow("01:00", at(2, 0)), true);
+  assert.equal(core.inBedWindow("01:00", at(23, 0)), false);
+  assert.equal(core.inBedWindow("", at(23, 0)), false);
+});
+test("bedLabel reads like a clock", () => {
+  assert.equal(core.bedLabel("23:00"), "11 PM");
+  assert.equal(core.bedLabel("22:30"), "10:30 PM");
+  assert.equal(core.bedLabel("00:15"), "12:15 AM");
+});
