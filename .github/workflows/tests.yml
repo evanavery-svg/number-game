@@ -22,8 +22,9 @@ jobs:
           node --check core.js
           node --check app.js
           node --check sw.js
+          node --check push/worker.mjs
       - name: Unit tests
-        run: node --test core.test.mjs
+        run: node --test core.test.mjs push/worker.test.mjs sw.test.mjs
 
   smoke:
     name: smoke test

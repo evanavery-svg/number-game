@@ -1,0 +1,17 @@
+# Cloudflare Worker config, for deploying with wrangler (`npx wrangler deploy`
+# from this folder). Deploying from the Cloudflare dashboard instead? Paste
+# worker.mjs into a new Worker and set the same three things there: the KV
+# binding, the cron trigger, and (optionally) VAPID_SUBJECT.
+name = "tracker-push"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "PASTE_YOUR_KV_NAMESPACE_ID"
+
+# [vars]
+# VAPID_SUBJECT = "mailto:you@example.com"

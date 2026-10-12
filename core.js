@@ -1435,6 +1435,109 @@ function bedLabel(bed) {
   return `${hr}${mm ? ":" + String(mm).padStart(2, "0") : ""} ${h < 12 ? "AM" : "PM"}`;
 }
 
+// ---- what a notification says, worked out on the phone ----
+// The push server only knows when to wake the phone. Everything it then says
+// is composed here from the app's own saved data (`state`: each "count.*" key,
+// parsed), so counts and notes never leave the device.
+
+// Today so far against your usual by now, from history alone. Shared by the
+// line on home and the evening check-in so the two never disagree.
+function paceFromHistory(history, todayTotal, step, now) {
+  const t = now == null ? Date.now() : (now instanceof Date ? now.getTime() : now);
+  const startOf = (ds) => new Date(ds + "T00:00:00").getTime() + DAY_CUTOFF_HOUR * 3600e3;
+  const entry = (raw) => (typeof raw === "number" ? { t: raw, amt: null } : raw);
+  const days = (history || []).filter((d) => d && d.date && (d.total === 0 || (d.tapTimes || []).length))
+    .slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .slice(-14)
+    .map((d) => ({ start: startOf(d.date), taps: (d.tapTimes || []).map(entry) }));
+  const u = usualByNow(days, t - startOf(sessionDate(new Date(t))));
+  return u ? paceVsUsual(todayTotal, u.usual, step) : null;
+}
+
+function stateGet(state, key, fallback) {
+  const v = (state || {})["count." + key];
+  return v === undefined || v === null ? fallback : v;
+}
+
+// "Today: 2 of 4 — 2 fewer than usual so far. Tap to end the day."
+function eveningSummary(state, now) {
+  const d = now || new Date();
+  const ds = sessionDate(d);
+  const history = stateGet(state, "history", []);
+  const today = stateGet(state, "actDate", "") === ds ? Number(stateGet(state, "today", 0)) || 0 : 0;
+  const step = Number(stateGet(state, "step", 1)) || 1;
+  const goalOn = !!stateGet(state, "goalOn", false);
+  const goal = Number(stateGet(state, "goal", 0)) || 0;
+  const week = stateGet(state, "goalMode", "day") === "week";
+  const pace = paceFromHistory(history, today, step, d);
+  const vs = pace ? ` — ${pace.text.replace(/ by now$/, " so far")}` : "";
+  let head;
+  if (today === 0) head = "Nothing logged today";
+  else if (goalOn && week) {
+    const totals = {};
+    history.forEach((h) => { if (h && h.date) totals[h.date] = h.total; });
+    totals[ds] = today;
+    const left = round2(weekAllowance(goal, totals, ds) - today);
+    head = left >= 0 ? `Today: ${fmt(today)}, ${fmt(left)} left this week` : `Today: ${fmt(today)}, the week ${fmt(-left)} over`;
+  } else if (goalOn) head = `Today: ${fmt(today)} of ${fmt(goal)}`;
+  else head = `Today: ${fmt(today)}`;
+  return { title: "Evening check-in", body: `${head}${vs}. Tap to end the day.` };
+}
+
+// Things worth hearing about even with the app closed, each said once.
+// `seen` is the list of keys already announced. Never a nudge to use more.
+const TAPER_PACE_PCT = { gentle: 0.85, balanced: 0.7, ambitious: 0.55 };
+function goodNews(state, now, seen) {
+  const d = now || new Date();
+  const t = d.getTime();
+  const ds = sessionDate(d);
+  const done = new Set(seen || []);
+  const out = [];
+  const say = (key, text) => { if (!done.has(key)) out.push({ key, text }); };
+  const history = stateGet(state, "history", []);
+  const goalOn = !!stateGet(state, "goalOn", false);
+  const goal = Number(stateGet(state, "goal", 0)) || 0;
+  const week = stateGet(state, "goalMode", "day") === "week";
+  const holds = stateGet(state, "holds", []);
+  const held = !!holdActive(holds, t);
+
+  // zero days, at the finish line
+  if (goalOn && goal === 0) {
+    const sorted = history.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    const streak = zeroStreak(sorted.map((h) => h.total));
+    const already = stateGet(state, "zeroWins", []).concat([...done].filter((k) => k.startsWith("zero:")).map((k) => Number(k.slice(5))));
+    const w = zeroWinReached(streak, already);
+    if (w) say(`zero:${w}`, `${w >= 365 ? "A year" : w >= 100 ? "100 days" : w >= 30 ? "A month" : "A week"} at zero. That's the whole point — well done.`);
+  }
+
+  // a step down earned
+  const taper = stateGet(state, "taper", {});
+  const settle = stateGet(state, "settleLog", []);
+  const asked = Date.parse(stateGet(state, "taperAsk", "") || "") || 0;
+  if (taper.on && goalOn && goal > 0 && !week && !held && !dropSettling(settle[settle.length - 1], ds) && t - asked > 7 * DAY) {
+    let next = null;
+    if (taper.smart !== false) {
+      const sug = suggestTaper(history, goal, { pct: TAPER_PACE_PCT[taper.pace] || 0.7, roundTo: Number(stateGet(state, "step", 1)) || 1, goalLog: stateGet(state, "goalLog", []), now: t });
+      if (sug) next = sug.next;
+    } else if (taperReady(goalPerformance(history, goal, 30, t), goal, taper.step || 1)) {
+      next = Math.max(0, round2(goal - (taper.step || 1)));
+    }
+    if (next != null) say(`rung:${goal}>${next}`, `You've earned a step down: ${fmt(goal)} → ${fmt(next)} a day. It's waiting in the app.`);
+  }
+
+  // a gap held long enough to stretch
+  const gap = stateGet(state, "gap", {});
+  const setAt = Date.parse(gap.setAt || "") || 0;
+  if (gap.on && gap.target > 0 && !held && setAt && t - setAt >= 7 * DAY) {
+    const days = history.map((h) => (h.tapTimes || [])
+      .map((raw) => (typeof raw === "number" ? { t: raw, amt: null } : raw))
+      .filter((e) => e && typeof e.t === "number" && e.t >= setAt && (e.amt == null || e.amt > 0))
+      .map((e) => e.t)).filter((a) => a.length);
+    if (gapHeld(days, gap.target).ready) say(`gap:${gap.target}`, `You've kept a ${gapLabel(gap.target)} gap for a week. Ready to stretch it to ${gapLabel(nextGap(gap.target))}.`);
+  }
+  return out;
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1456,6 +1559,7 @@ if (typeof module !== "undefined" && module.exports) {
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
     usualByNow, paceVsUsual, inBedWindow, bedLabel,
+    paceFromHistory, stateGet, eveningSummary, TAPER_PACE_PCT, goodNews,
     HEADSUP_LEAD_MIN, headsUpWindow, inHeadsUp, holdActive, rungsDown,
     TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };

@@ -1304,7 +1304,7 @@ check("number stays centred in the ring after End Day", centred);
   await p21.waitForTimeout(1200);
   await p21.evaluate(() => openReminderSettings());
   await p21.waitForTimeout(400);
-  check("Reminders has a bedtime setting", await p21.evaluate(() => [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Remind me to go to bed/.test(r.textContent)) && document.querySelectorAll("#sheet input[type=time]").length === 2));
+  check("Reminders has a bedtime setting", await p21.evaluate(() => [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Remind me to go to bed/.test(r.textContent)) && document.querySelectorAll("#sheet input[type=time]").length === 3));
   await p21.evaluate(() => {
     const row = [...document.querySelectorAll("#sheet .toggle-row")].find((r) => /go to bed/.test(r.textContent));
     row.querySelector("input").checked = true;
@@ -1382,6 +1382,89 @@ check("number stays centred in the ring after End Day", centred);
   await p22.waitForTimeout(1200);
   check("lists survive a reload", await p22.evaluate(() => { const n = JSON.parse(localStorage.getItem("count.notes")); return n.length === 2 && n[0].items.length === 2; }));
   await ctx22.close();
+}
+
+// the evening check-in, and push through your own server (the phone's push service stubbed)
+{
+  const ctx23 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p23 = await ctx23.newPage();
+  p23.on("pageerror", (e) => errors.push("push: " + String(e)));
+  await p23.addInitScript((dk) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+    set("count.goal", 4); set("count.goalOn", true); set("count.step", 1); set("count.label", "coffees");
+    set("count.today", 2); set("count.taps", 2); set("count.actDate", dk);
+    set("count.notes", [{ id: "g", name: "Groceries", items: [{ id: "1", text: "secret item", done: false }] }]);
+  }, dk);
+  await p23.goto(BASE);
+  await p23.waitForTimeout(1200);
+  await p23.evaluate(() => openReminderSettings());
+  await p23.waitForTimeout(400);
+  check("Reminders offers the evening check-in and push", await p23.evaluate(() =>
+    [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Evening check-in/.test(r.textContent)) &&
+    [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Include good news/.test(r.textContent)) &&
+    [...document.querySelectorAll("#sheet .sheet-btn")].some((b) => /Push notifications/.test(b.textContent))));
+  await p23.evaluate(() => closeSheet());
+  await p23.waitForTimeout(300);
+
+  // without push: the evening check-in goes out from the app, once a night
+  const ev = await p23.evaluate(() => {
+    const sent = [];
+    window.Notification = function (t, o) { sent.push(t + ": " + o.body); };
+    window.Notification.permission = "granted";
+    Object.defineProperty(navigator, "serviceWorker", { value: undefined, configurable: true });
+    eveningOn = true; eveningTime = "00:00";   // 00:00 runs to the 4am day end
+    const real = window.inBedWindow; window.inBedWindow = () => true;
+    localStorage.removeItem("count.eveningLast");
+    checkEvening(); checkEvening();
+    window.inBedWindow = real;
+    return sent;
+  });
+  check("the evening check-in says where today stands", ev.length === 1 && /^Evening check-in: Today: 2 of 4\b.*Tap to end the day\.$/.test(ev[0]));
+  check("and never says what you're counting", !/coffee/.test(ev[0] || ""));
+
+  // turning push on: subscribe with the server's key, then send only times
+  const result = await p23.evaluate(async () => {
+    const posted = [];
+    const sub = { endpoint: "https://web.push.apple.com/QQ-abc", toJSON() { return { endpoint: this.endpoint, keys: { p256dh: "BPk", auth: "AuT" } }; }, unsubscribe: async () => true };
+    let subscribed = null;
+    const reg = { pushManager: { getSubscription: async () => subscribed, subscribe: async (o) => { subscribed = sub; subscribed.key = o.applicationServerKey; return sub; } } };
+    Object.defineProperty(navigator, "serviceWorker", { value: { ready: Promise.resolve(reg) }, configurable: true });
+    window.PushManager = function () {};
+    window.Notification = function () {}; window.Notification.permission = "granted";
+    window.fetch = async (url, init) => {
+      if (String(url).endsWith("/vapid")) return new Response(JSON.stringify({ publicKey: "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U" }));
+      posted.push({ url: String(url), body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ ok: true }));
+    };
+    bedOn = true; bedTime = "23:15"; eveningOn = true; eveningTime = "21:30";
+    await enablePush("tracker-push.someone.workers.dev");
+    return { posted, saved: JSON.parse(localStorage.getItem("count.push")), keyLen: subscribed.key.length };
+  });
+  const subPost = result.posted.find((x) => x.url.endsWith("/subscribe"));
+  check("push turns on against your server's address", result.saved.on === true && result.saved.url === "https://tracker-push.someone.workers.dev" && result.keyLen === 65);
+  check("the server is told only the push address, time zone and times", !!subPost &&
+    Object.keys(subPost.body).sort().join(",") === "subscription,times,tz" &&
+    subPost.body.times.evening === "21:30" && subPost.body.times.bed === "23:15" &&
+    !/secret item|coffee|"today"|history/.test(JSON.stringify(subPost.body)));
+  check("with push on, the app leaves bedtime and evening to the server", await p23.evaluate(() => {
+    const sent = []; window.Notification = function (t) { sent.push(t); }; window.Notification.permission = "granted";
+    localStorage.removeItem("count.bedLast"); localStorage.removeItem("count.eveningLast");
+    const real = window.inBedWindow; window.inBedWindow = () => true; window.bedDue = () => true;
+    checkBedtime(); checkEvening();
+    window.inBedWindow = real;
+    return sent.length === 0;
+  }));
+  await p23.evaluate(() => openPushSetup());
+  await p23.waitForTimeout(400);
+  check("the push screen shows it's on, with a test and a way off", await p23.evaluate(() =>
+    /On, through tracker-push\.someone\.workers\.dev/.test(document.getElementById("sheet").textContent) &&
+    [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Send a test") &&
+    [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Turn push off")));
+  await ctx23.close();
 }
 
 check("no JS errors during smoke", errors.length === 0);

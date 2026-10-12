@@ -274,6 +274,17 @@ const KEY_BED_TIME = "count.bedTime";     // "HH:MM"
 const KEY_BED_LAST = "count.bedLast";     // session day the bedtime notification last went out
 let bedOn = load(KEY_BED_ON, false);
 let bedTime = load(KEY_BED_TIME, "23:00");
+// The evening check-in: where today stands, at a time you pick.
+const KEY_EVENING_ON = "count.eveningOn";
+const KEY_EVENING_TIME = "count.eveningTime";   // "HH:MM"
+const KEY_EVENING_LAST = "count.eveningLast";   // session day it last went out (in-app path)
+const KEY_PUSH_NEWS = "count.pushNews";         // read by sw.js too — keep the name
+let eveningOn = load(KEY_EVENING_ON, false);
+let eveningTime = load(KEY_EVENING_TIME, "21:00");
+let pushNews = load(KEY_PUSH_NEWS, true);
+// Push through your own small server, so notifications arrive with the app closed.
+const KEY_PUSH = "count.push";                  // { on, url }
+let push = Object.assign({ on: false, url: "" }, load(KEY_PUSH, {}));
 let streakGrace = load(KEY_STREAK_GRACE, true);   // one over-goal slip won't reset the under-goal streak
 let since = load(KEY_SINCE, []);
 let tapLog = load(KEY_TAPLOG, []);   // times of today's taps, for the Insights breakdown
@@ -1229,7 +1240,7 @@ function bedLine() {
 // Once per night, and only while the app is running — see scheduleReminders
 // for the closed-app side.
 function checkBedtime() {
-  if (!bedDue()) return;
+  if (!bedDue() || pushActive()) return;   // with push on, the server sends it
   const day = sessionDate();
   if (load(KEY_BED_LAST, null) === day) return;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
@@ -1242,6 +1253,164 @@ function checkBedtime() {
       new Notification("Bedtime", { body });
     }
   } catch (e) {}
+}
+
+// ---- evening check-in ----
+// Every saved setting and number, parsed — what sw.js reads from the mirror,
+// read here from the live store, so both say the same thing.
+function localState() {
+  const out = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.indexOf("count.") === 0) { try { out[k] = JSON.parse(localStorage.getItem(k)); } catch (e) {} }
+  }
+  return out;
+}
+// Without push: sent while the app is open or in the background, once a day.
+function checkEvening() {
+  if (!eveningOn || pushActive() || !inBedWindow(eveningTime, new Date())) return;
+  const day = sessionDate();
+  if (load(KEY_EVENING_LAST, null) === day) return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  save(KEY_EVENING_LAST, day);
+  const ev = eveningSummary(localState(), new Date());
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(ev.title, { body: ev.body, icon: "icon-192.png", badge: "icon-192.png", tag: "evening" })).catch(() => {});
+    } else {
+      new Notification(ev.title, { body: ev.body });
+    }
+  } catch (e) {}
+}
+
+// ---- push: notifications with the app closed ----
+// iPhone only lets a home-screen web app be woken by a real push, and a real
+// push has to come from a server. This talks to a small one you deploy
+// yourself (push/worker.mjs). It's told your push address, your time zone and
+// your notification times — never a count, a note or anything you've logged.
+function pushActive() { return !!(push.on && push.url); }
+function pushSupported() {
+  return "serviceWorker" in navigator && typeof window.PushManager !== "undefined" && "Notification" in window;
+}
+function pushTimes() {
+  return { evening: eveningOn ? eveningTime : null, bed: bedOn ? bedTime : null };
+}
+function cleanServerUrl(u) {
+  let v = String(u || "").trim().replace(/\/+$/, "");
+  if (v && !/^https?:\/\//i.test(v)) v = "https://" + v;
+  return v;
+}
+function b64uToBytes(str) {
+  const s = atob(String(str).replace(/-/g, "+").replace(/_/g, "/") + "===".slice((String(str).length + 3) % 4));
+  return Uint8Array.from(s, (c) => c.charCodeAt(0));
+}
+async function pushPost(path, body) {
+  const res = await fetch(push.url + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`The server said ${res.status}`);
+  return res.json().catch(() => ({}));
+}
+async function pushSubscription(createIfMissing) {
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub && createIfMissing) {
+    const res = await fetch(push.url + "/vapid");
+    if (!res.ok) throw new Error("Couldn't reach the server — check the address");
+    const { publicKey } = await res.json();
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(publicKey) });
+  }
+  return sub;
+}
+// Tell the server the current times. Cheap; run on every open and every save.
+async function syncPush() {
+  if (!pushActive() || !pushSupported()) return;
+  try {
+    const sub = await pushSubscription(true);
+    await pushPost("/subscribe", { subscription: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, times: pushTimes() });
+  } catch (e) { /* offline or the server's down — next open tries again */ }
+}
+async function enablePush(url) {
+  if (!pushSupported()) throw new Error("This browser can't receive push. On iPhone, open the app from its Home Screen icon (iOS 16.4 or later).");
+  const perm = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+  if (perm !== "granted") throw new Error("Notifications are off for this app — allow them in Settings, then try again.");
+  push = { on: true, url: cleanServerUrl(url) };
+  try {
+    const sub = await pushSubscription(true);
+    await pushPost("/subscribe", { subscription: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, times: pushTimes() });
+  } catch (e) {
+    push.on = false;
+    throw e;
+  }
+  save(KEY_PUSH, push);
+}
+async function disablePush() {
+  try {
+    const sub = await pushSubscription(false);
+    if (sub) {
+      await pushPost("/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
+  } catch (e) {}
+  push.on = false;
+  save(KEY_PUSH, push);
+}
+async function testPush() {
+  const sub = await pushSubscription(false);
+  if (!sub) throw new Error("Not subscribed — turn push on again");
+  const r = await pushPost("/test", { endpoint: sub.endpoint });
+  if (!r.ok) throw new Error(`The push service said ${r.status}`);
+}
+function openPushSetup() {
+  openSheet((s) => {
+    addEl(s, "h3", "Push notifications");
+    if (pushActive()) {
+      addEl(s, "p", `On, through ${push.url.replace(/^https?:\/\//, "")}. Your evening check-in and bedtime arrive even with the app closed.`, "sub");
+      s.appendChild(makeBtn("Send a test", "primary", () => {
+        testPush().then(() => toast("Sent — it should arrive in a few seconds")).catch((e) => toast(e.message || "Couldn't send"));
+      }));
+      s.appendChild(makeBtn("Turn push off", "danger", () => {
+        disablePush().then(() => { toast("Push is off"); openPushSetup(); });
+      }));
+      s.appendChild(makeBtn("Back", "ghost", sheetBack(openReminderSettings)));
+      return;
+    }
+    addEl(s, "p", "iPhone only lets a home-screen app notify you while it's closed if a server sends the notification. This uses a small free one you set up once, on your own Cloudflare account.", "sub");
+    addEl(s, "p", "It only knows your phone's push address, your time zone and your notification times. The words in each notification are worked out on your phone, so your counts and notes never leave it.", "sub");
+    addEl(s, "label", "Set up (about 10 minutes, once)");
+    const steps = document.createElement("ol"); steps.className = "guide-steps";
+    [
+      "Make a free account at dash.cloudflare.com",
+      "Storage & Databases › KV › Create a namespace. Call it tracker-push",
+      "Workers & Pages › Create › Start with Hello World. Name it tracker-push and deploy",
+      "Edit code, replace everything with the server code (Copy it below), then Deploy",
+      "Its Settings › Bindings › Add › KV namespace: variable name SUBS, namespace tracker-push",
+      "Its Settings › Trigger events › Add › Cron: every 5 minutes (*/5 * * * *)",
+      "Copy the worker's address (it ends in workers.dev) into the box below",
+    ].forEach((t) => addEl(steps, "li", t));
+    s.appendChild(steps);
+    s.appendChild(makeBtn("Copy the server code", "", () => {
+      fetch("push/worker.mjs", { cache: "no-store" }).then((r) => { if (!r.ok) throw 0; return r.text(); })
+        .then((code) => copyText(code, "Server code copied"))
+        .catch(() => toast("Couldn't load it here — it's push/worker.mjs in the app's code"));
+    }));
+    addEl(s, "label", "Your server's address");
+    const inp = document.createElement("input");
+    inp.type = "url"; inp.placeholder = "tracker-push.yourname.workers.dev"; inp.value = push.url || "";
+    inp.autocapitalize = "off"; inp.spellcheck = false;
+    s.appendChild(inp);
+    const standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+    if (!standalone) addEl(s, "p", "On iPhone this only works from the Home Screen icon, not a Safari tab.", "sub");
+    const go = makeBtn("Turn on push", "primary", () => {
+      if (!inp.value.trim()) { toast("Paste your server's address first"); return; }
+      go.disabled = true; go.textContent = "Connecting…";
+      enablePush(inp.value).then(() => {
+        buzz([0, 30, 50, 30]); toast("Push is on");
+        if (!eveningOn && !bedOn) toast("Turn on the evening check-in or bedtime to get something");
+        openPushSetup();
+      }).catch((e) => { go.disabled = false; go.textContent = "Turn on push"; toast(e.message || "Couldn't turn push on", 5000); });
+    });
+    s.appendChild(go);
+    s.appendChild(makeBtn("Back", "ghost", sheetBack(openReminderSettings)));
+  });
 }
 
 // ---- heads-up before your usual time ----
@@ -4091,13 +4260,7 @@ function renderTop(animate) {
 const PACE_DAYS = 14;
 function paceNow() {
   if (!paceOn) return null;
-  const startOf = (ds) => new Date(ds + "T00:00:00").getTime() + DAY_CUTOFF_HOUR * 3600e3;
-  const days = historyByDate()
-    .filter((d) => d.total === 0 || (d.tapTimes || []).length)
-    .slice(-PACE_DAYS)
-    .map((d) => ({ start: startOf(d.date), taps: (d.tapTimes || []).map(tapEntry) }));
-  const u = usualByNow(days, Date.now() - startOf(sessionDate()));
-  return u ? paceVsUsual(today, u.usual, step) : null;
+  return paceFromHistory(history, today, step, Date.now());
 }
 
 // How many history rows to build. A year of use is 365 rows, and nobody
@@ -5751,23 +5914,35 @@ function openAppearanceSettings() {
 function openReminderSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Reminders");
-    const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
-    addEl(s, "label", "Reminder time");
-    const timeInput = document.createElement("input");
-    timeInput.type = "time"; timeInput.value = reminderTime || "20:00";
-    s.appendChild(timeInput);
-    addEl(s, "p", reminderScheduling()
-      ? "A nudge if you haven't tracked by this time. Scheduled ahead, so it arrives even when the app is closed."
-      : "A nudge if you haven't tracked by this time. This browser can't wake a web app on a schedule, so on iPhone it appears the next time you open the app — a real background alert would need a server behind it.", "sub");
+    const closedOk = pushActive() || reminderScheduling();
+
+    addEl(s, "div", "Evening check-in", "sheet-group");
+    const eveToggle = makeToggle(s, "Evening check-in", eveningOn);
+    addEl(s, "label", "Time");
+    const eveInput = document.createElement("input");
+    eveInput.type = "time"; eveInput.value = eveningTime || "21:00";
+    s.appendChild(eveInput);
+    const newsToggle = makeToggle(s, "Include good news", pushNews);
+    addEl(s, "p", "Where today stands — “Today: 2 of 4, 2 fewer than usual so far” — with a tap to end the day. Good news (a step down earned, a milestone at zero, a gap ready to stretch) comes with it, each once.", "sub");
+
     addEl(s, "div", "Bedtime", "sheet-group");
     const bedToggle = makeToggle(s, "Remind me to go to bed", bedOn);
     addEl(s, "label", "Bedtime");
     const bedInput = document.createElement("input");
     bedInput.type = "time"; bedInput.value = bedTime || "23:00";
     s.appendChild(bedInput);
-    addEl(s, "p", reminderScheduling()
+    addEl(s, "p", closedOk
       ? "A notification at this time, and a line on home until 4am."
-      : "A line on home from this time until 4am, and a notification if the app is open. For one that always arrives on iPhone, set a Sleep schedule in the Clock app (Alarms › Sleep | Wake Up) — it's built for exactly this.", "sub");
+      : "A line on home from this time until 4am, and a notification if the app is open. Turn on push below for one that always arrives, or set a Sleep schedule in the Clock app.", "sub");
+
+    addEl(s, "div", "If you haven't tracked", "sheet-group");
+    const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
+    addEl(s, "label", "Reminder time");
+    const timeInput = document.createElement("input");
+    timeInput.type = "time"; timeInput.value = reminderTime || "20:00";
+    s.appendChild(timeInput);
+    addEl(s, "p", "A banner on home if nothing's logged by this time.", "sub");
+
     s.appendChild(makeBtn("Save", "primary", () => {
       reminderOn = remindToggle.checked;
       reminderTime = timeInput.value || "20:00";
@@ -5775,15 +5950,23 @@ function openReminderSettings() {
       bedOn = bedToggle.checked;
       bedTime = bedInput.value || "23:00";
       save(KEY_BED_ON, bedOn); save(KEY_BED_TIME, bedTime);
+      eveningOn = eveToggle.checked;
+      eveningTime = eveInput.value || "21:00";
+      pushNews = newsToggle.checked;
+      save(KEY_EVENING_ON, eveningOn); save(KEY_EVENING_TIME, eveningTime); save(KEY_PUSH_NEWS, pushNews);
       renderPulse();
-      if ((reminderOn || bedOn) && "Notification" in window && Notification.permission === "default") {
+      if ((reminderOn || bedOn || eveningOn) && "Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().then(scheduleReminders).catch(() => {});
       } else {
         scheduleReminders();
       }
+      syncPush();
       closeSheet(); checkReminder();
     }));
-    s.appendChild(makeBtn("Reminders when the app is closed", "", () => { openClosedAppGuide(); }));
+
+    addEl(s, "div", "With the app closed", "sheet-group");
+    s.appendChild(makeIconBtn("bell", "Push notifications", "", () => openPushSetup(), { chevron: true, detail: pushActive() ? "On" : "Off" }));
+    s.appendChild(makeBtn("Shortcuts instead", "ghost", () => { openClosedAppGuide(); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -8562,6 +8745,10 @@ window.addEventListener("storage", (e) => {
   headsUpOn = load(KEY_HEADSUP_ON, true);
   bedOn = load(KEY_BED_ON, false);
   bedTime = load(KEY_BED_TIME, "23:00");
+  eveningOn = load(KEY_EVENING_ON, false);
+  eveningTime = load(KEY_EVENING_TIME, "21:00");
+  pushNews = load(KEY_PUSH_NEWS, true);
+  push = Object.assign({ on: false, url: "" }, load(KEY_PUSH, {}));
   holds = load(KEY_HOLDS, []);
   history = load(KEY_HISTORY, []);
   goal = load(KEY_GOAL, 0);
@@ -8582,16 +8769,19 @@ document.addEventListener("visibilitychange", () => {
   setTimeout(runPassiveNotice, 1200);
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
   renderGapLine();   // the clock kept going while the app was away
-  checkBedtime(); renderPulse();
+  checkBedtime(); checkEvening(); renderPulse();
 });
 
 // Daily reminder + keep the unlock window fresh during active use.
 checkReminder();
 scheduleReminders();
 checkBedtime();
+checkEvening();
+syncPush();   // keep the server's copy of your times and push address current
 setInterval(() => {
   rolloverIfStale();   // a phone left open crosses the 4am line here
   checkBedtime();
+  checkEvening();
   maybeFinishExperiment();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight

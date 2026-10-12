@@ -1492,3 +1492,56 @@ test("bedLabel reads like a clock", () => {
   assert.equal(core.bedLabel("22:30"), "10:30 PM");
   assert.equal(core.bedLabel("00:15"), "12:15 AM");
 });
+
+// ---- what notifications say ----
+function stateFor(o) { const st = {}; Object.entries(o).forEach(([k, v]) => { st["count." + k] = v; }); return st; }
+function histDays(n, total, at, fromDs) {
+  // n days before fromDs, each with `total` taps at the given hours after 4am
+  const out = [];
+  for (let i = n; i >= 1; i--) {
+    const d = new Date(fromDs + "T12:00:00"); d.setDate(d.getDate() - i);
+    const ds = core.isoLocal(d);
+    const s0 = new Date(ds + "T04:00:00").getTime();
+    out.push({ date: ds, total, taps: total, tapTimes: at.slice(0, total).map((h) => ({ t: s0 + h * 3600e3, amt: 1 })) });
+  }
+  return out;
+}
+test("the evening check-in says where today stands, against usual", () => {
+  const now = new Date(2026, 9, 12, 21, 0);   // 9pm, 17h after the 4am start
+  const ds = core.sessionDate(now);
+  const st = stateFor({ history: histDays(14, 4, [2, 6, 10, 14], ds), today: 2, actDate: ds, goal: 4, goalOn: true, step: 1 });
+  assert.deepEqual(core.eveningSummary(st, now), { title: "Evening check-in", body: "Today: 2 of 4 — 2 fewer than usual so far. Tap to end the day." });
+  // yesterday's count isn't today's
+  const stale = { ...st, "count.actDate": "2026-10-11" };
+  assert.match(core.eveningSummary(stale, now).body, /^Nothing logged today — 4 fewer than usual so far\./);
+  // no goal, no history
+  assert.equal(core.eveningSummary(stateFor({ today: 3, actDate: ds }), now).body, "Today: 3. Tap to end the day.");
+  // never mentions the label or anything private
+  assert.ok(!/coffee/.test(core.eveningSummary({ ...st, "count.label": "coffees" }, now).body));
+});
+test("good news: a step down earned, said once", () => {
+  const now = new Date(2026, 9, 12, 21, 0);
+  const ds = core.sessionDate(now);
+  const st = stateFor({ history: histDays(30, 2, [2, 6], ds), goal: 4, goalOn: true, step: 1, taper: { on: true, smart: true, pace: "balanced" } });
+  const news = core.goodNews(st, now, []);
+  assert.equal(news.length, 1);
+  assert.equal(news[0].key, "rung:4>2");
+  assert.match(news[0].text, /step down: 4 → 2 a day/);
+  assert.deepEqual(core.goodNews(st, now, ["rung:4>2"]), [], "only once");
+  // held on purpose, or offered in the app this week: quiet
+  assert.deepEqual(core.goodNews({ ...st, "count.holds": [{ until: "2026-12-01T00:00:00Z" }] }, now, []), []);
+  assert.deepEqual(core.goodNews({ ...st, "count.taperAsk": new Date(2026, 9, 10).toISOString() }, now, []), []);
+  assert.deepEqual(core.goodNews({ ...st, "count.taper": { on: false } }, now, []), []);
+});
+test("good news: a milestone at zero, and a gap ready to stretch", () => {
+  const now = new Date(2026, 9, 12, 21, 0);
+  const ds = core.sessionDate(now);
+  const zero = stateFor({ history: histDays(8, 0, [], ds), goal: 0, goalOn: true });
+  assert.deepEqual(core.goodNews(zero, now, []).map((n) => n.key), ["zero:7"]);
+  assert.deepEqual(core.goodNews({ ...zero, "count.zeroWins": [7] }, now, []), [], "already celebrated in the app");
+  const setAt = new Date(2026, 9, 1).toISOString();
+  const gapped = stateFor({ history: histDays(10, 3, [2, 5, 8], ds), goal: 6, goalOn: true, gap: { on: true, target: 2 * 3600e3, setAt } });
+  const g = core.goodNews(gapped, now, []);
+  assert.deepEqual(g.map((n) => n.key), ["gap:7200000"]);
+  assert.match(g[0].text, /2h gap for a week\. Ready to stretch it to 2h 15m/);
+});
