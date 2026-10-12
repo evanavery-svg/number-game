@@ -600,6 +600,26 @@
       transition: background var(--dur-base) ease, transform var(--dur-fast) ease, color var(--dur-base) ease;
     }
     .row button:active { background: var(--surface-2); transform: scale(0.98); }
+    /* three across on a small phone: keep each label on one line */
+    .row button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-left: 8px; padding-right: 8px; }
+    /* notes: simple checklists */
+    .note-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) 0 var(--sp-3); padding-bottom: 2px; }
+    .note-tabs::-webkit-scrollbar { display: none; }
+    .note-tab { flex: none; height: 36px; padding: 0 14px; border: none; border-radius: 999px; background: var(--surface-2); color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .note-tab.on { background: var(--text); color: var(--bg); }
+    .note-tab.add { background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1px var(--hair); }
+    .note-add { display: flex; gap: 8px; margin: 0 0 var(--sp-2); }
+    .note-add input { flex: 1; min-width: 0; margin: 0; }
+    .note-add-btn { flex: none; border: none; border-radius: 12px; padding: 0 18px; background: var(--accent); color: var(--btn-text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+    .note-items { display: flex; flex-direction: column; }
+    .note-item { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--hair); }
+    .note-tick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; background: none; border: none; color: var(--text); font: inherit; font-size: 16px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .note-box { flex: none; width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--muted); transition: background var(--dur-fast) ease, box-shadow var(--dur-fast) ease; }
+    .li-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .note-item.done .note-box { background: var(--safe); box-shadow: none; }
+    .note-item.done .li-text { color: var(--faint); text-decoration: line-through; }
+    .note-more { display: flex; gap: 8px; }
+    .note-more .sheet-btn { flex: 1; }
     .row button:disabled { opacity: 0.4; box-shadow: inset 0 0 0 1px var(--hair); }
     .row .end { color: var(--accent); }
 
@@ -2028,14 +2048,15 @@
 
   <div class="row-wrap">
     <div class="row">
-      <button id="vitaminsBtn" style="display:none">Daily Habits</button>
+      <button id="vitaminsBtn" style="display:none" aria-label="Daily Habits">Habits</button>
       <button id="insightsBtn">Insights</button>
+      <button id="notesBtn">Notes</button>
     </div>
     <!-- after a tap: why this one? Slides over the buttons, gone in a few seconds -->
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.65</div>
+  <div class="version">v10.66</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

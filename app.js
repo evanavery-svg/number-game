@@ -95,6 +95,7 @@ const el = {
   add: document.getElementById("addBtn"),
   insightsBtn: document.getElementById("insightsBtn"),
   vitaminsBtn: document.getElementById("vitaminsBtn"),
+  notesBtn: document.getElementById("notesBtn"),
   pendingCard: document.getElementById("pendingCard"),
   pendingText: document.getElementById("pendingText"),
   swipeHint: document.getElementById("swipeHint"),
@@ -383,7 +384,7 @@ function cyclePulse() {
 }
 let timelineOn = load(KEY_TL, false);       // hidden per-device flag (secret gesture)
 const savedFeatures = load(KEY_FEATURES, {});
-let features = Object.assign({ mood: true, water: true, tree: true, since: true, vitamins: true }, savedFeatures);
+let features = Object.assign({ mood: true, water: true, tree: true, since: true, vitamins: true, notes: true }, savedFeatures);
 if (savedFeatures.vitamins === undefined && savedFeatures.meds !== undefined) features.vitamins = savedFeatures.meds;
 let vitaminsList = load(KEY_VITAMINS_LIST, null);
 if (vitaminsList === null) {
@@ -4345,6 +4346,7 @@ function warnOver() {
 // reset step to get wrong.
 function syncVitaminsBtn() {
   if (el.vitaminsBtn) el.vitaminsBtn.style.display = features.vitamins ? "" : "none";
+  syncNotesBtn();
 }
 function vitCount(v) { return Array.isArray(v) ? v.length : (v || 0); }
 function tapVitamin(name) {
@@ -5322,6 +5324,7 @@ const ICONS = {
   tree: '<path d="M12 22v-5"/><path d="M12 17 7 12h3L6.5 7.5h3L12 3l2.5 4.5h3L14 12h3z"/>',
   chart: '<path d="M5 19V11M12 19V5M19 19v-7"/>',
   pencil: '<path d="M4 20h4L20 8l-4-4L4 16z"/><path d="M14.5 5.5 18.5 9.5"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
   lock: '<rect x="4" y="10.5" width="16" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
   shield: '<path d="M12 3l7 3v6c0 4-3 7.2-7 9-4-1.8-7-5-7-9V6z"/>',
   sliders: '<path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/>',
@@ -5392,6 +5395,7 @@ function openSettings() {
     if (features.since) act("clock", "Time Since", requestSince);
     if (features.water) act("droplet", "Water", openWater);
     if (features.tree) act("tree", "Your Tree", openTree);
+    if (features.notes) act("list", "Notes", openNotes);
 
     group("Look back");
     tiles();
@@ -5637,6 +5641,8 @@ function openFeatureSettings() {
       if (gameOn && gamePlayed !== moodGateKey()) { closeSheet(); setTimeout(runDailyGates, 380); }
     });
     s.appendChild(makeBtn("▶ Play now (test)", "link", () => { closeSheet(); setTimeout(showGameGate, 380); }));
+    const notesFeat = makeToggle(s, "Notes (checklists)", features.notes);
+    notesFeat.addEventListener("change", () => { features.notes = notesFeat.checked; save(KEY_FEATURES, features); syncNotesBtn(); buzz(8); });
     const sinceFeat = makeToggle(s, "Time Since trackers", features.since);
     sinceFeat.addEventListener("change", () => { features.since = sinceFeat.checked; save(KEY_FEATURES, features); renderSinceStrip(); buzz(8); });
     const waterFeat = makeToggle(s, "Water counter", features.water);
@@ -6992,6 +6998,122 @@ function openWeeklyRecap() {
 }
 
 // A once-a-month look back — the calendar month so far, pulling together the
+// ---- notes: simple checklists ----
+// Groceries, errands, anything. Lists of items you tick off; nothing to do
+// with the counter, and never part of the private journal. Backed up with
+// everything else because the key starts with "count.".
+const KEY_NOTES = "count.notes";   // [{ id, name, items: [{ id, text, done }] }]
+function loadNotes() {
+  const v = load(KEY_NOTES, null);
+  return Array.isArray(v) && v.length ? v : [{ id: "groceries", name: "Groceries", items: [] }];
+}
+let notes = loadNotes();
+let notesCur = null;
+function saveNotes() { save(KEY_NOTES, notes); syncNotesBtn(); }
+function syncNotesBtn() {
+  if (!el.notesBtn) return;
+  el.notesBtn.style.display = features.notes ? "" : "none";
+  const left = notes.reduce((n, l) => n + l.items.filter((i) => !i.done).length, 0);
+  el.notesBtn.textContent = left ? `Notes · ${left}` : "Notes";
+}
+function currentList() {
+  return notes.find((l) => l.id === notesCur) || notes[0];
+}
+function openNotes(focusAdd) {
+  openSheet((s) => {
+    const list = currentList();
+    notesCur = list.id;
+    addEl(s, "h3", "Notes");
+
+    // the lists, as chips; the last one starts a new list
+    const tabs = document.createElement("div"); tabs.className = "note-tabs"; s.appendChild(tabs);
+    notes.forEach((l) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "note-tab" + (l.id === list.id ? " on" : "");
+      b.textContent = l.name;
+      b.setAttribute("aria-pressed", l.id === list.id ? "true" : "false");
+      b.addEventListener("click", () => { if (l.id !== list.id) { notesCur = l.id; buzz(6); openNotes(); } });
+      tabs.appendChild(b);
+    });
+    const nb = document.createElement("button");
+    nb.type = "button"; nb.className = "note-tab add"; nb.textContent = "+ New list";
+    nb.addEventListener("click", () => openNewList());
+    tabs.appendChild(nb);
+
+    // add an item: type, then Enter or Add
+    const row = document.createElement("form"); row.className = "note-add";
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.maxLength = 120; inp.placeholder = `Add to ${list.name}`;
+    inp.setAttribute("aria-label", `Add to ${list.name}`);
+    inp.enterKeyHint = "done";
+    const add = document.createElement("button"); add.type = "submit"; add.className = "note-add-btn"; add.textContent = "Add";
+    row.append(inp, add); s.appendChild(row);
+    row.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const t = inp.value.trim();
+      if (!t) return;
+      list.items.unshift({ id: sid(), text: t, done: false });
+      saveNotes(); buzz(8);
+      openNotes(true);   // keep the keyboard up for the next one
+    });
+    if (focusAdd) setTimeout(() => inp.focus(), 30);
+
+    // to do first, then done, in the order they were added
+    const items = document.createElement("div"); items.className = "note-items"; s.appendChild(items);
+    const todo = list.items.filter((i) => !i.done), done = list.items.filter((i) => i.done);
+    if (!list.items.length) addEl(items, "div", "Nothing here yet.", "card-empty");
+    [...todo, ...done].forEach((it) => {
+      const r = document.createElement("div"); r.className = "note-item" + (it.done ? " done" : "");
+      const tick = document.createElement("button");
+      tick.type = "button"; tick.className = "note-tick";
+      tick.setAttribute("aria-label", (it.done ? "Untick " : "Tick ") + it.text);
+      tick.setAttribute("aria-pressed", it.done ? "true" : "false");
+      addEl(tick, "span", "", "note-box");
+      addEl(tick, "span", it.text, "li-text");
+      tick.addEventListener("click", () => { it.done = !it.done; saveNotes(); buzz(it.done ? 10 : 6); openNotes(); });
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "plan-del"; del.textContent = "×";
+      del.setAttribute("aria-label", `Remove ${it.text}`);
+      del.addEventListener("click", () => { list.items = list.items.filter((x) => x !== it); saveNotes(); buzz(8); openNotes(); });
+      r.append(tick, del); items.appendChild(r);
+    });
+
+    if (done.length) {
+      s.appendChild(makeBtn(`Clear ${done.length} ticked`, "link", () => {
+        list.items = list.items.filter((i) => !i.done); saveNotes(); buzz(10); openNotes();
+      }));
+    }
+    const more = document.createElement("div"); more.className = "note-more"; s.appendChild(more);
+    more.appendChild(makeBtn("Rename list", "ghost", () => openNewList(list)));
+    if (notes.length > 1) {
+      more.appendChild(makeBtn("Delete list", "ghost", () => confirmSheet(`Delete “${list.name}”?`,
+        list.items.length ? `Its ${list.items.length} item${list.items.length === 1 ? "" : "s"} go with it.` : "It's empty.",
+        "Delete", () => { notes = notes.filter((l) => l !== list); notesCur = notes[0].id; saveNotes(); openNotes(); }, true)));
+    }
+    s.appendChild(makeBtn("Done", "primary", closeSheet));
+  });
+}
+// New list, or rename an existing one.
+function openNewList(existing) {
+  openSheet((s) => {
+    addEl(s, "h3", existing ? "Rename list" : "New list");
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.maxLength = 30; inp.placeholder = "e.g. Errands, Packing, To do";
+    inp.value = existing ? existing.name : "";
+    s.appendChild(inp);
+    setTimeout(() => inp.focus(), 50);
+    s.appendChild(makeBtn(existing ? "Save" : "Create", "primary", () => {
+      const name = inp.value.trim();
+      if (!name) { toast("Give it a name"); return; }
+      if (existing) existing.name = name;
+      else { const l = { id: sid(), name, items: [] }; notes.push(l); notesCur = l.id; }
+      saveNotes(); buzz(10);
+      sheetNavDir = -1; openNotes(!existing);
+    }));
+    s.appendChild(makeBtn("Back", "ghost", () => { sheetNavDir = -1; openNotes(); }));
+  });
+}
+
 // ---- notes for hard days ----
 function noteField(s) {
   const ta = document.createElement("textarea");
@@ -8320,6 +8442,7 @@ document.getElementById("srUndo")?.addEventListener("click", () => {
 });
 document.getElementById("srEndDay")?.addEventListener("click", () => openEndDay());
 el.vitaminsBtn.addEventListener("click", openVitamins);
+el.notesBtn.addEventListener("click", () => openNotes());
 el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
 document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
@@ -8429,6 +8552,7 @@ window.addEventListener("storage", (e) => {
   experiment = load(KEY_EXPERIMENT, null);
   moodDaily = load(KEY_MOOD_DAILY, {});
   hardNotes = load(KEY_HARD_NOTES, []);
+  notes = loadNotes();
   gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load(KEY_GAP, {}));
   unitCost = load(KEY_UNIT_COST, 0);
   sinceLastOn = load(KEY_SINCE_LAST_ON, true);

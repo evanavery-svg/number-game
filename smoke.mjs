@@ -1343,6 +1343,47 @@ check("number stays centred in the ring after End Day", centred);
   await ctx21.close();
 }
 
+// notes: simple checklists, a tap away from home
+{
+  const ctx22 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p22 = await ctx22.newPage();
+  p22.on("pageerror", (e) => errors.push("notes: " + String(e)));
+  await p22.addInitScript((dk) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+  }, dk);
+  await p22.goto(BASE);
+  await p22.waitForTimeout(1200);
+  check("home has a Notes button", (await p22.evaluate(() => document.getElementById("notesBtn").textContent)) === "Notes");
+  await p22.click("#notesBtn");
+  await p22.waitForTimeout(500);
+  check("it opens on a Groceries list", await p22.evaluate(() => document.querySelector("#sheet h3").textContent === "Notes" && document.querySelector(".note-tab.on").textContent === "Groceries"));
+  for (const t of ["Milk", "Eggs", "<b>Bread</b>"]) { await p22.fill(".note-add input", t); await p22.press(".note-add input", "Enter"); await p22.waitForTimeout(200); }
+  check("Enter adds an item and keeps you typing", await p22.evaluate(() => document.querySelectorAll(".note-item").length === 3 && !!document.activeElement.closest(".note-add")));
+  check("items are text, not markup", await p22.evaluate(() => [...document.querySelectorAll(".li-text")].some((n) => n.textContent === "<b>Bread</b>") && !document.querySelector(".li-text b")));
+  await p22.evaluate(() => [...document.querySelectorAll(".note-tick")].find((b) => /Milk/.test(b.textContent)).click());
+  await p22.waitForTimeout(250);
+  check("ticking moves it to the bottom, crossed out", await p22.evaluate(() => { const r = [...document.querySelectorAll(".note-item")]; return r[r.length - 1].classList.contains("done") && /Milk/.test(r[r.length - 1].textContent); }));
+  check("home counts what's left", (await p22.evaluate(() => document.getElementById("notesBtn").textContent)) === "Notes · 2");
+  await p22.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => /^Clear 1 ticked$/.test(b.textContent)).click());
+  await p22.waitForTimeout(250);
+  check("clearing ticked removes them", await p22.evaluate(() => document.querySelectorAll(".note-item").length === 2));
+  // a second list
+  await p22.evaluate(() => [...document.querySelectorAll(".note-tab")].find((b) => /New list/.test(b.textContent)).click());
+  await p22.waitForTimeout(400);
+  await p22.fill("#sheet input", "Errands");
+  await p22.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Create").click());
+  await p22.waitForTimeout(500);
+  check("a new list opens ready to add to", await p22.evaluate(() => document.querySelector(".note-tab.on").textContent === "Errands" && document.querySelectorAll(".note-item").length === 0));
+  await p22.reload();
+  await p22.waitForTimeout(1200);
+  check("lists survive a reload", await p22.evaluate(() => { const n = JSON.parse(localStorage.getItem("count.notes")); return n.length === 2 && n[0].items.length === 2; }));
+  await ctx22.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 
