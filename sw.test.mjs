@@ -78,3 +78,16 @@ test("a broken mirror still shows a notification (iPhone revokes push that shows
   assert.equal(sw.shown.length, 1);
   assert.equal(sw.shown[0].title, "Evening check-in", "the real one, not the fallback");
 });
+
+test("a weekly push shows the week against the one before", async () => {
+  const hist = [];
+  for (let i = 1; i <= 13; i++) {
+    const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - i);
+    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    hist.push({ date: ds, total: i <= 6 ? 2 : 4 });
+  }
+  const sw = loadSW({ "count.history": hist, "count.today": 3, "count.actDate": today, "count.goal": 3, "count.goalOn": true });
+  await sw.push({ kind: "week" });
+  assert.deepEqual(sw.shown.map((n) => n.title), ["Your week"]);
+  assert.equal(sw.shown[0].body, "Last 7 days: 15, down from 28. 7 of 7 days at or under your goal.");
+});

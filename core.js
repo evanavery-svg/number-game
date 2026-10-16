@@ -1538,6 +1538,36 @@ function goodNews(state, now, seen) {
   return out;
 }
 
+// "Last 7 days: 18, down from 23. 5 of 7 days under your goal."
+// The seven days ending today against the seven before, from history plus
+// today's live count. Days with nothing logged count as nothing logged, not 0.
+function weekRecap(state, now) {
+  const d = now || new Date();
+  const ds = sessionDate(d);
+  const totals = {};
+  stateGet(state, "history", []).forEach((h) => { if (h && h.date && typeof h.total === "number") totals[h.date] = h.total; });
+  if (stateGet(state, "actDate", "") === ds) totals[ds] = Number(stateGet(state, "today", 0)) || 0;
+  const dayKey = (back) => { const x = new Date(ds + "T12:00:00"); x.setDate(x.getDate() - back); return isoLocal(x); };
+  const span = (from) => { const days = []; for (let i = from; i < from + 7; i++) { const k = dayKey(i); if (k in totals) days.push(totals[k]); } return days; };
+  const cur = span(0), prev = span(7);
+  if (!cur.length) return { title: "Your week", body: "Nothing logged in the last 7 days. Open the app to catch up." };
+  const sum = (a) => round2(a.reduce((x, y) => x + y, 0));
+  const now7 = sum(cur);
+  let body = `Last 7 days: ${fmt(now7)}`;
+  if (prev.length >= 3) {
+    const before = sum(prev);
+    body += now7 < before ? `, down from ${fmt(before)}` : now7 > before ? `, up from ${fmt(before)}` : `, the same as the week before`;
+  }
+  body += ".";
+  const goalOn = !!stateGet(state, "goalOn", false);
+  const goal = Number(stateGet(state, "goal", 0)) || 0;
+  if (goalOn && stateGet(state, "goalMode", "day") !== "week") {
+    const under = cur.filter((t) => t <= goal).length;
+    body += ` ${under} of ${cur.length} day${cur.length === 1 ? "" : "s"} at or under your goal.`;
+  }
+  return { title: "Your week", body };
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1559,7 +1589,7 @@ if (typeof module !== "undefined" && module.exports) {
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
     usualByNow, paceVsUsual, inBedWindow, bedLabel,
-    paceFromHistory, stateGet, eveningSummary, TAPER_PACE_PCT, goodNews,
+    paceFromHistory, stateGet, eveningSummary, TAPER_PACE_PCT, goodNews, weekRecap,
     HEADSUP_LEAD_MIN, headsUpWindow, inHeadsUp, holdActive, rungsDown,
     TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };

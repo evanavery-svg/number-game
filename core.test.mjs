@@ -1545,3 +1545,15 @@ test("good news: a milestone at zero, and a gap ready to stretch", () => {
   assert.deepEqual(g.map((n) => n.key), ["gap:7200000"]);
   assert.match(g[0].text, /2h gap for a week\. Ready to stretch it to 2h 15m/);
 });
+
+test("weekRecap: the last seven days against the seven before", () => {
+  const now = new Date(2026, 9, 18, 19, 0);
+  const ds = core.sessionDate(now);
+  const day = (back, total) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate() - back); return { date: core.isoLocal(d), total }; };
+  const hist = [day(1, 5), day(2, 1), day(3, 2), day(8, 6), day(9, 6), day(10, 6)];
+  const st = { "count.history": hist, "count.today": 2, "count.actDate": ds, "count.goal": 2, "count.goalOn": true };
+  assert.equal(core.weekRecap(st, now).body, "Last 7 days: 10, down from 18. 3 of 4 days at or under your goal.");
+  assert.equal(core.weekRecap({ ...st, "count.history": hist.slice(0, 3) }, now).body, "Last 7 days: 10. 3 of 4 days at or under your goal.", "no comparison on thin data");
+  assert.match(core.weekRecap({ ...st, "count.history": [day(1, 9), day(8, 1), day(9, 1), day(10, 1)], "count.goalOn": false }, now).body, /^Last 7 days: 11, up from 3\.$/);
+  assert.match(core.weekRecap({}, now).body, /^Nothing logged/);
+});

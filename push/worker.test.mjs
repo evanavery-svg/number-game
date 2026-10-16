@@ -83,7 +83,7 @@ test("subscribe checks what it's given, and only accepts real push services", as
   const saved = [...env.SUBS.m.entries()].filter(([k]) => k.startsWith("sub:"));
   assert.equal(saved.length, 1);
   const rec = JSON.parse(saved[0][1]);
-  assert.deepEqual(rec.times, { evening: "21:00", bed: "23:30" });
+  assert.deepEqual(rec.times, { evening: "21:00", bed: "23:30", week: null });
   assert.deepEqual(Object.keys(rec).sort(), ["sent", "sub", "times", "tz"], "nothing beyond what it needs");
   assert.equal((await call(env, "POST", "/unsubscribe", { endpoint: phone.sub.endpoint })).status, 200);
   assert.equal([...env.SUBS.m.keys()].filter((k) => k.startsWith("sub:")).length, 0);
@@ -132,4 +132,13 @@ test("the schedule sends what's due, once, and forgets phones that unsubscribed"
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test("the weekly recap goes out on Sunday only, in the phone's time zone", () => {
+  // Sunday 18 Oct 2026, 19:05 in New York = 23:05 UTC
+  assert.equal(due("19:00", "America/New_York", new Date("2026-10-18T23:05:00Z"), null, 0), true);
+  assert.equal(due("19:00", "America/New_York", new Date("2026-10-17T23:05:00Z"), null, 0), false, "Saturday");
+  // 23:50 Sunday slot, cron at 00:05 Monday: still Sunday's
+  assert.equal(due("23:50", "UTC", new Date("2026-10-19T00:05:00Z"), null, 0), true);
+  assert.equal(due("00:05", "UTC", new Date("2026-10-19T00:06:00Z"), null, 0), false, "a Monday slot isn't Sunday's");
 });

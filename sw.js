@@ -1,6 +1,6 @@
 // Service worker: caches the app so it opens instantly and works offline.
 // Bump CACHE when you change any file, so phones pick up the new version.
-const CACHE = "app-v167";
+const CACHE = "app-v168";
 const ASSETS = [
   ".",
   "index.html",
@@ -68,7 +68,9 @@ async function readState() {
     return out;
   } catch (e) { return {}; }
 }
+// The app's Notifications page shows when the last one arrived.
 function show(title, body, tag) {
+  idbPutKey("count-sw", "kv", "last", { at: Date.now(), title }).catch(() => {});
   return self.registration.showNotification(title, { body, tag, icon: "icon-192.png", badge: "icon-192.png" });
 }
 async function onPush(msg) {
@@ -91,6 +93,10 @@ async function onPush(msg) {
     const ev = eveningSummary(state, now);
     shown.push(show(ev.title, ev.body, "evening"));
     return Promise.all(shown);
+  }
+  if (msg.kind === "week") {
+    const w = weekRecap(state, now);
+    return show(w.title, w.body, "week");
   }
   if (msg.kind === "test") return show("Push is working", "Notifications will arrive even with the app closed.", "test");
   return show("Tracker", "Open the app to see what's new.", "push");

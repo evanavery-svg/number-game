@@ -1304,11 +1304,11 @@ check("number stays centred in the ring after End Day", centred);
   await p21.waitForTimeout(1200);
   await p21.evaluate(() => openReminderSettings());
   await p21.waitForTimeout(400);
-  check("Reminders has a bedtime setting", await p21.evaluate(() => [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Remind me to go to bed/.test(r.textContent)) && document.querySelectorAll("#sheet input[type=time]").length === 3));
+  check("Reminders has a bedtime setting", await p21.evaluate(() => [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Remind me to go to bed/.test(r.textContent)) && document.querySelectorAll("#sheet input[type=time]").length === 4));
   await p21.evaluate(() => {
     const row = [...document.querySelectorAll("#sheet .toggle-row")].find((r) => /go to bed/.test(r.textContent));
     row.querySelector("input").checked = true;
-    const t = [...document.querySelectorAll("#sheet input[type=time]")][1];
+    const t = [...document.querySelectorAll("#sheet input[type=time]")][2];
     const now = new Date(Date.now() - 5 * 60000);   // a bedtime five minutes ago, so it's due now
     t.value = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Save").click();
@@ -1404,9 +1404,9 @@ check("number stays centred in the ring after End Day", centred);
   await p23.evaluate(() => openReminderSettings());
   await p23.waitForTimeout(400);
   check("Reminders offers the evening check-in and push", await p23.evaluate(() =>
-    [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Evening check-in/.test(r.textContent)) &&
-    [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /Include good news/.test(r.textContent)) &&
-    [...document.querySelectorAll("#sheet .sheet-btn")].some((b) => /Push notifications/.test(b.textContent))));
+    [...document.querySelectorAll("#sheet .notif-title")].some((r) => /Evening check-in/.test(r.textContent)) &&
+    [...document.querySelectorAll("#sheet .toggle-row")].some((r) => /good news/.test(r.textContent)) &&
+    [...document.querySelectorAll("#sheet .sheet-btn")].some((b) => /With the app closed/.test(b.textContent))));
   await p23.evaluate(() => closeSheet());
   await p23.waitForTimeout(300);
 
@@ -1465,6 +1465,61 @@ check("number stays centred in the ring after End Day", centred);
     [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Send a test") &&
     [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Turn push off")));
   await ctx23.close();
+}
+
+// one Notifications page, and the Sunday recap
+{
+  const ctx24 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p24 = await ctx24.newPage();
+  p24.on("pageerror", (e) => errors.push("notifications: " + String(e)));
+  await p24.addInitScript((dk) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+    set("count.goal", 3); set("count.goalOn", true); set("count.step", 1);
+  }, dk);
+  await p24.goto(BASE);
+  await p24.waitForTimeout(1200);
+  await p24.evaluate(() => openSettings());
+  await p24.waitForTimeout(400);
+  check("Settings has a Notifications page", await p24.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].some((b) => /^Notifications/.test(b.textContent.trim()))));
+  await p24.evaluate(() => [...document.querySelectorAll("#sheet .sheet-btn")].find((b) => /^Notifications/.test(b.textContent.trim())).click());
+  await p24.waitForTimeout(600);
+  const page = await p24.evaluate(() => ({
+    h3: document.querySelector("#sheet h3").textContent,
+    slots: [...document.querySelectorAll("#sheet .notif-title")].map((n) => n.textContent),
+    hiddenTimes: [...document.querySelectorAll("#sheet .notif-time")].filter((r) => r.style.display === "none").length,
+    last: document.querySelector("#sheet .notif-last").textContent,
+  }));
+  check("it lists every kind, each with its own switch and time", page.h3 === "Notifications" && page.slots.join("|") === "Evening check-in|Sunday recap|Bedtime|If you haven't tracked");
+  check("a time only shows while its switch is on", page.hiddenTimes === 4);
+  check("and says when the last one arrived", /No notifications yet\.|Last one:/.test(page.last));
+  await p24.evaluate(() => {
+    const slot = [...document.querySelectorAll("#sheet .notif-slot")].find((b) => /Sunday recap/.test(b.textContent));
+    const i = slot.querySelector(".toggle-row input"); i.checked = true; i.dispatchEvent(new Event("change"));
+    slot.querySelector("input[type=time]").value = "18:30";
+    [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Save").click();
+  });
+  await p24.waitForTimeout(400);
+  check("the Sunday recap saves", await p24.evaluate(() => JSON.parse(localStorage.getItem("count.weekOn")) === true && JSON.parse(localStorage.getItem("count.weekTime")) === "18:30" && pushTimes().week === "18:30"));
+  // without push it goes out from the app, once a week, and is remembered as the last one
+  const wk = await p24.evaluate(() => {
+    const sent = [];
+    window.Notification = function (t, o) { sent.push(t + ": " + o.body); };
+    window.Notification.permission = "granted";
+    Object.defineProperty(navigator, "serviceWorker", { value: undefined, configurable: true });
+    const RealDate = Date;
+    const sunday = new RealDate(2026, 9, 18, 19, 0);
+    window.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(sunday.getTime()); } static now() { return sunday.getTime(); } };
+    localStorage.removeItem("count.weekLast");
+    try { checkWeek(); checkWeek(); } finally { window.Date = RealDate; }
+    return { sent, last: JSON.parse(localStorage.getItem("count.notifyLast")) };
+  });
+  check("the Sunday recap goes out once", wk.sent.length === 1 && /^Your week: /.test(wk.sent[0]));
+  check("and is remembered as the last notification", !!wk.last && wk.last.title === "Your week");
+  await ctx24.close();
 }
 
 check("no JS errors during smoke", errors.length === 0);

@@ -603,6 +603,17 @@
     /* three across on a small phone: keep each label on one line */
     .row button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-left: 8px; padding-right: 8px; }
     /* notes: simple checklists */
+    /* notifications: one card per kind */
+    .notif-slot { background: var(--surface-2); border-radius: 16px; padding: 4px 14px 6px; margin-top: var(--sp-3); }
+    .notif-title { font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); margin-top: 10px; }
+    .notif-slot .toggle-row { margin-top: 10px; }
+    .sheet .notif-time { display: flex; margin: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 8px; font-size: 15px; color: var(--muted); }
+    .sheet .notif-time input[type="time"] { width: 148px; flex: none; margin: 0; padding: 9px 10px; font-size: 16px; text-align: right; }
+    .sheet .notif-time input[type="time"]::-webkit-date-and-time-value { text-align: right; }
+    /* the off track would vanish into the card's own colour */
+    .notif-slot .slider { background: var(--bg); box-shadow: inset 0 0 0 1px var(--hair); }
+    .notif-slot .switch input:checked + .slider { box-shadow: none; }
+    .notif-slot .sub { margin: 2px 0 8px; }
     .note-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) 0 var(--sp-3); padding-bottom: 2px; }
     .note-tabs::-webkit-scrollbar { display: none; }
     .note-tab { flex: none; height: 36px; padding: 0 14px; border: none; border-radius: 999px; background: var(--surface-2); color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -2056,7 +2067,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.67</div>
+  <div class="version">v10.68</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

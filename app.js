@@ -282,6 +282,15 @@ const KEY_PUSH_NEWS = "count.pushNews";         // read by sw.js too — keep th
 let eveningOn = load(KEY_EVENING_ON, false);
 let eveningTime = load(KEY_EVENING_TIME, "21:00");
 let pushNews = load(KEY_PUSH_NEWS, true);
+// The Sunday recap: the last 7 days against the 7 before.
+const KEY_WEEK_ON = "count.weekOn";
+const KEY_WEEK_TIME = "count.weekTime";   // "HH:MM", Sundays
+const KEY_WEEK_LAST = "count.weekLast";   // the Sunday it last went out (in-app path)
+let weekOn = load(KEY_WEEK_ON, false);
+let weekTime = load(KEY_WEEK_TIME, "19:00");
+// When a notification last went out from the app itself (push ones are
+// recorded by sw.js), for the Notifications page.
+const KEY_NOTIFY_LAST = "count.notifyLast";   // { at, title }
 // Push through your own small server, so notifications arrive with the app closed.
 const KEY_PUSH = "count.push";                  // { on, url }
 let push = Object.assign({ on: false, url: "" }, load(KEY_PUSH, {}));
@@ -1242,18 +1251,23 @@ function bedLine() {
 function checkBedtime() {
   if (!bedDue() || pushActive()) return;   // with push on, the server sends it
   const day = sessionDate();
-  if (load(KEY_BED_LAST, null) === day) return;
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (load(KEY_BED_LAST, null) === day || !canNotify()) return;
   save(KEY_BED_LAST, day);
-  const body = `It's past your ${bedLabel(bedTime)} bedtime. Time to wind down.`;
+  notifyLocal("Bedtime", `It's past your ${bedLabel(bedTime)} bedtime. Time to wind down.`, "bedtime");
+}
+
+// ---- notifications sent by the app itself ----
+function notifyLocal(title, body, tag) {
+  save(KEY_NOTIFY_LAST, { at: Date.now(), title });
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bedtime", { body, icon: "icon-192.png", badge: "icon-192.png", tag: "bedtime" })).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, { body, icon: "icon-192.png", badge: "icon-192.png", tag })).catch(() => {});
     } else {
-      new Notification("Bedtime", { body });
+      new Notification(title, { body });
     }
   } catch (e) {}
 }
+function canNotify() { return "Notification" in window && Notification.permission === "granted"; }
 
 // ---- evening check-in ----
 // Every saved setting and number, parsed — what sw.js reads from the mirror,
@@ -1270,17 +1284,20 @@ function localState() {
 function checkEvening() {
   if (!eveningOn || pushActive() || !inBedWindow(eveningTime, new Date())) return;
   const day = sessionDate();
-  if (load(KEY_EVENING_LAST, null) === day) return;
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (load(KEY_EVENING_LAST, null) === day || !canNotify()) return;
   save(KEY_EVENING_LAST, day);
   const ev = eveningSummary(localState(), new Date());
-  try {
-    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(ev.title, { body: ev.body, icon: "icon-192.png", badge: "icon-192.png", tag: "evening" })).catch(() => {});
-    } else {
-      new Notification(ev.title, { body: ev.body });
-    }
-  } catch (e) {}
+  notifyLocal(ev.title, ev.body, "evening");
+}
+// Sundays from the chosen time until the day ends.
+function checkWeek() {
+  const now = new Date();
+  if (!weekOn || pushActive() || now.getDay() !== 0 || !inBedWindow(weekTime, now)) return;
+  const wk = weekKey(now);
+  if (load(KEY_WEEK_LAST, null) === wk || !canNotify()) return;
+  save(KEY_WEEK_LAST, wk);
+  const w = weekRecap(localState(), now);
+  notifyLocal(w.title, w.body, "week");
 }
 
 // ---- push: notifications with the app closed ----
@@ -1293,7 +1310,7 @@ function pushSupported() {
   return "serviceWorker" in navigator && typeof window.PushManager !== "undefined" && "Notification" in window;
 }
 function pushTimes() {
-  return { evening: eveningOn ? eveningTime : null, bed: bedOn ? bedTime : null };
+  return { evening: eveningOn ? eveningTime : null, bed: bedOn ? bedTime : null, week: weekOn ? weekTime : null };
 }
 function cleanServerUrl(u) {
   let v = String(u || "").trim().replace(/\/+$/, "");
@@ -1363,7 +1380,7 @@ function openPushSetup() {
   openSheet((s) => {
     addEl(s, "h3", "Push notifications");
     if (pushActive()) {
-      addEl(s, "p", `On, through ${push.url.replace(/^https?:\/\//, "")}. Your evening check-in and bedtime arrive even with the app closed.`, "sub");
+      addEl(s, "p", `On, through ${push.url.replace(/^https?:\/\//, "")}. Everything on the Notifications page arrives even with the app closed.`, "sub");
       s.appendChild(makeBtn("Send a test", "primary", () => {
         testPush().then(() => toast("Sent — it should arrive in a few seconds")).catch((e) => toast(e.message || "Couldn't send"));
       }));
@@ -5577,7 +5594,7 @@ function openSettings() {
     row("heart", "Notes for hard days", openHardNotes, hardNotes.length ? String(hardNotes.length) : null);
     row("grid", "Features", openFeatureSettings);
     row("palette", "Appearance", openAppearanceSettings);
-    row("bell", "Reminders", openReminderSettings);
+    row("bell", "Notifications", openNotifications);
     row("lock", "Privacy", openPrivacySettings);
     const bkAt = load(KEY_BACKUP_AT, 0) || 0;
     const bkDays = bkAt ? Math.floor((Date.now() - bkAt) / 864e5) : null;
@@ -5911,63 +5928,98 @@ function openAppearanceSettings() {
   });
 }
 
-function openReminderSettings() {
+// Everything that can notify you, in one place: each with its own switch and
+// time, then how they get to you, and when the last one arrived.
+function openNotifications() {
   openSheet((s) => {
-    addEl(s, "h3", "Reminders");
+    addEl(s, "h3", "Notifications");
     const closedOk = pushActive() || reminderScheduling();
-
-    addEl(s, "div", "Evening check-in", "sheet-group");
-    const eveToggle = makeToggle(s, "Evening check-in", eveningOn);
-    addEl(s, "label", "Time");
-    const eveInput = document.createElement("input");
-    eveInput.type = "time"; eveInput.value = eveningTime || "21:00";
-    s.appendChild(eveInput);
-    const newsToggle = makeToggle(s, "Include good news", pushNews);
-    addEl(s, "p", "Where today stands — “Today: 2 of 4, 2 fewer than usual so far” — with a tap to end the day. Good news (a step down earned, a milestone at zero, a gap ready to stretch) comes with it, each once.", "sub");
-
-    addEl(s, "div", "Bedtime", "sheet-group");
-    const bedToggle = makeToggle(s, "Remind me to go to bed", bedOn);
-    addEl(s, "label", "Bedtime");
-    const bedInput = document.createElement("input");
-    bedInput.type = "time"; bedInput.value = bedTime || "23:00";
-    s.appendChild(bedInput);
-    addEl(s, "p", closedOk
-      ? "A notification at this time, and a line on home until 4am."
-      : "A line on home from this time until 4am, and a notification if the app is open. Turn on push below for one that always arrives, or set a Sleep schedule in the Clock app.", "sub");
-
-    addEl(s, "div", "If you haven't tracked", "sheet-group");
-    const remindToggle = makeToggle(s, "Daily reminder", reminderOn);
-    addEl(s, "label", "Reminder time");
-    const timeInput = document.createElement("input");
-    timeInput.type = "time"; timeInput.value = reminderTime || "20:00";
-    s.appendChild(timeInput);
-    addEl(s, "p", "A banner on home if nothing's logged by this time.", "sub");
+    const slot = (title, toggleLabel, on, timeLabel, time, note) => {
+      const box = document.createElement("div"); box.className = "notif-slot"; s.appendChild(box);
+      addEl(box, "div", title, "notif-title");
+      const t = makeToggle(box, toggleLabel, on);
+      const row = document.createElement("label"); row.className = "notif-time";
+      addEl(row, "span", timeLabel);
+      const inp = document.createElement("input"); inp.type = "time"; inp.value = time;
+      row.appendChild(inp); box.appendChild(row);
+      const sync = () => { row.style.display = t.checked ? "" : "none"; };
+      t.addEventListener("change", sync); sync();
+      if (note) addEl(box, "p", note, "sub");
+      return { t, inp, box };
+    };
+    const eve = slot("Evening check-in", "Where today stands", eveningOn, "At", eveningTime || "21:00",
+      "“Today: 2 of 4 — 2 fewer than usual so far.” Tap it to end the day.");
+    const newsToggle = makeToggle(eve.box, "With good news, once each", pushNews);
+    const wk = slot("Sunday recap", "Your week", weekOn, "Sundays at", weekTime || "19:00",
+      "“Last 7 days: 18, down from 23. 5 of 7 days at or under your goal.”");
+    const bed = slot("Bedtime", "Remind me to go to bed", bedOn, "Bedtime", bedTime || "23:00",
+      "Also a line on home until 4am.");
+    const rem = slot("If you haven't tracked", "Daily reminder", reminderOn, "If nothing by", reminderTime || "20:00",
+      "A banner on home if nothing's logged by then.");
 
     s.appendChild(makeBtn("Save", "primary", () => {
-      reminderOn = remindToggle.checked;
-      reminderTime = timeInput.value || "20:00";
-      save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
-      bedOn = bedToggle.checked;
-      bedTime = bedInput.value || "23:00";
-      save(KEY_BED_ON, bedOn); save(KEY_BED_TIME, bedTime);
-      eveningOn = eveToggle.checked;
-      eveningTime = eveInput.value || "21:00";
-      pushNews = newsToggle.checked;
+      eveningOn = eve.t.checked; eveningTime = eve.inp.value || "21:00"; pushNews = newsToggle.checked;
+      weekOn = wk.t.checked; weekTime = wk.inp.value || "19:00";
+      bedOn = bed.t.checked; bedTime = bed.inp.value || "23:00";
+      reminderOn = rem.t.checked; reminderTime = rem.inp.value || "20:00";
       save(KEY_EVENING_ON, eveningOn); save(KEY_EVENING_TIME, eveningTime); save(KEY_PUSH_NEWS, pushNews);
+      save(KEY_WEEK_ON, weekOn); save(KEY_WEEK_TIME, weekTime);
+      save(KEY_BED_ON, bedOn); save(KEY_BED_TIME, bedTime);
+      save(KEY_REMIND, reminderOn); save(KEY_REMIND_TIME, reminderTime);
       renderPulse();
-      if ((reminderOn || bedOn || eveningOn) && "Notification" in window && Notification.permission === "default") {
+      if ((reminderOn || bedOn || eveningOn || weekOn) && "Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().then(scheduleReminders).catch(() => {});
       } else {
         scheduleReminders();
       }
       syncPush();
       closeSheet(); checkReminder();
+      toast("Saved");
     }));
 
-    addEl(s, "div", "With the app closed", "sheet-group");
-    s.appendChild(makeIconBtn("bell", "Push notifications", "", () => openPushSetup(), { chevron: true, detail: pushActive() ? "On" : "Off" }));
+    addEl(s, "div", "How they reach you", "sheet-group");
+    s.appendChild(makeIconBtn("bell", "With the app closed", "", () => openPushSetup(), { chevron: true, detail: pushActive() ? "Push on" : "Off" }));
+    const status = addEl(s, "p", closedOk
+      ? "Each one arrives at its time, app open or not."
+      : "Right now these arrive while the app is open or in the background. Set up push to get them with it closed.", "sub");
+    if (pushActive()) {
+      s.appendChild(makeBtn("Send a test", "", () => {
+        testPush().then(() => toast("Sent — it should arrive in a few seconds")).catch((e) => toast(e.message || "Couldn't send"));
+      }));
+    }
+    if ("Notification" in window && Notification.permission === "denied") {
+      status.textContent = "Notifications are blocked for this app. Allow them in your phone's Settings, then come back.";
+    }
+    const last = addEl(s, "p", "", "sub notif-last");
+    lastNotification().then((l) => {
+      if (!l) { last.textContent = "No notifications yet."; return; }
+      const when = new Date(l.at);
+      const day = isoLocal(when) === isoLocal(new Date()) ? "Today" : when.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      last.textContent = `Last one: ${l.title}, ${day} at ${when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`;
+    });
     s.appendChild(makeBtn("Shortcuts instead", "ghost", () => { openClosedAppGuide(); }));
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
+  });
+}
+// The older name, still used by the sheets that lead back here.
+const openReminderSettings = openNotifications;
+// The newer of the app's own record and the one sw.js keeps for push.
+function lastNotification() {
+  const mine = load(KEY_NOTIFY_LAST, null);
+  return new Promise((resolve) => {
+    if (!("indexedDB" in window)) { resolve(mine); return; }
+    try {
+      const r = indexedDB.open("count-sw", 1);
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("kv")) r.result.createObjectStore("kv"); };
+      r.onsuccess = () => {
+        try {
+          const q = r.result.transaction("kv", "readonly").objectStore("kv").get("last");
+          q.onsuccess = () => { r.result.close(); const sw = q.result; resolve(!sw ? mine : !mine || sw.at > mine.at ? sw : mine); };
+          q.onerror = () => { r.result.close(); resolve(mine); };
+        } catch (e) { r.result.close(); resolve(mine); }
+      };
+      r.onerror = () => resolve(mine);
+    } catch (e) { resolve(mine); }
   });
 }
 
@@ -8748,6 +8800,8 @@ window.addEventListener("storage", (e) => {
   eveningOn = load(KEY_EVENING_ON, false);
   eveningTime = load(KEY_EVENING_TIME, "21:00");
   pushNews = load(KEY_PUSH_NEWS, true);
+  weekOn = load(KEY_WEEK_ON, false);
+  weekTime = load(KEY_WEEK_TIME, "19:00");
   push = Object.assign({ on: false, url: "" }, load(KEY_PUSH, {}));
   holds = load(KEY_HOLDS, []);
   history = load(KEY_HISTORY, []);
@@ -8769,7 +8823,7 @@ document.addEventListener("visibilitychange", () => {
   setTimeout(runPassiveNotice, 1200);
   if (themeAuto && theme !== themeForToday()) applyTheme();   // new day → new theme
   renderGapLine();   // the clock kept going while the app was away
-  checkBedtime(); checkEvening(); renderPulse();
+  checkBedtime(); checkEvening(); checkWeek(); renderPulse();
 });
 
 // Daily reminder + keep the unlock window fresh during active use.
@@ -8777,11 +8831,13 @@ checkReminder();
 scheduleReminders();
 checkBedtime();
 checkEvening();
+checkWeek();
 syncPush();   // keep the server's copy of your times and push address current
 setInterval(() => {
   rolloverIfStale();   // a phone left open crosses the 4am line here
   checkBedtime();
   checkEvening();
+  checkWeek();
   maybeFinishExperiment();
   checkReminder();
   if (themeAuto && theme !== themeForToday()) applyTheme();   // roll the theme over at midnight

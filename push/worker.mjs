@@ -2,7 +2,7 @@
 // so it can be pasted straight into the Cloudflare dashboard.
 //
 // What it knows: each phone's push address, its time zone, and the times you
-// asked to be notified (evening check-in, bedtime). What it doesn't: your
+// asked to be notified (evening check-in, bedtime, the Sunday recap). What it doesn't: your
 // counts, your notes, anything you've logged. A push carries only which
 // notification is due; the phone works out what to say from its own data.
 //
@@ -14,7 +14,8 @@
 // sending, aes128gcm (RFC 8291) encrypts the payload to the phone's key.
 
 const enc = new TextEncoder();
-const KINDS = ["evening", "bed"];
+const KINDS = ["evening", "bed", "week"];
+const WEEKLY = { week: 0 };          // kind → local weekday it goes out on (0 = Sunday)
 const WINDOW_MIN = 30;               // a cron that runs late still catches the slot
 const RESEND_AFTER_MS = 20 * 3600e3; // once a day per kind
 // Only real push services, so this can't be used to post to arbitrary URLs.
@@ -136,11 +137,18 @@ function localMinutes(tz, now) {
   const get = (t) => Number(parts.find((p) => p.type === t).value);
   return (get("hour") % 24) * 60 + get("minute");
 }
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function localWeekday(tz, now) {
+  return WEEKDAYS.indexOf(new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(now));
+}
 // Is a slot at "HH:MM" due now? Within the window after it, not sent today.
-function due(time, tz, now, lastSent) {
+// A weekly slot also has to be on its day — the day the slot started on, so
+// one that runs past midnight still counts.
+function due(time, tz, now, lastSent, weekday) {
   if (!time) return false;
   const [h, m] = time.split(":").map(Number);
   const since = (localMinutes(tz, now) - (h * 60 + m) + 1440) % 1440;
+  if (weekday != null && localWeekday(tz, new Date(now.getTime() - since * 60000)) !== weekday) return false;
   return since < WINDOW_MIN && (!lastSent || now.getTime() - lastSent > RESEND_AFTER_MS);
 }
 
@@ -155,7 +163,7 @@ async function runSchedule(env, now) {
       if (!rec) continue;
       let changed = false, gone = false;
       for (const kind of KINDS) {
-        if (gone || !due(rec.times && rec.times[kind], rec.tz, now, rec.sent && rec.sent[kind])) continue;
+        if (gone || !due(rec.times && rec.times[kind], rec.tz, now, rec.sent && rec.sent[kind], WEEKLY[kind])) continue;
         let status = 0;
         try { status = await sendPush(rec.sub, { kind }, env, vapid); } catch (e) { status = 0; }
         report.push({ id: k.name, kind, status });
