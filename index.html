@@ -697,6 +697,12 @@
       cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform var(--dur-fast) ease, background var(--dur-fast) ease;
     }
     .hist-add:active { transform: scale(0.95); background: var(--surface); }
+    /* simple mode: the number, the button and one quiet line */
+    body.simple .row-wrap, body.simple #pulse, body.simple #meta, body.simple #sinceStrip,
+    body.simple #goalText, body.simple .why-row { display: none !important; }
+    body.simple .add-btn { flex: 0 0 auto; height: min(36vh, 300px); min-height: 180px; margin-top: auto; margin-bottom: var(--sp-5, 24px); }
+    body.simple #gapLine { margin-top: var(--sp-3); font-size: 14px; }
+    .sheet p.simple-note { margin: 4px 0 var(--sp-2); }
     .hist-btns { display: flex; }
     .hist-btns .hist-add + .hist-add { margin-left: 0; }
     /* fill in several missed days */
@@ -2078,7 +2084,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.69</div>
+  <div class="version">v10.70</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

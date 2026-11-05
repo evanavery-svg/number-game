@@ -20,10 +20,21 @@ async function loadPlaywright() {
 }
 const chromium = await loadPlaywright();
 
+// Simple mode is on by default; the suite below exercises the full app, so
+// every context starts with it off unless a test sets it.
+async function fullModeContexts(b) {
+  const orig = b.newContext.bind(b);
+  b.newContext = async (o) => {
+    const c = await orig(o);
+    await c.addInitScript(() => { if (localStorage.getItem("count.simple") === null) localStorage.setItem("count.simple", "false"); });
+    return c;
+  };
+}
 const checks = [];
 function check(name, cond) { checks.push({ name, ok: !!cond }); console.log(`${cond ? "ok  " : "FAIL"} ${name}`); }
 
 const browser = await chromium.launch(EXEC ? { executablePath: EXEC } : {});
+await fullModeContexts(browser);
 const errors = [];
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
 const page = await ctx.newPage();
@@ -1568,6 +1579,55 @@ check("number stays centred in the ring after End Day", centred);
     JSON.stringify(after.filter((d) => d[2]).map((d) => d[1])) === "[2,0,3,3,3]");
   check("and only the skipped one is still missing", await p25.evaluate(() => missedNow().length === 1));
   await ctx25.close();
+}
+
+// simple mode: the number, the button, one quiet line — and step-down offers still come
+{
+  const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ago = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return d; };
+  const ctx26 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p26 = await ctx26.newPage();
+  p26.on("pageerror", (e) => errors.push("simple: " + String(e)));
+  const hist = [];
+  for (let n = 30; n >= 1; n--) hist.push({ date: isoOf(ago(n)), total: 2, taps: 2, endedAt: ago(n).toISOString(), tapTimes: [] });
+  // a returning user: no mood answered today, game on, a step down ready — and simple mode never set
+  await p26.addInitScript(({ hist }) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.removeItem("count.simple");
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.gameOn", true); set("count.goal", 4); set("count.goalOn", true); set("count.step", 1);
+    set("count.history", hist); set("count.taper", { on: true, smart: true, pace: "balanced", step: 1, everyDays: 30 });
+    set("count.goalLog", [{ at: new Date(Date.now() - 60 * 864e5).toISOString(), goal: 4 }]);
+  }, { hist });
+  await p26.goto(BASE);
+  await p26.waitForTimeout(2600);
+  const home = await p26.evaluate(() => ({
+    simple: document.body.classList.contains("simple"),
+    gate: document.getElementById("moodGate").classList.contains("show") || document.getElementById("gameGate").classList.contains("show"),
+    sheet: document.querySelector("#overlay.show #sheet h3")?.textContent || "",
+    hidden: ["pulse", "meta", "goalText"].every((id) => getComputedStyle(document.getElementById(id)).display === "none") && getComputedStyle(document.querySelector(".row-wrap")).display === "none",
+  }));
+  check("simple mode is on unless you've turned it off", home.simple);
+  check("no daily check-in or game", !home.gate);
+  check("but a step-down offer still comes", /drop your goal|Ready for zero/.test(home.sheet));
+  check("home is just the number, the button and one line", home.hidden);
+  await p26.evaluate(() => closeSheet());
+  await p26.waitForTimeout(400);
+  await p26.click("#addBtn");
+  await p26.waitForTimeout(400);
+  check("no reasons row after a tap", !(await p26.evaluate(() => document.getElementById("whyRow").classList.contains("show"))));
+  await p26.evaluate(() => openSettings());
+  await p26.waitForTimeout(400);
+  check("Settings has the switch first, and Habits and Notes are reachable", await p26.evaluate(() =>
+    /Simple mode/.test(document.querySelector("#sheet .toggle-row").textContent) &&
+    [...document.querySelectorAll("#sheet .quick-grid .sheet-btn")].some((b) => /Habits/.test(b.textContent)) &&
+    [...document.querySelectorAll("#sheet .quick-grid .sheet-btn")].some((b) => /Notes/.test(b.textContent))));
+  await p26.evaluate(() => { const i = document.querySelector("#sheet .toggle-row input"); i.checked = false; i.dispatchEvent(new Event("change")); });
+  await p26.waitForTimeout(400);
+  check("turning it off brings everything back", await p26.evaluate(() =>
+    !document.body.classList.contains("simple") && getComputedStyle(document.querySelector(".row-wrap")).display !== "none" && JSON.parse(localStorage.getItem("count.simple")) === false));
+  await ctx26.close();
 }
 
 check("no JS errors during smoke", errors.length === 0);

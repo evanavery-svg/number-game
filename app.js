@@ -428,6 +428,12 @@ if (goalOn === null) { goalOn = goal > 0; save(KEY_GOAL_ON, goalOn); }
 // held in `goal`). In week mode a day may use whatever the week still has.
 const KEY_GOAL_MODE = "count.goalMode";
 let goalMode = load(KEY_GOAL_MODE, "day");
+// Simple mode: home is the number, the button and one quiet line. No daily
+// check-ins, no pop-ups except step-down offers, no reasons row, no buttons
+// under the counter (the ring still opens Settings, where everything lives).
+const KEY_SIMPLE = "count.simple";
+let simpleMode = load(KEY_SIMPLE, true);
+function applySimple() { document.body.classList.toggle("simple", !!simpleMode); }
 let goalLog = load(KEY_GOAL_LOG, []);       // the taper ladder: every goal change
 if (!goalLog.length && goalOn) { goalLog = [{ at: new Date().toISOString(), goal: goal }]; save(KEY_GOAL_LOG, goalLog); }
 // Smart mode sizes each drop from levels you already reach and paces it by how
@@ -686,6 +692,7 @@ function openOnboarding(stage) {
 // One arbiter for the taper-related prompts, so two never stack on each other.
 // Order matters: celebrate first, then help, then adjust the limit.
 function runTaperPrompts() {
+  if (simpleMode) return maybeRaiseOffer() || maybeTaperOffer();   // step offers only
   if (maybeZeroWin()) return true;
   if (maybeZeroHandoff()) return true;
   if (maybeSettleCheck()) return true;
@@ -1072,7 +1079,7 @@ let whyTimer = null;
 function reasonOf(k) { return [...TAP_REASONS, ...RETIRED_REASONS, OTHER_REASON].find((r) => r.key === k); }
 function showWhyRow() {
   const row = el.whyRow;
-  if (!row || !tapWhyOn) return;
+  if (!row || !tapWhyOn || simpleMode) return;
   if (el.overlay.classList.contains("show")) return;
   if (!row.childElementCount) {
     // five across, emoji over the word, so the whole set fits with no scrolling
@@ -1661,6 +1668,7 @@ function openingSequence() {
 // back next time rather than being lost.
 function runPassiveNotice() {
   if (gatesUp() || el.overlay.classList.contains("show")) return;
+  if (simpleMode) { announceRestore(); return; }
   [announceRestore, maybeRingTapTip, maybeRingHoldTip, checkMilestones, checkRiskyTimes, checkDayRisk, maybeWeeklyRecap, maybeBackupNudge]
     .some((fn) => fn() === true);
 }
@@ -1672,6 +1680,7 @@ function runDailyGates(force) {
   if (el.lock && el.lock.style.display === "flex") return;   // wait until unlocked
   if (blockingSpent && !force) return;                       // already interrupted once
   if (load(KEY_ONBOARDED_ON, "") === moodGateKey()) return;  // setup day: nothing asks yet
+  if (simpleMode) return;                                     // simple mode: no check-ins
 
   const greetLine = greetDue() ? pickAffirmation(affirms, AFFIRMATIONS, monthDayIndex(new Date())) : null;
   if (features.mood && moodDaily[moodGateKey()] == null) {
@@ -2380,6 +2389,7 @@ function drainToasts() {
 // ---- render ----
 // Full render: header + today + the insights panel (chart/history/stats).
 function render() {
+  applySimple();
   el.date.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   if (el.eyebrow) el.eyebrow.textContent = countLabel || "Today";
   renderTop();
@@ -5506,6 +5516,7 @@ const ICONS = {
   chart: '<path d="M5 19V11M12 19V5M19 19v-7"/>',
   pencil: '<path d="M4 20h4L20 8l-4-4L4 16z"/><path d="M14.5 5.5 18.5 9.5"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9.5"/>',
   lock: '<rect x="4" y="10.5" width="16" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
   shield: '<path d="M12 3l7 3v6c0 4-3 7.2-7 9-4-1.8-7-5-7-9V6z"/>',
   sliders: '<path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/>',
@@ -5565,6 +5576,15 @@ function confirmSheet(title, sub, confirmLabel, onYes, danger) {
 function openSettings() {
   openSheet((s) => {
     addEl(s, "h3", "Settings");
+    const simpleToggle = makeToggle(s, "Simple mode", simpleMode);
+    addEl(s, "p", simpleMode
+      ? "Just the number and the button. No daily check-ins or pop-ups — step-down offers still come. Everything else is here."
+      : "Turn on for just the number and the button: no daily check-ins, pop-ups or buttons under the counter.", "sub simple-note");
+    simpleToggle.addEventListener("change", () => {
+      simpleMode = simpleToggle.checked; save(KEY_SIMPLE, simpleMode); buzz(10);
+      hideWhyRow(); render(); openSettings();
+      toast(simpleMode ? "Simple mode on" : "Everything's back");
+    });
     const row = (icon, label, fn, detail) => s.appendChild(makeIconBtn(icon, label, "", () => { fn(); }, { chevron: true, detail }));
     // the places you go, as tiles two across, so the setup rows start higher
     let quick = null;
@@ -5573,6 +5593,7 @@ function openSettings() {
     const group = (label) => addEl(s, "div", label, "sheet-group");
     tiles();
     act("chart", "Insights", openInsights);
+    if (simpleMode && features.vitamins) act("check", "Habits", openVitamins);
     if (features.since) act("clock", "Time Since", requestSince);
     if (features.water) act("droplet", "Water", openWater);
     if (features.tree) act("tree", "Your Tree", openTree);
@@ -8882,6 +8903,7 @@ window.addEventListener("storage", (e) => {
   experiment = load(KEY_EXPERIMENT, null);
   moodDaily = load(KEY_MOOD_DAILY, {});
   hardNotes = load(KEY_HARD_NOTES, []);
+  simpleMode = load(KEY_SIMPLE, true);
   notes = loadNotes();
   gap = Object.assign({ on: false, target: 0, setAt: null, askAt: null }, load(KEY_GAP, {}));
   unitCost = load(KEY_UNIT_COST, 0);
