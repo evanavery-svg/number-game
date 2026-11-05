@@ -1568,6 +1568,27 @@ function weekRecap(state, now) {
   return { title: "Your week", body };
 }
 
+// Days with nothing logged, oldest first, from the first day you logged (or a
+// week back if you haven't yet) up to yesterday — never today, never a day
+// waiting on the "finish yesterday" card, and never more than `lookback` days.
+function missedDays(history, todayDs, opts) {
+  const o = opts || {};
+  const lookback = o.lookback || 30;
+  const have = new Set((history || []).filter((d) => d && d.date).map((d) => d.date));
+  const dated = [...have].sort();
+  const back = (n) => { const d = new Date(todayDs + "T12:00:00"); d.setDate(d.getDate() - n); return isoLocal(d); };
+  const floor = back(lookback);
+  let from = dated.length ? dated[0] : back(7);
+  if (from < floor) from = floor;
+  const out = [];
+  for (let n = 1; n <= lookback; n++) {
+    const ds = back(n);
+    if (ds < from) break;
+    if (!have.has(ds) && ds !== o.pendingDate) out.push(ds);
+  }
+  return out.reverse();
+}
+
 // Node test hook (no effect in the browser).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -1589,7 +1610,7 @@ if (typeof module !== "undefined" && module.exports) {
     OCCASION_MS, dayGaps, gapTarget, gapHeld, nextGap, gapLabel, easiestSlot, slotLabel,
     ENDGAME_RUNGS, endgameNext, lastWeeks, endgameReady, endgameSlipping, sinceStart,
     usualByNow, paceVsUsual, inBedWindow, bedLabel,
-    paceFromHistory, stateGet, eveningSummary, TAPER_PACE_PCT, goodNews, weekRecap,
+    paceFromHistory, stateGet, eveningSummary, TAPER_PACE_PCT, goodNews, weekRecap, missedDays,
     HEADSUP_LEAD_MIN, headsUpWindow, inHeadsUp, holdActive, rungsDown,
     TAP_REASONS, RETIRED_REASONS, OTHER_REASON, reasonSummary, easiestReason, SETTLED_AT, dayNumber, settleDays, typicalSettle, dropSettling,
   };

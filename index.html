@@ -697,6 +697,17 @@
       cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform var(--dur-fast) ease, background var(--dur-fast) ease;
     }
     .hist-add:active { transform: scale(0.95); background: var(--surface); }
+    .hist-btns { display: flex; }
+    .hist-btns .hist-add + .hist-add { margin-left: 0; }
+    /* fill in several missed days */
+    .fill-all { display: flex; align-items: center; gap: 8px; margin: var(--sp-3) 0; }
+    .fill-all-lbl { flex: 1; font-size: 14px; color: var(--muted); }
+    .sheet .fill-all input { width: 86px; flex: none; margin: 0; padding: 10px; text-align: center; }
+    .fill-all .note-add-btn { height: 44px; }
+    .fill-list { display: flex; flex-direction: column; }
+    .sheet label.fill-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 6px 0; border-bottom: 1px solid var(--hair); font-size: 16px; color: var(--text); }
+    .fill-day b { font-weight: 700; }
+    .sheet .fill-row input { width: 96px; flex: none; margin: 0; padding: 10px; text-align: center; }
     .hist-row { padding: 13px 18px; border-top: 1px solid var(--hair); cursor: pointer; transition: background var(--dur-base) ease; }
     .hist-row:first-of-type { border-top: none; }
     .hist-row:active { background: var(--surface-2); }
@@ -2067,7 +2078,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.68</div>
+  <div class="version">v10.69</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">
@@ -2162,7 +2173,10 @@
           <div class="history" id="history">
             <div class="hist-head">
               <div class="section-title">History</div>
-              <button type="button" class="hist-add" id="histAddBtn">+ Add a day</button>
+              <span class="hist-btns">
+                <button type="button" class="hist-add" id="histFillBtn" style="display:none">Fill missed</button>
+                <button type="button" class="hist-add" id="histAddBtn">+ Add a day</button>
+              </span>
             </div>
             <div class="hist-empty" id="histEmpty">No previous days yet.</div>
           </div>

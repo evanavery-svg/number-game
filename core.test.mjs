@@ -1557,3 +1557,12 @@ test("weekRecap: the last seven days against the seven before", () => {
   assert.match(core.weekRecap({ ...st, "count.history": [day(1, 9), day(8, 1), day(9, 1), day(10, 1)], "count.goalOn": false }, now).body, /^Last 7 days: 11, up from 3\.$/);
   assert.match(core.weekRecap({}, now).body, /^Nothing logged/);
 });
+
+test("missedDays lists the gaps since you started, up to yesterday", () => {
+  const h = ["2026-11-01", "2026-11-03"].map((date) => ({ date, total: 1 }));
+  assert.deepEqual(core.missedDays(h, "2026-11-06"), ["2026-11-02", "2026-11-04", "2026-11-05"]);
+  assert.deepEqual(core.missedDays(h, "2026-11-06", { pendingDate: "2026-11-05" }), ["2026-11-02", "2026-11-04"], "yesterday waiting on its card");
+  assert.equal(core.missedDays([], "2026-11-06").length, 7, "no history: the last week");
+  assert.equal(core.missedDays([{ date: "2025-01-01", total: 1 }], "2026-11-06", { lookback: 30 }).length, 30, "never more than the window");
+  assert.deepEqual(core.missedDays(h, "2026-11-04"), ["2026-11-02"], "today is never missed");
+});

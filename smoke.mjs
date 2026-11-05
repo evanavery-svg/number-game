@@ -1522,6 +1522,54 @@ check("number stays centred in the ring after End Day", centred);
   await ctx24.close();
 }
 
+// filling in several missed days at once
+{
+  const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const ago = (n) => { const d = new Date(dk + "T12:00:00"); d.setDate(d.getDate() - n); return d; };
+  const ctx25 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p25 = await ctx25.newPage();
+  p25.on("pageerror", (e) => errors.push("fill days: " + String(e)));
+  // logged 8 and 2 days ago; 7..3 and yesterday are missing
+  await p25.addInitScript(({ dk, hist }) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+    set("count.goal", 4); set("count.goalOn", true); set("count.step", 1); set("count.history", hist);
+  }, { dk, hist: [8, 2].map((n) => ({ date: isoOf(ago(n)), label: isoOf(ago(n)), total: 3, taps: 3, endedAt: ago(n).toISOString(), tapTimes: [] })) });
+  await p25.goto(BASE);
+  await p25.waitForTimeout(1200);
+  await p25.evaluate(() => openInsights());
+  await p25.waitForTimeout(500);
+  await p25.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Journey").click());
+  await p25.waitForTimeout(700);
+  check("History offers to fill what's missing", (await p25.evaluate(() => document.getElementById("histFillBtn").textContent)) === "Fill 6 missed");
+  await p25.evaluate(() => { closeInsights(); openFillDays(); });
+  await p25.waitForTimeout(500);
+  const rows = await p25.evaluate(() => [...document.querySelectorAll(".fill-row")].length);
+  check("every missed day is listed, oldest first", rows === 6);
+  await p25.keyboard.type("2");
+  await p25.keyboard.press("Enter");
+  await p25.keyboard.type("0");
+  check("Enter moves to the next day, and Save counts what will be saved", await p25.evaluate(() =>
+    document.activeElement === document.querySelectorAll(".fill-row input")[1] &&
+    [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Save 2 days")));
+  await p25.evaluate(() => { const i = document.querySelector(".fill-all input"); i.value = "3"; [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Fill").click(); });
+  await p25.evaluate(() => { document.querySelectorAll(".fill-row input")[5].value = ""; document.querySelectorAll(".fill-row input")[5].dispatchEvent(new Event("input")); });
+  check("fill-all only fills the blanks, and a cleared one is skipped", await p25.evaluate(() =>
+    [...document.querySelectorAll(".fill-row input")].map((i) => i.value).join(",") === "2,0,3,3,3," &&
+    [...document.querySelectorAll("#sheet button")].some((b) => b.textContent === "Save 5 days")));
+  await p25.evaluate(() => [...document.querySelectorAll("#sheet button")].find((b) => b.textContent === "Save 5 days").click());
+  await p25.waitForTimeout(400);
+  const after = await p25.evaluate(() => JSON.parse(localStorage.getItem("count.history")).map((d) => [d.date, d.total, !!d.backfilled]));
+  check("the days are saved in date order, marked as filled in later", after.length === 7 &&
+    after.every((d, i) => i === 0 || d[0] > after[i - 1][0]) &&
+    JSON.stringify(after.filter((d) => d[2]).map((d) => d[1])) === "[2,0,3,3,3]");
+  check("and only the skipped one is still missing", await p25.evaluate(() => missedNow().length === 1));
+  await ctx25.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

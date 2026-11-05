@@ -4286,6 +4286,7 @@ const HIST_PAGE = 30;
 let histShown = HIST_PAGE;
 
 function renderHistory() {
+  syncFillBtn();
   el.history.querySelectorAll(".hist-row").forEach((n) => n.remove());
   const moreBtn = el.history.querySelector(".hist-more");
   if (moreBtn) moreBtn.remove();
@@ -5592,6 +5593,8 @@ function openSettings() {
       : `Day ${Math.min(experimentDayNo(experiment), experimentTotalDays(experiment))} of ${experimentTotalDays(experiment)}`;
     row("flask", experiment ? "Experiment" : "Run an experiment", openExperiment, expDetail);
     row("heart", "Notes for hard days", openHardNotes, hardNotes.length ? String(hardNotes.length) : null);
+    const missedN = missedNow().length;
+    if (missedN) row("calendar", "Fill in missed days", openFillDays, String(missedN));
     row("grid", "Features", openFeatureSettings);
     row("palette", "Appearance", openAppearanceSettings);
     row("bell", "Notifications", openNotifications);
@@ -6353,10 +6356,101 @@ function openAddPastDay() {
     };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
     s.appendChild(makeBtn("Add day", "primary", commit));
+    const missed = missedNow().length;
+    if (missed > 1) s.appendChild(makeBtn(`${missed} days missing? Fill them in together`, "link", () => openFillDays()));
     s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
     setTimeout(() => { input.focus(); }, 60);
   });
 }
+// ---- fill in several missed days at once ----
+function missedNow() {
+  return missedDays(history, sessionDate(), { pendingDate: pending ? pending.date : null, lookback: 30 });
+}
+function openFillDays() {
+  openSheet((s) => {
+    addEl(s, "h3", "Fill in missed days");
+    const days = missedNow();
+    if (!days.length) {
+      addEl(s, "p", "Nothing's missing in the last 30 days.", "sub");
+      s.appendChild(makeBtn("Add a different day", "", () => openAddPastDay()));
+      s.appendChild(makeBtn("Done", "ghost", closeSheet));
+      return;
+    }
+    addEl(s, "p", `${days.length} day${days.length === 1 ? "" : "s"} with nothing logged. Type a number for each — leave one blank to skip it.`, "sub");
+
+    // the same number for every blank one, for a run of similar days
+    const all = document.createElement("div"); all.className = "fill-all";
+    addEl(all, "span", "Fill blanks with", "fill-all-lbl");
+    const allIn = numInput("", "0"); allIn.inputMode = "decimal"; allIn.placeholder = fmt(hasGoal() ? goal : step);
+    allIn.setAttribute("aria-label", "Number for every blank day");
+    const allBtn = document.createElement("button"); allBtn.type = "button"; allBtn.className = "note-add-btn"; allBtn.textContent = "Fill";
+    all.append(allIn, allBtn); s.appendChild(all);
+
+    const list = document.createElement("div"); list.className = "fill-list"; s.appendChild(list);
+    const inputs = [];
+    days.forEach((ds, i) => {
+      const when = new Date(ds + "T12:00:00");
+      const row = document.createElement("label"); row.className = "fill-row";
+      const name = document.createElement("span"); name.className = "fill-day";
+      addEl(name, "b", when.toLocaleDateString(undefined, { weekday: "short" }));
+      name.appendChild(document.createTextNode(" " + when.toLocaleDateString(undefined, { month: "short", day: "numeric" })));
+      row.appendChild(name);
+      const inp = numInput("", "0"); inp.inputMode = "decimal"; inp.placeholder = "–";
+      inp.enterKeyHint = i === days.length - 1 ? "done" : "next";
+      inp.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        if (inputs[i + 1]) inputs[i + 1].focus(); else inp.blur();
+      });
+      inp.addEventListener("input", paint);
+      row.appendChild(inp); list.appendChild(row);
+      inputs.push(inp);
+    });
+    allBtn.addEventListener("click", () => {
+      const v = parseFloat(allIn.value);
+      if (isNaN(v) || v < 0) { toast("Enter a number ≥ 0"); return; }
+      inputs.forEach((i) => { if (i.value.trim() === "") i.value = fmt(v); });
+      buzz(8); paint();
+    });
+
+    const go = makeBtn("Save", "primary", () => {
+      const added = [];
+      days.forEach((ds, i) => {
+        const raw = inputs[i].value.trim();
+        if (raw === "") return;
+        const v = parseFloat(raw);
+        if (isNaN(v) || v < 0 || dateTaken(history, ds, null)) return;
+        const when = new Date(ds + "T12:00:00");
+        history.push({ date: ds, label: dayLabel(when), total: round2(v), taps: 0, endedAt: when.toISOString(), note: "", tapTimes: [], backfilled: true });
+        added.push(ds);
+      });
+      if (!added.length) { toast("Type a number for at least one day"); return; }
+      history.sort((a, b) => new Date(a.endedAt || a.date) - new Date(b.endedAt || b.date));
+      save(KEY_HISTORY, history); invalidatePulse();
+      closeSheet(); render(); buzz(12);
+      toast(`Added ${added.length} day${added.length === 1 ? "" : "s"}`);
+    });
+    s.appendChild(go);
+    s.appendChild(makeBtn("Cancel", "ghost", closeSheet));
+    // the button says how many will be saved, so a skipped day is never a surprise
+    function paint() {
+      const n = inputs.filter((i) => i.value.trim() !== "" && parseFloat(i.value) >= 0).length;
+      go.textContent = n ? `Save ${n} day${n === 1 ? "" : "s"}` : "Save";
+      go.disabled = n === 0;
+    }
+    paint();
+    setTimeout(() => { if (inputs[0]) inputs[0].focus(); }, 80);
+  });
+}
+// History's header: a second button whenever something's missing.
+function syncFillBtn() {
+  const b = document.getElementById("histFillBtn");
+  if (!b) return;
+  const n = missedNow().length;
+  b.style.display = n ? "" : "none";
+  b.textContent = `Fill ${n} missed`;
+}
+
 function numInput(value, min) {
   const i = document.createElement("input");
   i.type = "number"; i.step = "0.01"; if (min != null) i.min = min;
@@ -8681,6 +8775,7 @@ el.notesBtn.addEventListener("click", () => openNotes());
 el.pendingCard.addEventListener("click", openEndDay);
 syncVitaminsBtn();
 document.getElementById("histAddBtn")?.addEventListener("click", openAddPastDay);
+document.getElementById("histFillBtn")?.addEventListener("click", openFillDays);
 el.pulse.addEventListener("click", cyclePulse);       // tap the strip for the next insight
 // The reasons row sits over the buttons below the counter. A tap anywhere
 // else means "not now": it clears at once, so nothing is ever stuck behind it.
