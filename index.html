@@ -700,7 +700,9 @@
     /* simple mode: the number, the button and one quiet line */
     body.simple .row-wrap, body.simple #pulse, body.simple #meta, body.simple #sinceStrip,
     body.simple #goalText, body.simple .why-row { display: none !important; }
-    body.simple .add-btn { flex: 0 0 auto; height: min(36vh, 300px); min-height: 180px; margin-top: auto; margin-bottom: var(--sp-5, 24px); }
+    .simple-row { display: none; }
+    body.simple .simple-row { display: flex; }
+    body.simple .add-btn { flex: 0 0 auto; height: min(36vh, 300px); min-height: 180px; margin-top: auto; margin-bottom: var(--sp-3); }
     body.simple #gapLine { margin-top: var(--sp-3); font-size: 14px; }
     .sheet p.simple-note { margin: 4px 0 var(--sp-2); }
     .hist-btns { display: flex; }
@@ -2074,6 +2076,10 @@
     <button type="button" id="srEndDay">End the day</button>
   </div>
 
+  <!-- simple mode hides the buttons below, so Settings gets its own, labelled -->
+  <div class="row simple-row">
+    <button id="simpleSettingsBtn">Settings</button>
+  </div>
   <div class="row-wrap">
     <div class="row">
       <button id="vitaminsBtn" style="display:none" aria-label="Daily Habits">Habits</button>
@@ -2084,7 +2090,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v10.70</div>
+  <div class="version">v10.71</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

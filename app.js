@@ -8786,6 +8786,7 @@ const ADD_HOLD_MS = 450, ADD_HOLD_ARM = 130;   // charge starts after a short de
   });
 })();
 el.insightsBtn.addEventListener("click", openInsights);
+document.getElementById("simpleSettingsBtn")?.addEventListener("click", () => openSettings());
 document.getElementById("srUndo")?.addEventListener("click", () => {
   if (taps === 0) { srSay("Nothing to undo"); return; }
   undo();

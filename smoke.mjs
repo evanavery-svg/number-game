@@ -1617,7 +1617,8 @@ check("number stays centred in the ring after End Day", centred);
   await p26.click("#addBtn");
   await p26.waitForTimeout(400);
   check("no reasons row after a tap", !(await p26.evaluate(() => document.getElementById("whyRow").classList.contains("show"))));
-  await p26.evaluate(() => openSettings());
+  check("a labelled Settings button is on home", await p26.evaluate(() => { const b = document.getElementById("simpleSettingsBtn"); return b.textContent === "Settings" && getComputedStyle(b.parentElement).display !== "none"; }));
+  await p26.click("#simpleSettingsBtn");
   await p26.waitForTimeout(400);
   check("Settings has the switch first, and Habits and Notes are reachable", await p26.evaluate(() =>
     /Simple mode/.test(document.querySelector("#sheet .toggle-row").textContent) &&
@@ -1626,7 +1627,8 @@ check("number stays centred in the ring after End Day", centred);
   await p26.evaluate(() => { const i = document.querySelector("#sheet .toggle-row input"); i.checked = false; i.dispatchEvent(new Event("change")); });
   await p26.waitForTimeout(400);
   check("turning it off brings everything back", await p26.evaluate(() =>
-    !document.body.classList.contains("simple") && getComputedStyle(document.querySelector(".row-wrap")).display !== "none" && JSON.parse(localStorage.getItem("count.simple")) === false));
+    !document.body.classList.contains("simple") && getComputedStyle(document.querySelector(".row-wrap")).display !== "none" && JSON.parse(localStorage.getItem("count.simple")) === false &&
+    getComputedStyle(document.querySelector(".simple-row")).display === "none"));
   await ctx26.close();
 }
 
