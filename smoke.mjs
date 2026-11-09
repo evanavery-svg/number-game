@@ -1630,6 +1630,37 @@ check("number stays centred in the ring after End Day", centred);
   await ctx26.close();
 }
 
+// the tap flourish: a spark to the ring, cleaned up after, and absent under reduced motion
+{
+  for (const reduced of [false, true]) {
+    const ctx27 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block", reducedMotion: reduced ? "reduce" : "no-preference" });
+    const p27 = await ctx27.newPage();
+    p27.on("pageerror", (e) => errors.push("flourish: " + String(e)));
+    await p27.addInitScript((dk) => {
+      const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+      set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+      set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+      set("count.goal", 2); set("count.goalOn", true); set("count.step", 1); set("count.simple", true);
+    }, dk);
+    await p27.goto(BASE);
+    await p27.waitForTimeout(1200);
+    await p27.click("#addBtn");
+    await p27.waitForTimeout(120);
+    const during = await p27.evaluate(() => ({ sparks: document.querySelectorAll(".fx-spark").length, plus: document.querySelector(".fx-plus")?.textContent || "", clickable: [...document.querySelectorAll(".fx")].every((n) => getComputedStyle(n).pointerEvents === "none") }));
+    if (!reduced) {
+      check("a tap sends a spark toward the ring", during.sparks === 4 && during.plus === "+1" && during.clickable);
+      check("the spark aims at the tip of the arc", await p27.evaluate(() => { const t = ringTip(); const r = document.getElementById("ringWrap").getBoundingClientRect(); return t.onRing && Math.abs(t.x - (r.left + r.width / 2)) < 2 && t.y > r.top + r.height / 2; }));
+      await p27.click("#addBtn");   // lands exactly on the goal
+      await p27.waitForTimeout(1900);
+      check("the flourish cleans up after itself", await p27.evaluate(() => document.querySelectorAll(".fx").length === 0));
+      check("and the count is right", (await p27.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 2);
+    } else {
+      check("with reduced motion there's no flourish", during.sparks === 0 && during.plus === "");
+    }
+    await ctx27.close();
+  }
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

@@ -382,6 +382,13 @@
       /* stroke-linecap is set in JS: flat (butt) early on, rounded from 50% */
       transition: stroke-dashoffset 0.55s var(--ease-out);
     }
+    .ring-chase { fill: none; stroke: #fff; stroke-width: 7; stroke-linecap: round; opacity: 0; pointer-events: none; filter: drop-shadow(0 0 6px #fff); }
+    /* tap flourish: a spark flies from your finger to the tip of the ring */
+    .fx { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 40; will-change: transform, opacity; }
+    .fx-spark i { display: block; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px 3px #fff, 0 0 26px 10px var(--fx, #fff); }
+    .fx-wave { width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 2px solid var(--fx, #fff); }
+    .fx-plus { font-size: 22px; font-weight: 800; color: #1a1200; text-shadow: 0 1px 0 rgba(255,255,255,.35); transform: translate(-50%, -50%); font-variant-numeric: tabular-nums; }
+    .add-btn { transform-style: preserve-3d; }
     .ring-center { display: flex; align-items: center; justify-content: center; }
     .total .value {
       font-size: var(--fs-hero);
@@ -2046,6 +2053,8 @@
         </defs>
         <circle class="ring-track" cx="60" cy="60" r="54"></circle>
         <circle class="ring-prog" id="ringProg" cx="60" cy="60" r="54"></circle>
+        <!-- a light that laps the ring when you land exactly on your goal -->
+        <circle class="ring-chase" id="ringChase" cx="60" cy="60" r="54"></circle>
       </svg>
       <div class="ring-center"><span class="value" id="total">0</span></div>
     </div>
@@ -2084,7 +2093,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v1.0</div>
+  <div class="version">v1.1</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

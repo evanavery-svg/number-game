@@ -4376,6 +4376,7 @@ function applyDelta(amt, confirmed) {
     else if (prev <= lim && today > lim) warnOver();            // crossed over it
   }
   noteEarlyTap(prevAt);
+  if (amt > 0) tapFlourish(amt);
   if (amt > 0) showWhyRow();
   renderTop(true);   // history list doesn't change on a tap
 }
@@ -4400,7 +4401,101 @@ function confirmOver(amt) {
     s.appendChild(makeBtn("Give it five minutes", "ghost", () => openCravingTimer(null)));
   });
 }
+// ---- tap flourish ----
+// Where the last press landed, so the spark can leave from under the finger.
+let lastTapPoint = null;
+// The tip of the ring's arc on screen, or the middle of the number when
+// there's no ring to aim at (no goal, or the bar style).
+function ringTip() {
+  const r = el.ringWrap.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  if (!hasGoal() || ringStyle !== "ring" || !r.width) return { x: cx, y: cy, onRing: false };
+  const a = Math.min(1, goalFrac()) * 2 * Math.PI, R = r.width * (54 / 120);
+  return { x: cx + R * Math.sin(a), y: cy - R * Math.cos(a), onRing: true };
+}
+function fxNode(cls, x, y, color) {
+  const n = document.createElement("span");
+  n.className = "fx " + cls;
+  n.style.setProperty("--fx", color);
+  n.style.transform = `translate(${x}px, ${y}px)`;
+  document.body.appendChild(n);
+  return n;
+}
+// A tap you can watch land: a "+1" lifts off the button, a spark with a short
+// tail arcs up to the tip of the ring, and the ring answers with a ripple and
+// a flare. All of it is decoration on top of an update that already happened.
+function tapFlourish(amt) {
+  if (reduceMotion() || document.hidden) return;
+  const b = el.add.getBoundingClientRect();
+  const fresh = lastTapPoint && Date.now() - lastTapPoint.at < 600;
+  const from = fresh ? lastTapPoint : { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  const to = ringTip();
+  const color = getComputedStyle(el.total).color || "#fff";
+  const ease = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+  const plus = fxNode("fx-plus", from.x, from.y, color);
+  plus.textContent = "+" + fmt(amt);
+  plus.animate([
+    { transform: `translate(${from.x}px, ${from.y}px) translate(-50%, -50%) scale(0.6)`, opacity: 0 },
+    { transform: `translate(${from.x}px, ${from.y - 34}px) translate(-50%, -50%) scale(1.15)`, opacity: 1, offset: 0.3 },
+    { transform: `translate(${from.x}px, ${from.y - 86}px) translate(-50%, -50%) scale(1)`, opacity: 0 },
+  ], { duration: 800, easing: ease }).onfinish = () => plus.remove();
+
+  // x eases in and y eases out, so the path bends instead of running straight
+  const FLY = 460;
+  [0, 1, 2, 3].forEach((i) => {
+    const s = fxNode("fx-spark", from.x, from.y, color);
+    const dot = document.createElement("i"); s.appendChild(dot);
+    const scale = 1 - i * 0.22, delay = i * 38;
+    s.animate([{ transform: `translate(${from.x}px, 0)` }, { transform: `translate(${to.x}px, 0)` }],
+      { duration: FLY, delay, easing: "cubic-bezier(0.5, 0, 0.9, 0.6)", fill: "both" });
+    dot.animate([
+      { transform: `translateY(${from.y}px) scale(${scale * 0.5})`, opacity: 0 },
+      { transform: `translateY(${from.y + (to.y - from.y) * 0.55}px) scale(${scale})`, opacity: i ? 0.7 : 1, offset: 0.35 },
+      { transform: `translateY(${to.y}px) scale(${scale * 0.7})`, opacity: i ? 0 : 1 },
+    ], { duration: FLY, delay, easing: "cubic-bezier(0.1, 0.7, 0.3, 1)", fill: "both" }).onfinish = () => s.remove();
+  });
+
+  // arrival: a ripple from the tip, and the whole ring brightens for a beat
+  setTimeout(() => {
+    const now = ringTip();
+    [0, 110].forEach((d, i) => {
+      const w = fxNode("fx-wave", now.x, now.y, color);
+      w.animate([
+        { transform: `translate(${now.x}px, ${now.y}px) scale(0.2)`, opacity: 0.9 },
+        { transform: `translate(${now.x}px, ${now.y}px) scale(${i ? 2.6 : 1.8})`, opacity: 0 },
+      ], { duration: 620, delay: d, easing: ease, fill: "both" }).onfinish = () => w.remove();
+    });
+    el.ringWrap.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.55)" }, { filter: "brightness(1)" }], { duration: 520, easing: "ease-out" });
+  }, FLY - 40);
+}
+// Landing exactly on the goal: a light runs one lap of the ring.
+function ringLap() {
+  const c = document.getElementById("ringChase");
+  if (!c || reduceMotion() || ringStyle !== "ring") return;
+  c.style.strokeDasharray = `${RING_C * 0.12} ${RING_C}`;
+  c.animate([
+    { strokeDashoffset: 0, opacity: 0 },
+    { strokeDashoffset: -RING_C * 0.15, opacity: 0.95, offset: 0.12 },
+    { strokeDashoffset: -RING_C * 0.9, opacity: 0.95, offset: 0.85 },
+    { strokeDashoffset: -RING_C, opacity: 0 },
+  ], { duration: 1100, easing: "cubic-bezier(0.45, 0, 0.2, 1)" });
+}
+// The button leans toward where it's pressed, like a physical key.
+function tiltButton(e) {
+  if (reduceMotion() || !e || e.clientX == null) return;
+  const r = el.add.getBoundingClientRect();
+  const dx = (e.clientX - (r.left + r.width / 2)) / r.width, dy = (e.clientY - (r.top + r.height / 2)) / r.height;
+  el.add.animate([
+    { transform: "perspective(700px) rotateX(0) rotateY(0) scale(1)" },
+    { transform: `perspective(700px) rotateX(${(-dy * 9).toFixed(2)}deg) rotateY(${(dx * 9).toFixed(2)}deg) scale(0.965)`, offset: 0.3 },
+    { transform: "perspective(700px) rotateX(0) rotateY(0) scale(1)" },
+  ], { duration: 420, easing: "cubic-bezier(0.34, 1.56, 0.64, 1)" });
+}
+
 function addTap(e) {
+  if (e && e.clientX != null) lastTapPoint = { x: e.clientX, y: e.clientY, at: Date.now() };
+  tiltButton(e);
   spawnRipple(e);
   applyDelta(step);
   maybeQuickAddHint();
@@ -4518,6 +4613,7 @@ function spawnRipple(e) {
 // Landed exactly on the goal: a soft heads-up that the next tap goes over.
 function atGoalHeadsUp() {
   buzz([0, 25, 45, 25]);
+  setTimeout(ringLap, 420);   // after the spark lands
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
   toast(weekMode() ? "That's this week's budget — next tap goes over" : "That's your goal — next tap goes over");
 }
