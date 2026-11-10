@@ -1673,6 +1673,45 @@ check("number stays centred in the ring after End Day", centred);
   }
 }
 
+// sounds: off by default, a few soft notes when on, each tap a step higher
+{
+  const ctx28 = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+  const p28 = await ctx28.newPage();
+  p28.on("pageerror", (e) => errors.push("sound: " + String(e)));
+  await p28.addInitScript((dk) => {
+    const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    set("count.onboarded", true); set("count.moodDaily", { [dk]: 4 }); set("count.gamePlayed", dk); set("count.gameOn", false); set("count.greetShown", dk);
+    set("count.ringTapTip", true); set("count.ringHoldTip", true); set("count.whyTip", true); set("count.backupNudge", dk);
+    set("count.goal", 3); set("count.goalOn", true); set("count.step", 1); set("count.simple", true);
+    // record every oscillator the app starts
+    window.__osc = [];
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const orig = AC.prototype.createOscillator;
+    AC.prototype.createOscillator = function () { const o = orig.call(this); const set0 = o.frequency.setValueAtTime.bind(o.frequency); o.frequency.setValueAtTime = (v, t) => { window.__osc.push(v); return set0(v, t); }; return o; };
+  }, dk);
+  await p28.goto(BASE);
+  await p28.waitForTimeout(1200);
+  await p28.click("#addBtn");
+  await p28.waitForTimeout(600);
+  check("sounds are off unless you turn them on", await p28.evaluate(() => window.__osc.length === 0));
+  await p28.evaluate(() => { sound = true; window.__osc = []; });
+  await p28.click("#addBtn");
+  await p28.waitForTimeout(150);
+  const second = await p28.evaluate(() => window.__osc.slice());
+  await p28.waitForTimeout(600);
+  await p28.evaluate(() => { window.__osc = []; });
+  await p28.click("#addBtn");   // lands on the goal
+  await p28.waitForTimeout(150);
+  const third = await p28.evaluate(() => window.__osc.slice());
+  check("a tap plays a couple of soft notes", second.length === 2);
+  check("and each tap sits higher than the last", third.length >= 2 && Math.max(...third) > Math.max(...second));
+  await p28.waitForTimeout(900);
+  check("landing on the goal adds a chime", await p28.evaluate(() => window.__osc.length >= 2 + 3 + 9));
+  check("the notes all come from one scale", await p28.evaluate(() => [0, 1, 2, 3, 4, 5].every((n) => { const r = Math.log2(noteHz(n) / 392) * 12; return Math.abs(r - Math.round(r)) < 1e-6; })));
+  check("the count is unaffected", (await p28.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 3);
+  await ctx28.close();
+}
+
 check("no JS errors during smoke", errors.length === 0);
 if (errors.length) console.log("errors:\n" + errors.join("\n"));
 

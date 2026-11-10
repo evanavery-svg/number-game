@@ -2342,20 +2342,86 @@ function monthSum(offset) {
 
 // ---- feedback ----
 function buzz(ms) { if (haptic && navigator.vibrate) navigator.vibrate(ms); }
-let audioCtx;
-function click() {
+// ---- sound ----
+// A small synth, no audio files: every sound is a few soft notes through one
+// warm chain (a gentle low-pass and a short echo), so they belong together.
+// Notes come from one pentatonic scale, so nothing ever clashes — and a tap's
+// pitch climbs a step with each one toward your goal.
+let audioCtx, sfxOut;
+const SCALE = [0, 2, 4, 7, 9];   // major pentatonic, in semitones
+function noteHz(step) {
+  const oct = Math.floor(step / SCALE.length), deg = ((step % SCALE.length) + SCALE.length) % SCALE.length;
+  return 392 * Math.pow(2, (SCALE[deg] + 12 * oct) / 12);   // from G4
+}
+function sfxChain() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended" && audioCtx.resume) audioCtx.resume();
+  if (!sfxOut) {
+    const lp = audioCtx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3800; lp.Q.value = 0.4;
+    const master = audioCtx.createGain(); master.gain.value = 0.5;
+    const echo = audioCtx.createDelay(0.5); echo.delayTime.value = 0.16;
+    const fb = audioCtx.createGain(); fb.gain.value = 0.22;
+    const wet = audioCtx.createGain(); wet.gain.value = 0.3;
+    lp.connect(master); master.connect(audioCtx.destination);
+    lp.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(audioCtx.destination);
+    sfxOut = lp;
+  }
+  return sfxOut;
+}
+// One note: a soft attack, a natural decay, and an optional pitch glide.
+function note(hz, at, dur, vol, o) {
+  const opt = o || {};
+  const t = audioCtx.currentTime + at;
+  const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+  osc.type = opt.type || "sine";
+  osc.frequency.setValueAtTime(opt.from || hz, t);
+  if (opt.from) osc.frequency.exponentialRampToValueAtTime(hz, t + (opt.glide || 0.06));
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + (opt.attack || 0.006));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g); g.connect(sfxOut);
+  osc.start(t); osc.stop(t + dur + 0.02);
+}
+// A bell: the note plus a quiet overtone that fades faster.
+function bell(hz, at, dur, vol) {
+  note(hz, at, dur, vol);
+  note(hz * 2.01, at, dur * 0.5, vol * 0.25);
+  note(hz * 3, at, dur * 0.25, vol * 0.08);
+}
+function sfx(name, arg) {
   if (!sound) return;
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = "sine"; o.frequency.value = 660;
-    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.12, audioCtx.currentTime + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.09);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.1);
-  } catch (e) {}
+    sfxChain();
+    if (name === "tap") {
+      // a soft pluck that steps up the scale as the day's count grows
+      const hz = noteHz(Math.max(0, Math.min(14, arg || 0)));
+      note(hz, 0, 0.22, 0.22, { type: "triangle", from: hz * 1.5, glide: 0.035 });
+      note(hz / 2, 0, 0.12, 0.12);
+    } else if (name === "land") {
+      bell(noteHz(Math.max(0, Math.min(14, arg || 0)) + 2), 0, 0.5, 0.07);          // the spark arriving
+    } else if (name === "goal") {
+      [5, 7, 9].forEach((n, i) => bell(noteHz(n), i * 0.09, 0.9, 0.12));              // landed on the goal
+    } else if (name === "over") {
+      note(98, 0, 0.32, 0.22, { from: 147, glide: 0.18 });                            // a low, soft thud — not an alarm
+    } else if (name === "undo") {
+      note(noteHz(2), 0, 0.2, 0.16, { type: "triangle", from: noteHz(6), glide: 0.14 });   // the pluck, backwards
+    } else if (name === "done") {
+      [0, 2, 4, 7].forEach((n, i) => bell(noteHz(n), i * 0.1, 1.1, 0.11));            // day complete, under goal
+      bell(noteHz(9), 0.44, 1.6, 0.1);
+    } else if (name === "logged") {
+      bell(noteHz(0), 0, 0.9, 0.11); bell(noteHz(2), 0.14, 1.1, 0.09);                // day complete, plainly
+    } else if (name === "drop") {
+      note(1300, 0, 0.12, 0.14, { from: 620, glide: 0.07 });                          // water
+      note(900, 0.07, 0.16, 0.06, { from: 1500, glide: 0.1 });
+    } else if (name === "tick") {
+      note(noteHz(7), 0, 0.09, 0.1, { type: "triangle" });                            // small confirmations
+    }
+  } catch (e) { /* sound is a nicety; never let it break a tap */ }
 }
+// Kept for the callers that just want "the tap sound".
+function click() { sfx("tap", tapPitch()); }
+// How far up the scale this tap sits: one step per tap, in units of your step.
+function tapPitch() { return step > 0 ? Math.round(today / step) - 1 : 0; }
 // Toasts queue instead of overwriting each other. There's one toast element,
 // and it used to be that whoever spoke last won — so on a busy app open the
 // weekly recap could be wiped by the risky-time notice 2.5s later and never be
@@ -4369,7 +4435,8 @@ function applyDelta(amt, confirmed) {
   tapLog.push({ t: Date.now(), amt: amt, total: today });
   save(KEY_TODAY, today); save(KEY_TAPS, taps); save(KEY_TAPLOG, tapLog);
   save(KEY_ACT_DATE, sessionDate());   // remember which day this activity belongs to (past-midnight taps still count as the day before)
-  buzz(amt > 0 ? 15 : 10); click();
+  buzz(amt > 0 ? 15 : 10);
+  if (amt > 0) { sfx("tap", tapPitch()); setTimeout(() => sfx("land", tapPitch()), 420); } else sfx("undo");
   { const rc = el.total.parentElement; rc.classList.remove("bump"); void rc.offsetWidth; rc.classList.add("bump"); }
   if (hasGoal() && amt > 0) {
     if (prev < lim && today === lim) atGoalHeadsUp();          // landed exactly on the limit
@@ -4678,6 +4745,7 @@ function spawnRipple(e) {
 // Landed exactly on the goal: a soft heads-up that the next tap goes over.
 function atGoalHeadsUp() {
   buzz([0, 25, 45, 25]);
+  setTimeout(() => sfx("goal"), 480);
   setTimeout(ringLap, 420);   // after the spark lands
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
   toast(weekMode() ? "That's this week's budget — next tap goes over" : "That's your goal — next tap goes over");
@@ -4685,6 +4753,7 @@ function atGoalHeadsUp() {
 
 // A quiet nudge the moment you cross the goal — no celebration, just awareness.
 function warnOver() {
+  setTimeout(() => sfx("over"), 200);
   buzz(45);
   el.ringWrap.classList.remove("nudge"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("nudge");
   toast(weekMode() ? "Over this week's budget" : "Over your goal for today");
@@ -4973,6 +5042,7 @@ function openRenameVitamin(oldName, onDone) {
 function undo() {
   if (taps === 0) return;
   const tipBefore = ringTip();   // where the arc ends now, before it shrinks
+  sfx("undo");
   const last = tapLog.pop();
   const amt = last != null ? tapEntry(last).amt : null;
   today = round2(today - (amt != null ? amt : step));   // reverse whatever the last tap actually added
@@ -5488,6 +5558,7 @@ function commitDay(note, dateStr, extras, opts) {
     ? `🌳 Tree fully grown — Prestige ${tree.level}!`
     : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal\u00a0✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
+  setTimeout(() => sfx(underGoal ? "done" : "logged"), 380);
   setTimeout(() => dayDoneFlourish(underGoal || !hasGoal()), 380);   // once the sheet has cleared the ring
   // a second, separate pop-up for a tree milestone reached along the way —
   // prestige (100%) already got its own toast above, this covers 25/50/75%
@@ -6110,8 +6181,9 @@ function openAppearanceSettings() {
     addEl(s, "p", "Rotates through all themes — a new one each day.", "sub");
     const hapticToggle = makeToggle(s, "Vibrate on tap", haptic);
     hapticToggle.addEventListener("change", () => { haptic = hapticToggle.checked; save(KEY_HAPTIC, haptic); buzz(8); });
-    const soundToggle = makeToggle(s, "Sound on tap", sound);
-    soundToggle.addEventListener("change", () => { sound = soundToggle.checked; save(KEY_SOUND, sound); click(); });
+    const soundToggle = makeToggle(s, "Sounds", sound);
+    soundToggle.addEventListener("change", () => { sound = soundToggle.checked; save(KEY_SOUND, sound); sfx("goal"); });
+    addEl(s, "p", "Soft notes for a tap, undo, reaching your goal and ending the day. Each tap sits a step higher than the last. Your phone's silent switch still mutes them.", "sub");
     s.appendChild(makeBtn("Back", "ghost", backToSettings));
   });
 }
@@ -8615,7 +8687,7 @@ function addWater(amt) {
   water.oz = round2(water.oz + amt);
   water.log.push(amt);
   save(KEY_WATER, water);
-  buzz(15); click();
+  buzz(15); sfx("drop");
   const goalHit = waterGoal > 0 && prev < waterGoal && water.oz >= waterGoal;
   if (goalHit) { buzz([0, 35, 40, 60]); toast("💧 Water goal reached!"); }
   renderWater();
