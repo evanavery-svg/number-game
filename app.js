@@ -4469,6 +4469,71 @@ function tapFlourish(amt) {
     el.ringWrap.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.55)" }, { filter: "brightness(1)" }], { duration: 520, easing: "ease-out" });
   }, FLY - 40);
 }
+// Undo plays the tap backwards: the spark leaves the ring and drops back into
+// the button, and a "−1" sinks with it.
+function undoFlourish(from, amt) {
+  if (reduceMotion() || document.hidden) return;
+  const b = el.add.getBoundingClientRect();
+  const to = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  const color = getComputedStyle(el.total).color || "#fff";
+  const s = fxNode("fx-spark", from.x, from.y, color);
+  const dot = document.createElement("i"); s.appendChild(dot);
+  s.animate([{ transform: `translate(${from.x}px, 0)` }, { transform: `translate(${to.x}px, 0)` }],
+    { duration: 420, easing: "cubic-bezier(0.1, 0.7, 0.3, 1)", fill: "both" });
+  dot.animate([
+    { transform: `translateY(${from.y}px) scale(0.8)`, opacity: 1 },
+    { transform: `translateY(${to.y}px) scale(0.4)`, opacity: 0 },
+  ], { duration: 420, easing: "cubic-bezier(0.5, 0, 0.9, 0.6)", fill: "both" }).onfinish = () => s.remove();
+  const minus = fxNode("fx-plus", to.x, to.y - 70, color);
+  minus.textContent = "−" + fmt(amt);
+  minus.animate([
+    { transform: `translate(${to.x}px, ${to.y - 70}px) translate(-50%, -50%) scale(1)`, opacity: 0 },
+    { transform: `translate(${to.x}px, ${to.y - 40}px) translate(-50%, -50%) scale(1.1)`, opacity: 1, offset: 0.4 },
+    { transform: `translate(${to.x}px, ${to.y}px) translate(-50%, -50%) scale(0.5)`, opacity: 0 },
+  ], { duration: 620, delay: 120, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "both" }).onfinish = () => minus.remove();
+}
+// Ending the day: sparks fly out from all round the ring as it empties, and a
+// tick draws itself where the number was.
+function dayDoneFlourish(good) {
+  if (reduceMotion() || document.hidden) return;
+  const r = el.ringWrap.getBoundingClientRect();
+  if (!r.width) return;
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width * (54 / 120);
+  const cs = getComputedStyle(document.documentElement);
+  const color = (good ? cs.getPropertyValue("--safe") : cs.getPropertyValue("--accent")).trim() || "#fff";
+  const N = 14;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * 2 * Math.PI, x0 = cx + R * Math.sin(a), y0 = cy - R * Math.cos(a);
+    const far = R + 46 + (i % 3) * 16, x1 = cx + far * Math.sin(a), y1 = cy - far * Math.cos(a);
+    const s = fxNode("fx-spark", x0, y0, color);
+    const dot = document.createElement("i"); s.appendChild(dot);
+    s.animate([
+      { transform: `translate(${x0}px, ${y0}px) scale(0.9)`, opacity: 1 },
+      { transform: `translate(${x1}px, ${y1}px) scale(0.2)`, opacity: 0 },
+    ], { duration: 720 + (i % 4) * 60, delay: i * 22, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "both" }).onfinish = () => s.remove();
+  }
+  const tick = fxNode("fx-tick", cx, cy, color);
+  tick.innerHTML = '<svg viewBox="0 0 64 64" width="96" height="96" aria-hidden="true"><path d="M14 34 27 47 50 20" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></svg>';
+  tick.style.color = color;
+  tick.querySelector("path").animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 420, delay: 160, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "both" });
+  tick.animate([
+    { transform: `translate(${cx}px, ${cy}px) translate(-50%, -50%) scale(0.6)`, opacity: 0 },
+    { transform: `translate(${cx}px, ${cy}px) translate(-50%, -50%) scale(1.08)`, opacity: 1, offset: 0.25 },
+    { transform: `translate(${cx}px, ${cy}px) translate(-50%, -50%) scale(1)`, opacity: 1, offset: 0.7 },
+    { transform: `translate(${cx}px, ${cy}px) translate(-50%, -50%) scale(0.9)`, opacity: 0 },
+  ], { duration: 1400, easing: "ease-out", fill: "both" }).onfinish = () => tick.remove();
+  // the number steps aside for the tick, then comes back
+  el.total.animate([{ opacity: 1 }, { opacity: 0, offset: 0.12 }, { opacity: 0, offset: 0.75 }, { opacity: 1 }], { duration: 1400, easing: "ease-out" });
+}
+// Opening the app: the pieces of home arrive one after another, top to bottom.
+function launchChoreography() {
+  if (reduceMotion()) return;
+  const parts = [document.querySelector(".header-title"), el.ringWrap, el.gapLine, el.add].filter(Boolean);
+  parts.forEach((n, i) => n.animate(
+    [{ opacity: 0, transform: `translateY(${i === 1 ? 0 : 14}px) scale(${i === 1 ? 0.92 : 1})` }, { opacity: 1, transform: "none" }],
+    { duration: 620, delay: 60 + i * 90, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "backwards" }));
+}
+
 // Landing exactly on the goal: a light runs one lap of the ring.
 function ringLap() {
   const c = document.getElementById("ringChase");
@@ -4907,6 +4972,7 @@ function openRenameVitamin(oldName, onDone) {
 
 function undo() {
   if (taps === 0) return;
+  const tipBefore = ringTip();   // where the arc ends now, before it shrinks
   const last = tapLog.pop();
   const amt = last != null ? tapEntry(last).amt : null;
   today = round2(today - (amt != null ? amt : step));   // reverse whatever the last tap actually added
@@ -4916,6 +4982,7 @@ function undo() {
   hideWhyRow();
   if (!reduceMotion()) { const rc = el.total.parentElement; rc.classList.remove("unbump"); void rc.offsetWidth; rc.classList.add("unbump"); }
   renderTop(true);
+  undoFlourish(tipBefore, amt != null ? amt : step);
   toast("Undone");
 }
 
@@ -5421,6 +5488,7 @@ function commitDay(note, dateStr, extras, opts) {
     ? `🌳 Tree fully grown — Prestige ${tree.level}!`
     : `Day complete · ${fmt(total)} logged${underGoal ? " · under goal\u00a0✓" : overBy}`);
   el.ringWrap.classList.remove("pulse"); void el.ringWrap.offsetWidth; el.ringWrap.classList.add("pulse");
+  setTimeout(() => dayDoneFlourish(underGoal || !hasGoal()), 380);   // once the sheet has cleared the ring
   // a second, separate pop-up for a tree milestone reached along the way —
   // prestige (100%) already got its own toast above, this covers 25/50/75%
   if (treeMile && features.tree) {
@@ -8967,6 +9035,7 @@ render();
 
 // Launch flourish: the number rolls up from 0 and the ring sweeps to its fill
 // (a frame after first paint, so the transitions actually play).
+launchChoreography();
 if (!reduceMotion() && today > 0) {
   const ringTarget = el.ringProg.style.strokeDashoffset;
   el.ringProg.style.transition = "none";

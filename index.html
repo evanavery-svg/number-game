@@ -389,6 +389,16 @@
     .fx-wave { width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 2px solid var(--fx, #fff); }
     .fx-plus { font-size: 22px; font-weight: 800; color: #1a1200; text-shadow: 0 1px 0 rgba(255,255,255,.35); transform: translate(-50%, -50%); font-variant-numeric: tabular-nums; }
     .add-btn { transform-style: preserve-3d; }
+    .fx-tick { line-height: 0; filter: drop-shadow(0 0 10px currentColor); }
+    /* a slow band of light crosses the button now and then, so it never sits dead */
+    .add-btn::after {
+      content: ""; position: absolute; top: -20%; bottom: -20%; left: 0; width: 38%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,0.28), transparent);
+      transform: translateX(-140%) skewX(-12deg); pointer-events: none;
+      animation: btnSheen 7s ease-in-out 2.5s infinite;
+    }
+    @keyframes btnSheen { 0%, 78% { transform: translateX(-140%) skewX(-12deg); } 100% { transform: translateX(420%) skewX(-12deg); } }
+    @media (prefers-reduced-motion: reduce) { .add-btn::after { animation: none; display: none; } }
     .ring-center { display: flex; align-items: center; justify-content: center; }
     .total .value {
       font-size: var(--fs-hero);
@@ -2093,7 +2103,7 @@
     <div class="why-row" id="whyRow" role="group" aria-label="Why this one?" aria-hidden="true"></div>
   </div>
 
-  <div class="version">v1.1</div>
+  <div class="version">v1.2</div>
 
   <!-- App Lock screen: covers everything until unlocked -->
   <div class="lock" id="lockScreen" style="display:none">

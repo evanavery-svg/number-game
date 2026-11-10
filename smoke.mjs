@@ -1653,6 +1653,18 @@ check("number stays centred in the ring after End Day", centred);
       await p27.click("#addBtn");   // lands exactly on the goal
       await p27.waitForTimeout(1900);
       check("the flourish cleans up after itself", await p27.evaluate(() => document.querySelectorAll(".fx").length === 0));
+      // undo plays it backwards; ending the day sends sparks out and draws a tick
+      await p27.evaluate(() => undo());
+      await p27.waitForTimeout(100);
+      check("undo sends the spark back with a minus", await p27.evaluate(() => document.querySelectorAll(".fx-spark").length === 1 && /^−1$/.test(document.querySelector(".fx-plus")?.textContent || "")));
+      await p27.waitForTimeout(900);
+      await p27.click("#addBtn");
+      await p27.waitForTimeout(1900);
+      await p27.evaluate(() => dayDoneFlourish(true));
+      await p27.waitForTimeout(100);
+      check("ending the day bursts from the ring and draws a tick", await p27.evaluate(() => document.querySelectorAll(".fx-spark").length === 14 && !!document.querySelector(".fx-tick svg path")));
+      await p27.waitForTimeout(1700);
+      check("and all of that cleans up too", await p27.evaluate(() => document.querySelectorAll(".fx").length === 0));
       check("and the count is right", (await p27.evaluate(() => JSON.parse(localStorage.getItem("count.today")))) === 2);
     } else {
       check("with reduced motion there's no flourish", during.sparks === 0 && during.plus === "");
